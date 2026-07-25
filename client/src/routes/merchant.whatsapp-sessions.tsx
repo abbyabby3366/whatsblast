@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Plus, QrCode, Trash2, Smartphone, Settings, Copy } from 'lucide-react'
+import { Loader2, Plus, QrCode, Trash2, Smartphone, Settings, Copy, HelpCircle, Send, Shuffle } from 'lucide-react'
 import dayjs from 'dayjs'
 
 import { api } from '@/lib/api'
@@ -27,6 +27,9 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Textarea } from '@/components/ui/textarea'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,
@@ -370,13 +373,26 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
   const queryClient = useQueryClient()
   const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
   const [newAgentPhone, setNewAgentPhone] = useState('')
+  const [testPhone, setTestPhone] = useState('')
+  const [testText, setTestText] = useState('Hello! This is a test message sent from WhatsBlast session.')
+  const [isSendingTest, setIsSendingTest] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
       setWarmup(session.warmup_schedule?.join(', ') || '')
       setNewAgentPhone('')
+      setTestPhone('')
+      setTestText('Hello! This is a test message sent from WhatsBlast session.')
+      setIsSendingTest(false)
     }
   }, [isOpen, session])
+
+  const { data: customersRes } = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => api.get('customers/').json<any>(),
+    enabled: isOpen,
+  })
+  const customers = Array.isArray(customersRes) ? customersRes : customersRes?.results || []
 
   const { data: agentsResponse, isLoading: isLoadingAgents } = useQuery({
     queryKey: ['agent-phone-numbers', session.id],
@@ -438,17 +454,48 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
     createAgentMutation.mutate(newAgentPhone.trim())
   }
 
+  const handlePickRandomCustomer = () => {
+    const validCustomers = customers.filter((c: any) => c.phone_number)
+    if (validCustomers.length === 0) {
+      toast.error('No customer contacts with phone numbers found')
+      return
+    }
+    const randomContact = validCustomers[Math.floor(Math.random() * validCustomers.length)]
+    setTestPhone(randomContact.phone_number)
+    toast.info(`Selected random contact: ${randomContact.name ? `${randomContact.name} (${randomContact.phone_number})` : randomContact.phone_number}`)
+  }
+
+  const handleSendTestMessage = async () => {
+    if (!testPhone.trim() || !testText.trim()) {
+      toast.error('Please enter a recipient phone number and test message')
+      return
+    }
+    setIsSendingTest(true)
+    try {
+      const sessionIdStr = session.session_id || session.id
+      await api.post(`messages/${sessionIdStr}/send-text`, {
+        json: { to: testPhone.trim(), text: testText.trim() },
+      }).json()
+      toast.success(`Test message sent to ${testPhone.trim()}!`)
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error || err.message || 'Failed to send test message'
+      toast.error(errorMsg)
+    } finally {
+      setIsSendingTest(false)
+    }
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Manage Session</DialogTitle>
           <DialogDescription>
-            Update session status, warmup schedule, and agent phone numbers.
+            Configure session settings, forwarding, and test messaging.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-4 py-2">
           <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
             <div className="flex justify-between items-center text-xs">
               <span className="text-slate-500 font-medium">Session ID:</span>
@@ -480,102 +527,170 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
             </div>
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Session Settings</h3>
-            
-            <div className="space-y-2">
-              <Label>Warmup Schedule (Messages per day)</Label>
-              <Input 
-                value={warmup} 
-                onChange={(e) => setWarmup(e.target.value)} 
-                placeholder="e.g. 5, 10, 15, 20, 30"
-              />
-              <p className="text-xs text-slate-500">
-                Comma-separated list of numbers. First number is day 1, second is day 2, etc. The last number applies to all following days.
-              </p>
-            </div>
+          <Tabs defaultValue="settings" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="settings">Session settings</TabsTrigger>
+              <TabsTrigger value="forwarding">Forwarding</TabsTrigger>
+              <TabsTrigger value="testing">Testing</TabsTrigger>
+            </TabsList>
 
-            <Button 
-              onClick={handleUpdateSession} 
-              disabled={updateSessionMutation.isPending}
-              className="w-full"
-            >
-              {updateSessionMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Save Session Settings
-            </Button>
-          </div>
-
-          <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Agent Phone Numbers</h3>
-            <p className="text-xs text-slate-500">
-              Add external agent phone numbers here. Whenever this session receives a message, it will be automatically forwarded to these agents.
-            </p>
-            
-            <form onSubmit={handleAddAgent} className="flex items-end gap-2">
-              <div className="space-y-1 flex-1">
-                <Label>Add Agent Phone Number</Label>
+            {/* TAB 1: Session Settings */}
+            <TabsContent value="settings" className="space-y-4 pt-3">
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label>Warmup Schedule (Messages per day)</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs">
+                        Comma-separated list of numbers. First number is day 1, second is day 2, etc. The last number applies to all following days.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <Input 
-                  value={newAgentPhone} 
-                  onChange={(e) => setNewAgentPhone(e.target.value)} 
-                  placeholder="e.g. 60123456789"
+                  value={warmup} 
+                  onChange={(e) => setWarmup(e.target.value)} 
+                  placeholder="e.g. 5, 10, 15, 20, 30"
                 />
               </div>
-              <Button type="submit" disabled={!newAgentPhone.trim() || createAgentMutation.isPending}>
-                {createAgentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              </Button>
-            </form>
 
-            <div className="border border-slate-200 dark:border-slate-800 rounded-md overflow-hidden">
-              {isLoadingAgents ? (
-                <div className="p-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-emerald-600" /></div>
-              ) : agents.length === 0 ? (
-                <div className="p-4 text-center text-sm text-slate-500">No agents added yet.</div>
-              ) : (
-                <ul className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {agents.map((agent: any) => (
-                    <li key={agent.id} className="p-3 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                      <span className="font-medium text-sm">{agent.phone_number}</span>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 px-2"
-                            disabled={deleteAgentMutation.isPending}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Delete Agent?</DialogTitle>
-                            <DialogDescription>
-                              Are you sure you want to remove this agent's phone number?
-                            </DialogDescription>
-                          </DialogHeader>
-                          <DialogFooter>
-                            <DialogClose asChild>
-                              <Button type="button" variant="outline">Cancel</Button>
-                            </DialogClose>
-                            <DialogClose asChild>
-                              <Button 
-                                type="button"
-                                variant="destructive" 
-                                onClick={() => deleteAgentMutation.mutate(agent.id)}
-                                className="bg-red-600 hover:bg-red-700 text-white"
-                              >
-                                Delete
-                              </Button>
-                            </DialogClose>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+              <Button 
+                onClick={handleUpdateSession} 
+                disabled={updateSessionMutation.isPending}
+                className="w-full"
+              >
+                {updateSessionMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Save Session Settings
+              </Button>
+            </TabsContent>
+
+            {/* TAB 2: Forwarding */}
+            <TabsContent value="forwarding" className="space-y-4 pt-3">
+              <p className="text-xs text-slate-500">
+                Add external agent phone numbers here. Whenever this session receives a message, it will be automatically forwarded to these agents.
+              </p>
+              
+              <form onSubmit={handleAddAgent} className="flex items-end gap-2">
+                <div className="space-y-1 flex-1">
+                  <Label>Add Agent Phone Number</Label>
+                  <Input 
+                    value={newAgentPhone} 
+                    onChange={(e) => setNewAgentPhone(e.target.value)} 
+                    placeholder="e.g. 60123456789"
+                  />
+                </div>
+                <Button type="submit" disabled={!newAgentPhone.trim() || createAgentMutation.isPending}>
+                  {createAgentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                </Button>
+              </form>
+
+              <div className="border border-slate-200 dark:border-slate-800 rounded-md overflow-hidden">
+                {isLoadingAgents ? (
+                  <div className="p-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-emerald-600" /></div>
+                ) : agents.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-slate-500">No agents added yet.</div>
+                ) : (
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {agents.map((agent: any) => (
+                      <li key={agent.id} className="p-3 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                        <span className="font-medium text-sm">{agent.phone_number}</span>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 px-2"
+                              disabled={deleteAgentMutation.isPending}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Delete Agent?</DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to remove this agent's phone number?
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <DialogClose asChild>
+                                <Button type="button" variant="outline">Cancel</Button>
+                              </DialogClose>
+                              <DialogClose asChild>
+                                <Button 
+                                  type="button"
+                                  variant="destructive" 
+                                  onClick={() => deleteAgentMutation.mutate(agent.id)}
+                                  className="bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                  Delete
+                                </Button>
+                              </DialogClose>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* TAB 3: Testing */}
+            <TabsContent value="testing" className="space-y-4 pt-3">
+              <p className="text-xs text-slate-500">
+                Send a test message using this WhatsApp session to test connection and message delivery.
+              </p>
+
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label>Recipient Phone Number</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePickRandomCustomer}
+                      className="h-7 text-xs gap-1 text-slate-700 dark:text-slate-300"
+                    >
+                      <Shuffle className="h-3.5 w-3.5" /> Pick Random Contact
+                    </Button>
+                  </div>
+                  <Input
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    placeholder="e.g. 60123456789"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Test Message Text</Label>
+                  <Textarea
+                    value={testText}
+                    onChange={(e) => setTestText(e.target.value)}
+                    rows={3}
+                    placeholder="Type a message to test..."
+                  />
+                </div>
+
+                <Button
+                  onClick={handleSendTestMessage}
+                  disabled={isSendingTest || !testPhone.trim() || !testText.trim()}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+                >
+                  {isSendingTest ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  Send Test Message
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </DialogContent>
     </Dialog>

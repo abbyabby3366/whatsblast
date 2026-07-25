@@ -155,13 +155,25 @@ router.delete('/users/:id/', deleteUser);
 
 // Agent Phone Numbers Management
 const getAgentPhones = async (req: AuthRequest, res: Response) => {
-  const sessions = await WhatsAppSession.find({ user: req.user?._id });
+  const filter: any = {};
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+  const sessionQuery = req.query.session ? String(req.query.session) : null;
+  if (sessionQuery) {
+    filter.$or = [
+      { session_id: sessionQuery },
+      { _id: sessionQuery.match(/^[0-9a-fA-F]{24}$/) ? sessionQuery : null }
+    ];
+  }
+
+  const sessions = await WhatsAppSession.find(filter);
   const agentPhones: Array<{ id: string; session_id: string; phone_number: string; is_active: boolean }> = [];
 
   for (const s of sessions) {
     for (const a of s.agent_phone_numbers) {
       agentPhones.push({
-        id: (a as any)._id,
+        id: (a as any)._id ? (a as any)._id.toString() : '',
         session_id: s.session_id,
         phone_number: a.phone_number,
         is_active: a.is_active,
@@ -182,16 +194,20 @@ const createAgentPhone = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'session and phone_number are required' });
   }
 
-  const sessDoc = await WhatsAppSession.findOne({
+  const filter: any = {
     $or: [{ session_id: targetSessionId }, { _id: targetSessionId.match(/^[0-9a-fA-F]{24}$/) ? targetSessionId : null }],
-    user: req.user?._id,
-  });
+  };
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+
+  const sessDoc = await WhatsAppSession.findOne(filter);
 
   if (!sessDoc) {
     return res.status(404).json({ error: 'WhatsApp session not found' });
   }
 
-  sessDoc.agent_phone_numbers.push({ phone_number, is_active: true });
+  sessDoc.agent_phone_numbers.push({ phone_number, is_active: true } as any);
   await sessDoc.save();
 
   return res.status(201).json({ success: true, agent_phone_numbers: sessDoc.agent_phone_numbers });
@@ -202,11 +218,15 @@ router.post('/agent-phone-numbers/', createAgentPhone);
 
 const deleteAgentPhone = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const sessions = await WhatsAppSession.find({ user: req.user?._id });
+  const filter: any = {};
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+  const sessions = await WhatsAppSession.find(filter);
 
   for (const s of sessions) {
     const initialLen = s.agent_phone_numbers.length;
-    s.agent_phone_numbers = s.agent_phone_numbers.filter((a: any) => a._id.toString() !== id);
+    s.agent_phone_numbers = s.agent_phone_numbers.filter((a: any) => (a as any)._id?.toString() !== id);
     if (s.agent_phone_numbers.length !== initialLen) {
       await s.save();
       return res.json({ success: true });

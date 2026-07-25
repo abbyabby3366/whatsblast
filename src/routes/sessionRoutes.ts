@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone } from '../models/MasterPhone.js';
-import { initWhatsAppSession, getActiveSession } from '../services/baileysManager.js';
+import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../services/baileysManager.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
 import fs from 'fs';
 import path from 'path';
@@ -120,13 +120,19 @@ const patchSession = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  const { status, max_message_count_per_day, warmup_schedule } = req.body;
+  if (req.user?.role !== 'admin' && session.user?.toString() !== req.user?._id.toString()) {
+    return res.status(403).json({ error: 'Unauthorized to modify this session' });
+  }
+
+  const { status, max_message_count_per_day, warmup_schedule, user: userId } = req.body;
   if (status) session.status = status;
-  if (max_message_count_per_day) session.max_message_count_per_day = max_message_count_per_day;
-  if (warmup_schedule) session.warmup_schedule = warmup_schedule;
+  if (max_message_count_per_day !== undefined) session.max_message_count_per_day = max_message_count_per_day;
+  if (warmup_schedule !== undefined) session.warmup_schedule = warmup_schedule;
+  if (userId && req.user?.role === 'admin') session.user = userId;
 
   await session.save();
-  return res.json(formatSession(session));
+  const updated = await WhatsAppSession.findById(session._id).populate('user', 'phone_number role');
+  return res.json(formatSession(updated || session));
 };
 
 router.patch('/whatsapp-sessions/:id', patchSession);
@@ -141,6 +147,10 @@ const reconnectSession = async (req: AuthRequest, res: Response) => {
 
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (req.user?.role !== 'admin' && session.user?.toString() !== req.user?._id.toString()) {
+    return res.status(403).json({ error: 'Unauthorized to reconnect this session' });
   }
 
   session.status = SessionStatus.STARTING;
@@ -162,6 +172,10 @@ const logoutSession = async (req: AuthRequest, res: Response) => {
 
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (req.user?.role !== 'admin' && session.user?.toString() !== req.user?._id.toString()) {
+    return res.status(403).json({ error: 'Unauthorized to logout this session' });
   }
 
   const active = getActiveSession(session.session_id);
@@ -200,24 +214,32 @@ const deleteSession = async (req: AuthRequest, res: Response) => {
   });
 
   if (session) {
-    const active = getActiveSession(session.session_id);
-    if (active) {
+    if (req.user?.role !== 'admin' && session.user?.toString() !== req.user?._id.toString()) {
+      return res.status(403).json({ error: 'Unauthorized to delete this session' });
+    }
+
+    const targetSessionId = session.session_id;
+
+    // 1. Delete MongoDB records first
+    await WhatsAppSession.deleteOne({ _id: session._id });
+    await MasterPhone.deleteMany({ session: session._id });
+
+    // 2. Clear Redis auth keys
+    try {
+      const redisAuth = await useRedisAuthState(targetSessionId);
+      await redisAuth.clearCreds();
+    } catch (_) {}
+
+    // 3. Clear file system folder if any
+    const folder = path.join(SESSIONS_DIR, targetSessionId);
+    if (fs.existsSync(folder)) {
       try {
-        await active.clearCreds?.();
-        active.socket.end(undefined);
-      } catch (_) {}
-    } else {
-      try {
-        const redisAuth = await useRedisAuthState(session.session_id);
-        await redisAuth.clearCreds();
+        fs.rmSync(folder, { recursive: true, force: true });
       } catch (_) {}
     }
 
-    const folder = path.join(SESSIONS_DIR, session.session_id);
-    if (fs.existsSync(folder)) {
-      fs.rmSync(folder, { recursive: true, force: true });
-    }
-    await WhatsAppSession.deleteOne({ _id: session._id });
+    // 4. Close socket & purge active session map
+    removeActiveSession(targetSessionId);
   }
   return res.json({ success: true });
 };

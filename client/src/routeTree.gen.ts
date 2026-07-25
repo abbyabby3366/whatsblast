@@ -26,6 +26,7 @@ import { Route as MerchantCustomersRouteImport } from './routes/merchant.custome
 import { Route as MerchantMessagesRouteImport } from './routes/merchant.messages'
 import { Route as MerchantProfileRouteImport } from './routes/merchant.profile'
 import { Route as MerchantWhatsappSessionsRouteImport } from './routes/merchant.whatsapp-sessions'
+import { Route as MerchantCampaignsIndexRouteImport } from './routes/merchant.campaigns.index'
 import { Route as MerchantCampaignsCreateRouteImport } from './routes/merchant.campaigns.create'
 
 const IndexRoute = IndexRouteImport.update({
@@ -114,6 +115,11 @@ const MerchantWhatsappSessionsRoute =
     path: '/whatsapp-sessions',
     getParentRoute: () => MerchantRoute,
   } as any)
+const MerchantCampaignsIndexRoute = MerchantCampaignsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MerchantCampaignsRoute,
+} as any)
 const MerchantCampaignsCreateRoute = MerchantCampaignsCreateRouteImport.update({
   id: '/create',
   path: '/create',
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AdminIndexRoute
   '/merchant/': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
+  '/merchant/campaigns/': typeof MerchantCampaignsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -149,7 +156,6 @@ export interface FileRoutesByTo {
   '/admin/campaigns': typeof AdminCampaignsRoute
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/merchant/campaigns': typeof MerchantCampaignsRouteWithChildren
   '/merchant/customers': typeof MerchantCustomersRoute
   '/merchant/messages': typeof MerchantMessagesRoute
   '/merchant/profile': typeof MerchantProfileRoute
@@ -157,6 +163,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/merchant': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
+  '/merchant/campaigns': typeof MerchantCampaignsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -178,6 +185,7 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/merchant/': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
+  '/merchant/campaigns/': typeof MerchantCampaignsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -200,6 +208,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/merchant/'
     | '/merchant/campaigns/create'
+    | '/merchant/campaigns/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -210,7 +219,6 @@ export interface FileRouteTypes {
     | '/admin/campaigns'
     | '/admin/sessions'
     | '/admin/users'
-    | '/merchant/campaigns'
     | '/merchant/customers'
     | '/merchant/messages'
     | '/merchant/profile'
@@ -218,6 +226,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/merchant'
     | '/merchant/campaigns/create'
+    | '/merchant/campaigns'
   id:
     | '__root__'
     | '/'
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/merchant/'
     | '/merchant/campaigns/create'
+    | '/merchant/campaigns/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -371,6 +381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MerchantWhatsappSessionsRouteImport
       parentRoute: typeof MerchantRoute
     }
+    '/merchant/campaigns/': {
+      id: '/merchant/campaigns/'
+      path: '/'
+      fullPath: '/merchant/campaigns/'
+      preLoaderRoute: typeof MerchantCampaignsIndexRouteImport
+      parentRoute: typeof MerchantCampaignsRoute
+    }
     '/merchant/campaigns/create': {
       id: '/merchant/campaigns/create'
       path: '/create'
@@ -399,10 +416,12 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface MerchantCampaignsRouteChildren {
   MerchantCampaignsCreateRoute: typeof MerchantCampaignsCreateRoute
+  MerchantCampaignsIndexRoute: typeof MerchantCampaignsIndexRoute
 }
 
 const MerchantCampaignsRouteChildren: MerchantCampaignsRouteChildren = {
   MerchantCampaignsCreateRoute: MerchantCampaignsCreateRoute,
+  MerchantCampaignsIndexRoute: MerchantCampaignsIndexRoute,
 }
 
 const MerchantCampaignsRouteWithChildren =

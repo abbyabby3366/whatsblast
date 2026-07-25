@@ -12,7 +12,7 @@ export interface IBlastCampaign extends Document {
   user: mongoose.Types.ObjectId;
   name: string;
   template?: mongoose.Types.ObjectId;
-  templates?: Array<{ text?: string }>;
+  templates?: Array<any>;
   contacts: string[];
   recipient_phones?: string[];
   status: CampaignStatus;
@@ -37,7 +37,7 @@ const BlastCampaignSchema = new Schema<IBlastCampaign>(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     name: { type: String, required: true },
     template: { type: Schema.Types.ObjectId, ref: 'MessageTemplate' },
-    templates: [{ text: { type: String } }],
+    templates: [{ type: Schema.Types.Mixed }],
     contacts: [{ type: String }],
     recipient_phones: [{ type: String }],
     status: { type: String, enum: Object.values(CampaignStatus), default: CampaignStatus.DRAFT },

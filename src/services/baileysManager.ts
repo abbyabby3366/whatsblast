@@ -2,6 +2,8 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  Browsers,
   AuthenticationState,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
@@ -11,7 +13,7 @@ import fs from 'fs';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { User } from '../models/User.js';
-import { useRedisAuthState, getRedisClient } from './redisAuthState.js';
+import { useRedisAuthState } from './redisAuthState.js';
 
 const SESSIONS_DIR = process.env.SESSIONS_DIR || './sessions';
 
@@ -27,7 +29,29 @@ interface ActiveSession {
 
 const activeSessions = new Map<string, ActiveSession>();
 
+export function getActiveSession(sessionId: string): ActiveSession | undefined {
+  return activeSessions.get(sessionId);
+}
+
+export function removeActiveSession(sessionId: string): void {
+  const active = activeSessions.get(sessionId);
+  if (active) {
+    try {
+      active.socket.end(undefined);
+    } catch (_) {}
+    activeSessions.delete(sessionId);
+  }
+}
+
 export async function initWhatsAppSession(sessionId: string): Promise<ActiveSession> {
+  // Check if session document exists in DB before initializing or returning cached
+  const dbSession = await WhatsAppSession.findOne({ session_id: sessionId });
+  if (!dbSession) {
+    console.log(`🛑 Session ${sessionId} does not exist in DB, purging active socket.`);
+    removeActiveSession(sessionId);
+    throw new Error(`WhatsApp session ${sessionId} not found`);
+  }
+
   if (activeSessions.has(sessionId)) {
     return activeSessions.get(sessionId)!;
   }
@@ -61,13 +85,18 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     saveCreds = fileAuth.saveCreds;
   }
 
+  const logger = pino({ level: 'silent' });
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
+    },
+    browser: Browsers.macOS('Chrome'),
     printQRInTerminal: false,
-    logger: pino({ level: 'silent' }),
+    logger,
   });
 
   const sessionObj: ActiveSession = { socket: sock, sessionId, clearCreds };
@@ -81,11 +110,17 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     if (qr) {
       try {
         const qrBase64 = await QRCode.toDataURL(qr);
-        await WhatsAppSession.findOneAndUpdate(
-          { session_id: sessionId },
-          { status: SessionStatus.QR_READY, qr_code: qrBase64 },
-          { upsert: true }
-        );
+        const exists = await WhatsAppSession.exists({ session_id: sessionId });
+        if (exists) {
+          await WhatsAppSession.updateOne(
+            { session_id: sessionId },
+            { $set: { status: SessionStatus.QR_READY, qr_code: qrBase64 } }
+          );
+        } else {
+          console.log(`🛑 Session ${sessionId} deleted, closing socket on QR event.`);
+          removeActiveSession(sessionId);
+          return;
+        }
       } catch (err) {
         console.error(`Failed to generate QR for session ${sessionId}`, err);
       }
@@ -96,39 +131,59 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
       const phoneNumber = rawUserJid.split(':')[0].replace(/[^0-9]/g, '');
       const pushName = sock.user?.name || '';
 
-      await WhatsAppSession.findOneAndUpdate(
-        { session_id: sessionId },
-        {
-          status: SessionStatus.CONNECTED,
-          qr_code: '',
-          phone_number: phoneNumber,
-          push_name: pushName,
-        }
-      );
-      console.log(`✅ WhatsApp Session Connected: ${sessionId} (${phoneNumber})`);
+      const exists = await WhatsAppSession.exists({ session_id: sessionId });
+      if (exists) {
+        await WhatsAppSession.updateOne(
+          { session_id: sessionId },
+          {
+            $set: {
+              status: SessionStatus.CONNECTED,
+              qr_code: '',
+              phone_number: phoneNumber,
+              push_name: pushName,
+            },
+          }
+        );
+        console.log(`✅ WhatsApp Session Connected: ${sessionId} (${phoneNumber})`);
+      }
     }
 
     if (connection === 'close') {
       activeSessions.delete(sessionId);
+
+      // Verify if session still exists in MongoDB
+      const exists = await WhatsAppSession.exists({ session_id: sessionId });
+      if (!exists) {
+        console.log(`🛑 Session ${sessionId} was deleted from DB, halting reconnection.`);
+        return;
+      }
+
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-      await WhatsAppSession.findOneAndUpdate(
-        { session_id: sessionId },
-        { status: SessionStatus.DISCONNECTED }
-      );
-
-      if (shouldReconnect) {
-        console.log(`🔄 Reconnecting session ${sessionId}...`);
-        setTimeout(() => initWhatsAppSession(sessionId).catch(console.error), 3000);
+      if (isLoggedOut) {
+        console.log(`❌ WhatsApp Session logged out (401): ${sessionId}`);
+        await WhatsAppSession.updateOne(
+          { session_id: sessionId },
+          { $set: { status: SessionStatus.DISCONNECTED, qr_code: '' } }
+        );
         if (clearCreds) {
-          await clearCreds();
+          await clearCreds().catch(console.error);
         } else {
           const sessionFolder = path.join(SESSIONS_DIR, sessionId);
           try {
             fs.rmSync(sessionFolder, { recursive: true, force: true });
           } catch (_) {}
         }
+      } else {
+        console.log(`🔄 Reconnecting session ${sessionId} (reason: ${statusCode || 'unknown'})...`);
+        await WhatsAppSession.updateOne(
+          { session_id: sessionId },
+          { $set: { status: SessionStatus.STARTING } }
+        );
+        setTimeout(() => {
+          initWhatsAppSession(sessionId).catch(console.error);
+        }, 3000);
       }
     }
   });
@@ -180,10 +235,6 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
   });
 
   return sessionObj;
-}
-
-export function getActiveSession(sessionId: string): ActiveSession | undefined {
-  return activeSessions.get(sessionId);
 }
 
 export async function restoreAllSessions(): Promise<void> {

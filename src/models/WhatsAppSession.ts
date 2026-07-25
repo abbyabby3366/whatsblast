@@ -13,7 +13,7 @@ export interface IAgentPhoneNumber {
 }
 
 export interface IWhatsAppSession extends Document {
-  user: mongoose.Types.ObjectId;
+  user?: mongoose.Types.ObjectId;
   session_id: string;
   status: SessionStatus;
   qr_code?: string;
@@ -35,7 +35,7 @@ const AgentPhoneNumberSchema = new Schema<IAgentPhoneNumber>({
 
 const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: false, index: true },
     session_id: { type: String, required: true, unique: true, index: true },
     status: { type: String, enum: Object.values(SessionStatus), default: SessionStatus.STARTING },
     qr_code: { type: String },
