@@ -77,9 +77,7 @@ function AdminLayout() {
         <Sidebar className="border-r border-slate-200 bg-slate-900 text-slate-100 dark:border-slate-800">
           <SidebarHeader className="flex h-16 items-center border-b border-slate-800 px-4">
             <div className="flex items-center gap-2.5 text-lg font-bold">
-              <div className="w-8 h-8 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                <Shield className="h-5 w-5" />
-              </div>
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
               <span className="tracking-tight text-white"><span className="text-emerald-400">Super</span>Admin</span>
             </div>
           </SidebarHeader>
@@ -127,7 +125,10 @@ function AdminLayout() {
         </Sidebar>
         <main className="flex flex-1 flex-col overflow-hidden">
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900">
-            <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">System Administration</h1>
+            <div className="flex items-center gap-3">
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
+              <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">System Administration</h1>
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 p-0 text-white hover:bg-slate-700">

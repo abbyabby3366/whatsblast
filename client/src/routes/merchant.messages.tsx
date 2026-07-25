@@ -133,7 +133,7 @@ function MessagesPage() {
       }),
       columnHelper.accessor('recipient_phone', {
         header: 'Sent To',
-        cell: (info) => <span className="font-medium text-blue-600">{info.getValue() || info.row.original.to_jid || 'Unknown'}</span>,
+        cell: (info) => <span className="font-medium text-emerald-600">{info.getValue() || info.row.original.to_jid || 'Unknown'}</span>,
       }),
       columnHelper.accessor('template.text', {
         header: 'Message',
@@ -264,7 +264,7 @@ function MessagesPage() {
         <div className="overflow-x-auto relative">
           {isLoading && (
             <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 flex items-center justify-center z-10">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
             </div>
           )}
           <Table>

@@ -439,7 +439,7 @@ function CampaignsPage() {
           }
         }}>
           <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20" onClick={() => { setEditingCampaignId(null); form.reset(); resetTemplateDrafts(); setAllMatchingCustomersSelected(false); }}>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => { setEditingCampaignId(null); form.reset(); resetTemplateDrafts(); setAllMatchingCustomersSelected(false); }}>
               <Plus className="w-4 h-4 mr-2" />
               New Campaign
             </Button>
@@ -517,7 +517,7 @@ function CampaignsPage() {
                       variant={index === activeTemplateIndex ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setActiveTemplateIndex(index)}
-                      className={index === activeTemplateIndex ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
+                      className={index === activeTemplateIndex ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
                     >
                       Template {index + 1}
                       {template.template ? '' : ' *'}
@@ -642,7 +642,7 @@ function CampaignsPage() {
                                 className="hidden"
                               />
                               <div className="flex flex-col items-center justify-center space-y-2">
-                                <div className="rounded-full bg-blue-50 p-3 text-blue-600 dark:bg-blue-900/20">
+                                 <div className="rounded-full bg-emerald-50 p-3 text-emerald-600 dark:bg-emerald-900/20">
                                   <Plus className="h-6 w-6" />
                                 </div>
                                 <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Click or drag and drop to upload</p>
@@ -654,7 +654,7 @@ function CampaignsPage() {
                           )}
 
                           {uploadFileMutation.isPending && (
-                            <p className="mt-2 flex items-center text-sm text-blue-500">
+                            <p className="mt-2 flex items-center text-sm text-emerald-600">
                               <Loader2 className="mr-1 h-3 w-3 animate-spin" /> Uploading file...
                             </p>
                           )}
@@ -817,16 +817,16 @@ function CampaignsPage() {
                               } else {
                                 const nextRecipients = field.state.value.filter((phone) => !currentPagePhones.includes(phone))
                                 field.handleChange(nextRecipients)
-                                form.setFieldValue('recipients', nextRecipients)
+                                 form.setFieldValue('recipients', nextRecipients)
                                 setAllMatchingCustomersSelected(false)
                               }
                             }}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                           />
                           Select current page
                         </label>
                         <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                          {isSelectingAllCustomers && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                          {isSelectingAllCustomers && <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />}
                           <input
                             type="checkbox"
                             checked={allMatchingCustomersSelected}
@@ -854,7 +854,7 @@ function CampaignsPage() {
                                 setIsSelectingAllCustomers(false)
                               }
                             }}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                           />
                           Select all customers
                         </label>
@@ -863,7 +863,7 @@ function CampaignsPage() {
                       <div className="max-h-[200px] space-y-2 overflow-y-auto">
                       {isLoading ? (
                         <div className="flex items-center justify-center py-4">
-                          <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                          <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
                         </div>
                       ) : currentCustomers.length === 0 ? (
                         <p className="text-sm text-slate-500 text-center py-4">
@@ -899,7 +899,7 @@ function CampaignsPage() {
                                   setAllMatchingCustomersSelected(false)
                                 }
                               }}
-                              className="w-4 h-4 text-blue-600 rounded border-slate-300"
+                              className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
                             />
                             <Label
                               htmlFor={`customer-${c.id}`}
@@ -951,7 +951,7 @@ function CampaignsPage() {
                     <Button
                       type="submit"
                       disabled={!canSubmit || createCampaignMutation.isPending || updateCampaignMutation.isPending}
-                      className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto shadow-md shadow-emerald-600/20"
                     >
                       {createCampaignMutation.isPending || updateCampaignMutation.isPending 
                         ? (editingCampaignId ? 'Updating...' : 'Creating...') 
@@ -968,7 +968,7 @@ function CampaignsPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {isLoadingCampaigns ? (
           <div className="col-span-full py-12 flex justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
           </div>
         ) : campaigns.length === 0 ? (
           <div className="col-span-full py-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
@@ -987,7 +987,7 @@ function CampaignsPage() {
           campaigns.map((campaign: any) => (
             <Card
               key={campaign.id}
-              className="overflow-hidden bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-white/20 shadow-xl shadow-blue-900/5 hover:shadow-2xl transition-all duration-300 group"
+              className="overflow-hidden bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5 hover:shadow-xl transition-all duration-300 group"
             >
               <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
                 <div className="flex justify-between items-start">
@@ -1008,7 +1008,7 @@ function CampaignsPage() {
                           : campaign.status === 'scheduled'
                             ? 'bg-amber-100 text-amber-800'
                             : campaign.status === 'running'
-                            ? 'bg-blue-100 text-blue-800'
+                            ? 'bg-teal-100 text-teal-800'
                             : campaign.status === 'paused'
                             ? 'bg-orange-100 text-orange-800'
                             : 'bg-slate-100 text-slate-800'
@@ -1094,7 +1094,7 @@ function CampaignsPage() {
                       <div className="space-y-3">
                         {campaign.templates.map((template: any, templateIndex: number) => (
                           <div key={template.id || templateIndex} className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="mb-2 text-xs font-semibold text-blue-600 dark:text-blue-300">
+                            <p className="mb-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                               Template {templateIndex + 1}
                             </p>
                             {template.file?.file_type === 'document' && (
@@ -1126,7 +1126,7 @@ function CampaignsPage() {
                             {template.buttons?.length ? (
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {template.buttons.map((button: any, index: number) => (
-                                  <span key={button.id || index} className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+                                  <span key={button.id || index} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
                                     {button.displayText || button.display_text || button.value || 'Button'}
                                   </span>
                                 ))}
@@ -1141,7 +1141,7 @@ function CampaignsPage() {
                   {campaign.status === 'draft' && (
                     <div className="flex flex-col gap-2 mt-4">
                       <Button
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
                         disabled={runCampaignMutation.isPending}
                         onClick={() => {
                           runCampaignMutation.mutate(campaign.id)

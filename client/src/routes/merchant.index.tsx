@@ -73,7 +73,7 @@ function MerchantDashboard() {
   if (isLoadingCustomers || isLoadingCampaigns) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
       </div>
     )
   }
@@ -86,37 +86,37 @@ function MerchantDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-white/20 shadow-xl shadow-blue-900/5">
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-            <Users className="h-4 w-4 text-blue-600" />
+            <Users className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCustomers}</div>
             <p className="text-xs text-slate-500 dark:text-slate-400">Total imported contacts</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-white/20 shadow-xl shadow-blue-900/5">
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Campaigns</CardTitle>
-            <Megaphone className="h-4 w-4 text-indigo-600" />
+            <Megaphone className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCampaigns}</div>
             <p className="text-xs text-slate-500 dark:text-slate-400">Lifetime campaigns created</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-white/20 shadow-xl shadow-blue-900/5">
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Completed Blasts</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 text-teal-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{completedCampaigns}</div>
             <p className="text-xs text-slate-500 dark:text-slate-400">Successfully sent campaigns</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-white/20 shadow-xl shadow-blue-900/5">
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Scheduled / Running</CardTitle>
             <Clock className="h-4 w-4 text-amber-500" />
@@ -129,7 +129,7 @@ function MerchantDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm">
+        <Card className="col-span-4 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800">
           <CardHeader>
             <CardTitle>Activity Overview</CardTitle>
             <CardDescription>Customer acquisition and message volume over the past 7 days.</CardDescription>
@@ -142,15 +142,15 @@ function MerchantDashboard() {
                   <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
                   <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Line type="monotone" dataKey="messages" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} name="Messages" />
-                  <Line type="monotone" dataKey="customers" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} name="Customers" />
+                  <Line type="monotone" dataKey="messages" stroke="#059669" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} name="Messages" />
+                  <Line type="monotone" dataKey="customers" stroke="#0d9488" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} name="Customers" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
         
-        <Card className="col-span-3 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm">
+        <Card className="col-span-3 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800">
           <CardHeader>
             <CardTitle>Recent Campaigns</CardTitle>
             <CardDescription>Your most recently created blasts.</CardDescription>
@@ -169,7 +169,7 @@ function MerchantDashboard() {
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
                       ${campaign.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 
                         campaign.status === 'scheduled' ? 'bg-amber-100 text-amber-800' : 
-                        campaign.status === 'running' ? 'bg-blue-100 text-blue-800' :
+                        campaign.status === 'running' ? 'bg-teal-100 text-teal-800' :
                         'bg-slate-100 text-slate-800'}`}>
                       {campaign.status || 'draft'}
                     </span>

@@ -356,7 +356,7 @@ function CustomersPage() {
           
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
               <Plus className="w-4 h-4 mr-2" />
               Add Customer
             </Button>
@@ -395,7 +395,7 @@ function CustomersPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" onClick={handleAdd} disabled={addCustomerMutation.isPending} className="bg-blue-600 hover:bg-blue-700">
+              <Button type="button" onClick={handleAdd} disabled={addCustomerMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
                 {addCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Save Contact
               </Button>
@@ -443,7 +443,7 @@ function CustomersPage() {
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-24 text-center">
-                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-600" />
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600" />
                   </TableCell>
                 </TableRow>
               ) : table.getRowModel().rows.length ? (

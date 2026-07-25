@@ -103,7 +103,7 @@ function SessionsPage() {
     switch (status) {
       case 'connected': return 'bg-emerald-100 text-emerald-800'
       case 'connecting': return 'bg-amber-100 text-amber-800'
-      case 'initializing': return 'bg-blue-100 text-blue-800'
+      case 'initializing': return 'bg-teal-100 text-teal-800'
       case 'disconnected': 
       case 'logout': return 'bg-red-100 text-red-800'
       default: return 'bg-slate-100 text-slate-800'
@@ -123,7 +123,7 @@ function SessionsPage() {
         </div>
 
         <Button 
-          className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20"
           onClick={() => createSessionMutation.mutate()}
           disabled={createSessionMutation.isPending}
         >
@@ -139,7 +139,7 @@ function SessionsPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? (
           <div className="col-span-full py-12 flex justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
           </div>
         ) : sessions.length === 0 ? (
           <div className="col-span-full py-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
@@ -288,7 +288,7 @@ function SessionsPage() {
           <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 rounded-lg min-h-[300px]">
             {fetchQrMutation.isPending ? (
               <div className="text-center space-y-4">
-                <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto" />
+                <Loader2 className="w-10 h-10 animate-spin text-emerald-600 mx-auto" />
                 <p className="text-sm text-slate-500">Generating QR Code...</p>
               </div>
             ) : qrBase64 ? (
@@ -460,7 +460,7 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
 
             <div className="border border-slate-200 dark:border-slate-800 rounded-md overflow-hidden">
               {isLoadingAgents ? (
-                <div className="p-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>
+                <div className="p-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-emerald-600" /></div>
               ) : agents.length === 0 ? (
                 <div className="p-4 text-center text-sm text-slate-500">No agents added yet.</div>
               ) : (

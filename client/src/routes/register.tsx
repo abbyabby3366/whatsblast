@@ -121,8 +121,8 @@ function RegisterPage() {
         <Card className="border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-900/5 backdrop-blur-sm p-2">
           <form onSubmit={handleRegister}>
             <CardHeader className="text-center pt-6 pb-4 space-y-2">
-              <div className="mx-auto w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-600/25 mb-1">
-                <Megaphone className="w-6 h-6 text-white" />
+              <div className="mx-auto w-16 h-16 p-1 bg-slate-900/90 rounded-2xl flex items-center justify-center shadow-xl shadow-emerald-500/20 border border-emerald-500/30 mb-1">
+                <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-14 h-14 object-contain rounded-xl" />
               </div>
               <CardTitle className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Create an account</CardTitle>
               <CardDescription className="text-sm text-slate-500 dark:text-slate-400">

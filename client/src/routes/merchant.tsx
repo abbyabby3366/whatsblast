@@ -87,9 +87,7 @@ function MerchantLayout() {
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
           <SidebarHeader className="h-16 flex items-center px-4 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2.5 font-bold text-lg text-emerald-600 dark:text-emerald-400">
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/20">
-                <Megaphone className="w-5 h-5" />
-              </div>
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
               <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlasting</span>
             </div>
           </SidebarHeader>
@@ -145,7 +143,10 @@ function MerchantLayout() {
         </Sidebar>
         <main className="flex-1 flex flex-col overflow-hidden">
           <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-6 justify-between shrink-0">
-            <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Merchant Portal</h1>
+            <div className="flex items-center gap-3">
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
+              <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Merchant Portal</h1>
+            </div>
             <div className="flex items-center gap-4">
               <Dialog open={isLogoutOpen} onOpenChange={setIsLogoutOpen}>
                 <DialogContent>

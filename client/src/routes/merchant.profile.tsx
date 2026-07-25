@@ -75,7 +75,7 @@ function ProfilePage() {
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
       </div>
     )
   }
@@ -92,7 +92,7 @@ function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <User className="w-5 h-5 text-blue-600" />
+            <User className="w-5 h-5 text-emerald-600" />
             Account Information
           </CardTitle>
           <CardDescription>
@@ -145,7 +145,7 @@ function ProfilePage() {
           <Button 
             onClick={handleSave} 
             disabled={updateProfileMutation.isPending}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             {updateProfileMutation.isPending ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
