@@ -48,9 +48,12 @@ function SessionsPage() {
 
   const createSessionMutation = useMutation({
     mutationFn: () => api.post('whatsapp-sessions/').json<any>(),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
       toast.success('Session created successfully!')
+      if (data?.id) {
+        handleScan(data.id)
+      }
     },
     onError: () => toast.error('Failed to create session.')
   })

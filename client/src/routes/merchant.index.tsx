@@ -82,7 +82,7 @@ function MerchantDashboard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Overview</h2>
-        <p className="text-slate-500 dark:text-slate-400">Here's what's happening with your WhatsBlasting campaigns today.</p>
+        <p className="text-slate-500 dark:text-slate-400">Here's what's happening with your WhatsBlast campaigns today.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

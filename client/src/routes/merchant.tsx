@@ -11,7 +11,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User } from 'lucide-react'
+import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, Store } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
@@ -85,10 +85,10 @@ function MerchantLayout() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
-          <SidebarHeader className="h-16 flex items-center px-4 border-b border-slate-200 dark:border-slate-800">
+          <SidebarHeader className="h-16 flex flex-row items-center px-4 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2.5 font-bold text-lg text-emerald-600 dark:text-emerald-400">
-              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
-              <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlasting</span>
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
+              <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlast</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
@@ -143,8 +143,8 @@ function MerchantLayout() {
         </Sidebar>
         <main className="flex-1 flex flex-col overflow-hidden">
           <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-6 justify-between shrink-0">
-            <div className="flex items-center gap-3">
-              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
+            <div className="flex items-center gap-2.5">
+              <Store className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Merchant Portal</h1>
             </div>
             <div className="flex items-center gap-4">

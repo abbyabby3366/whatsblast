@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, Link, useNavigate, useLocation } from '@tanstack/react-router'
+import { Outlet, createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import {
   Sidebar,
@@ -28,7 +28,6 @@ function AdminLayout() {
   const token = useAuthStore((s) => s.access_token)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
-  const location = useLocation()
   const [isLogoutOpen, setIsLogoutOpen] = useState(false)
   const [isCheckingRole, setIsCheckingRole] = useState(true)
 
@@ -72,20 +71,14 @@ function AdminLayout() {
   const activeClass = 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400'
   const linkClass = 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'
 
-  const getPageTitle = () => {
-    if (location.pathname.endsWith('/users')) return 'Users & Merchants'
-    if (location.pathname.endsWith('/campaigns')) return 'Campaigns'
-    if (location.pathname.endsWith('/sessions')) return 'WhatsApp Sessions'
-    return 'System Overview'
-  }
 
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
-          <SidebarHeader className="flex h-16 items-center border-b border-slate-200 dark:border-slate-800 px-4">
+          <SidebarHeader className="h-16 flex flex-row items-center border-b border-slate-200 dark:border-slate-800 px-4">
             <div className="flex items-center gap-2.5 text-lg font-bold">
-              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
               <span className="tracking-tight text-slate-900 dark:text-white"><span className="text-emerald-600 dark:text-emerald-400">Super</span>Admin</span>
             </div>
           </SidebarHeader>
@@ -133,9 +126,12 @@ function AdminLayout() {
         </Sidebar>
         <main className="flex flex-1 flex-col overflow-hidden">
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-              {getPageTitle()}
-            </h1>
+            <div className="flex items-center gap-2.5">
+              <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+                Admin Portal
+              </h1>
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 !text-white hover:bg-emerald-700 hover:!text-white">

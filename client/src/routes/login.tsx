@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Megaphone, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { api, baseInstance } from '@/lib/api'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 
@@ -67,11 +67,11 @@ function LoginPage() {
           <form onSubmit={handleLogin}>
             <CardHeader className="text-center pt-6 pb-4 space-y-2">
               <div className="mx-auto w-16 h-16 p-1 bg-slate-900/90 rounded-2xl flex items-center justify-center shadow-xl shadow-emerald-500/20 border border-emerald-500/30 mb-1">
-                <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlasting Logo" className="w-14 h-14 object-contain rounded-xl" />
+                <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-14 h-14 object-contain rounded-xl" />
               </div>
               <CardTitle className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Welcome back</CardTitle>
               <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
-                Sign in to manage your WhatsBlasting campaigns
+                Sign in to manage your WhatsBlast campaigns
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 px-6 pt-2">

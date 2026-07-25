@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
+import { MasterPhone } from '../models/MasterPhone.js';
 import { initWhatsAppSession, getActiveSession } from '../services/baileysManager.js';
 import fs from 'fs';
 import path from 'path';
@@ -10,12 +11,57 @@ const SESSIONS_DIR = process.env.SESSIONS_DIR || './sessions';
 
 router.use(authenticateToken);
 
-router.get('/whatsapp-sessions', async (req: AuthRequest, res: Response) => {
-  const sessions = await WhatsAppSession.find({ user: req.user?._id }).sort({ createdAt: -1 });
-  return res.json(sessions);
-});
+function formatSession(s: any) {
+  const obj = s.toObject ? s.toObject() : s;
+  const { _id, __v, ...rest } = obj;
+  return {
+    id: _id ? _id.toString() : obj.id,
+    ...rest,
+  };
+}
 
-router.post('/whatsapp-sessions', async (req: AuthRequest, res: Response) => {
+// WhatsApp Sessions Listing
+const getSessions = async (req: AuthRequest, res: Response) => {
+  const filter: any = {};
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+
+  const { search, status, user: userId, ordering } = req.query;
+  if (search) {
+    filter.$or = [
+      { session_id: { $regex: String(search), $options: 'i' } },
+      { phone_number: { $regex: String(search), $options: 'i' } },
+    ];
+  }
+  if (status && status !== 'all') {
+    filter.status = status;
+  }
+  if (userId && userId !== 'all') {
+    filter.user = userId;
+  }
+
+  let query = WhatsAppSession.find(filter).populate('user', 'phone_number role');
+  if (ordering) {
+    const orderStr = String(ordering);
+    if (orderStr.startsWith('-')) {
+      query = query.sort({ [orderStr.substring(1)]: -1 });
+    } else {
+      query = query.sort({ [orderStr]: 1 });
+    }
+  } else {
+    query = query.sort({ createdAt: -1 });
+  }
+
+  const sessions = await query;
+  return res.json(sessions.map(formatSession));
+};
+
+router.get('/whatsapp-sessions', getSessions);
+router.get('/whatsapp-sessions/', getSessions);
+
+// Create WhatsApp Session
+const createSession = async (req: AuthRequest, res: Response) => {
   const sessionId = req.body.session_id || `session_${Date.now()}`;
   const maxMessages = req.body.max_message_count_per_day || 50;
 
@@ -31,11 +77,19 @@ router.post('/whatsapp-sessions', async (req: AuthRequest, res: Response) => {
 
   initWhatsAppSession(sessionId).catch(console.error);
 
-  return res.status(201).json(session);
-});
+  return res.status(201).json(formatSession(session));
+};
 
-router.get('/whatsapp-sessions/:id/qr', async (req: AuthRequest, res: Response) => {
-  const session = await WhatsAppSession.findOne({ session_id: req.params.id, user: req.user?._id });
+router.post('/whatsapp-sessions', createSession);
+router.post('/whatsapp-sessions/', createSession);
+
+// Get QR code for session
+const getSessionQr = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  const session = await WhatsAppSession.findOne({
+    $or: [{ session_id: paramId }, { _id: paramId.match(/^[0-9a-fA-F]{24}$/) ? paramId : null }],
+  });
+
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -47,11 +101,43 @@ router.get('/whatsapp-sessions/:id/qr', async (req: AuthRequest, res: Response) 
   return res.json({
     status: session.status,
     qr_code: session.qr_code || null,
+    qrBase64: session.qr_code || null,
   });
-});
+};
 
-router.post('/whatsapp-sessions/:id/reconnect', async (req: AuthRequest, res: Response) => {
-  const session = await WhatsAppSession.findOne({ session_id: req.params.id, user: req.user?._id });
+router.get('/whatsapp-sessions/:id/qr', getSessionQr);
+router.get('/whatsapp-sessions/:id/qr/', getSessionQr);
+
+// Patch WhatsApp Session (disconnect/update)
+const patchSession = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  const session = await WhatsAppSession.findOne({
+    $or: [{ session_id: paramId }, { _id: paramId.match(/^[0-9a-fA-F]{24}$/) ? paramId : null }],
+  });
+
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const { status, max_message_count_per_day, warmup_schedule } = req.body;
+  if (status) session.status = status;
+  if (max_message_count_per_day) session.max_message_count_per_day = max_message_count_per_day;
+  if (warmup_schedule) session.warmup_schedule = warmup_schedule;
+
+  await session.save();
+  return res.json(formatSession(session));
+};
+
+router.patch('/whatsapp-sessions/:id', patchSession);
+router.patch('/whatsapp-sessions/:id/', patchSession);
+
+// Reconnect session
+const reconnectSession = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  const session = await WhatsAppSession.findOne({
+    $or: [{ session_id: paramId }, { _id: paramId.match(/^[0-9a-fA-F]{24}$/) ? paramId : null }],
+  });
+
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -61,10 +147,18 @@ router.post('/whatsapp-sessions/:id/reconnect', async (req: AuthRequest, res: Re
 
   initWhatsAppSession(session.session_id).catch(console.error);
   return res.json({ success: true, message: 'Reconnecting session...' });
-});
+};
 
-router.post('/whatsapp-sessions/:id/logout', async (req: AuthRequest, res: Response) => {
-  const session = await WhatsAppSession.findOne({ session_id: req.params.id, user: req.user?._id });
+router.post('/whatsapp-sessions/:id/reconnect', reconnectSession);
+router.post('/whatsapp-sessions/:id/reconnect/', reconnectSession);
+
+// Logout session
+const logoutSession = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  const session = await WhatsAppSession.findOne({
+    $or: [{ session_id: paramId }, { _id: paramId.match(/^[0-9a-fA-F]{24}$/) ? paramId : null }],
+  });
+
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -86,10 +180,18 @@ router.post('/whatsapp-sessions/:id/logout', async (req: AuthRequest, res: Respo
   }
 
   return res.json({ success: true, message: 'Logged out successfully' });
-});
+};
 
-router.delete('/whatsapp-sessions/:id', async (req: AuthRequest, res: Response) => {
-  const session = await WhatsAppSession.findOne({ session_id: req.params.id, user: req.user?._id });
+router.post('/whatsapp-sessions/:id/logout', logoutSession);
+router.post('/whatsapp-sessions/:id/logout/', logoutSession);
+
+// Delete session
+const deleteSession = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  const session = await WhatsAppSession.findOne({
+    $or: [{ session_id: paramId }, { _id: paramId.match(/^[0-9a-fA-F]{24}$/) ? paramId : null }],
+  });
+
   if (session) {
     const folder = path.join(SESSIONS_DIR, session.session_id);
     if (fs.existsSync(folder)) {
@@ -98,6 +200,99 @@ router.delete('/whatsapp-sessions/:id', async (req: AuthRequest, res: Response) 
     await WhatsAppSession.deleteOne({ _id: session._id });
   }
   return res.json({ success: true });
-});
+};
+
+router.delete('/whatsapp-sessions/:id', deleteSession);
+router.delete('/whatsapp-sessions/:id/', deleteSession);
+
+// Master Phone Numbers CRUD (Admin only)
+const getMasterPhones = async (_req: AuthRequest, res: Response) => {
+  const masters = await MasterPhone.find().populate('session');
+  return res.json(
+    masters.map((m: any) => {
+      const obj = m.toObject();
+      return {
+        id: obj._id.toString(),
+        session: obj.session?._id?.toString() || obj.session,
+        session_id: obj.session?.session_id || obj.session_id,
+        phone_number: obj.session?.phone_number || obj.phone_number,
+        session_status: obj.session?.status || obj.session_status,
+        is_active: obj.is_active,
+      };
+    })
+  );
+};
+
+router.get('/master-phone-numbers', getMasterPhones);
+router.get('/master-phone-numbers/', getMasterPhones);
+
+const createMasterPhone = async (req: AuthRequest, res: Response) => {
+  const { session, is_active } = req.body;
+  if (!session) {
+    return res.status(400).json({ error: 'Session ID or ObjectId is required' });
+  }
+
+  const sessionDoc = await WhatsAppSession.findOne({
+    $or: [{ session_id: session }, { _id: session.match(/^[0-9a-fA-F]{24}$/) ? session : null }],
+  });
+
+  if (!sessionDoc) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const master = await MasterPhone.create({
+    session: sessionDoc._id,
+    session_id: sessionDoc.session_id,
+    phone_number: sessionDoc.phone_number,
+    session_status: sessionDoc.status,
+    is_active: is_active !== undefined ? Boolean(is_active) : true,
+  });
+
+  return res.status(201).json({
+    id: master._id.toString(),
+    session: sessionDoc._id.toString(),
+    session_id: sessionDoc.session_id,
+    phone_number: sessionDoc.phone_number,
+    session_status: sessionDoc.status,
+    is_active: master.is_active,
+  });
+};
+
+router.post('/master-phone-numbers', createMasterPhone);
+router.post('/master-phone-numbers/', createMasterPhone);
+
+const patchMasterPhone = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  const { is_active } = req.body;
+
+  const master = await MasterPhone.findById(paramId);
+  if (!master) {
+    return res.status(404).json({ error: 'Master phone number not found' });
+  }
+
+  if (is_active !== undefined) master.is_active = Boolean(is_active);
+  await master.save();
+
+  return res.json({
+    id: master._id.toString(),
+    session: master.session.toString(),
+    session_id: master.session_id,
+    phone_number: master.phone_number,
+    session_status: master.session_status,
+    is_active: master.is_active,
+  });
+};
+
+router.patch('/master-phone-numbers/:id', patchMasterPhone);
+router.patch('/master-phone-numbers/:id/', patchMasterPhone);
+
+const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
+  const paramId = String(req.params.id);
+  await MasterPhone.deleteOne({ _id: paramId });
+  return res.json({ success: true });
+};
+
+router.delete('/master-phone-numbers/:id', deleteMasterPhone);
+router.delete('/master-phone-numbers/:id/', deleteMasterPhone);
 
 export default router;

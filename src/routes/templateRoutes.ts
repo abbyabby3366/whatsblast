@@ -6,12 +6,24 @@ const router = Router();
 
 router.use(authenticateToken);
 
-router.get('/message-templates', async (req: AuthRequest, res: Response) => {
-  const templates = await MessageTemplate.find({ user: req.user?._id }).populate('file').sort({ createdAt: -1 });
-  return res.json(templates);
-});
+function formatTemplate(t: any) {
+  const obj = t.toObject ? t.toObject() : t;
+  const { _id, __v, ...rest } = obj;
+  return {
+    id: _id ? _id.toString() : obj.id,
+    ...rest,
+  };
+}
 
-router.post('/message-templates', async (req: AuthRequest, res: Response) => {
+const getTemplates = async (req: AuthRequest, res: Response) => {
+  const templates = await MessageTemplate.find({ user: req.user?._id }).populate('file').sort({ createdAt: -1 });
+  return res.json(templates.map(formatTemplate));
+};
+
+router.get('/message-templates', getTemplates);
+router.get('/message-templates/', getTemplates);
+
+const createTemplate = async (req: AuthRequest, res: Response) => {
   const { name, text, type, file, payload } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'Template name is required' });
@@ -26,10 +38,13 @@ router.post('/message-templates', async (req: AuthRequest, res: Response) => {
     payload: payload || {},
   });
 
-  return res.status(201).json(template);
-});
+  return res.status(201).json(formatTemplate(template));
+};
 
-router.put('/message-templates/:id', async (req: AuthRequest, res: Response) => {
+router.post('/message-templates', createTemplate);
+router.post('/message-templates/', createTemplate);
+
+const updateTemplate = async (req: AuthRequest, res: Response) => {
   const { name, text, type, file, payload } = req.body;
   const template = await MessageTemplate.findOneAndUpdate(
     { _id: req.params.id, user: req.user?._id },
@@ -41,12 +56,20 @@ router.put('/message-templates/:id', async (req: AuthRequest, res: Response) => 
     return res.status(404).json({ error: 'Template not found' });
   }
 
-  return res.json(template);
-});
+  return res.json(formatTemplate(template));
+};
 
-router.delete('/message-templates/:id', async (req: AuthRequest, res: Response) => {
+router.put('/message-templates/:id', updateTemplate);
+router.put('/message-templates/:id/', updateTemplate);
+router.patch('/message-templates/:id', updateTemplate);
+router.patch('/message-templates/:id/', updateTemplate);
+
+const deleteTemplate = async (req: AuthRequest, res: Response) => {
   await MessageTemplate.deleteOne({ _id: req.params.id, user: req.user?._id });
   return res.json({ success: true });
-});
+};
+
+router.delete('/message-templates/:id', deleteTemplate);
+router.delete('/message-templates/:id/', deleteTemplate);
 
 export default router;

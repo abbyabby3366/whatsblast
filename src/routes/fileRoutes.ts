@@ -9,12 +9,24 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(authenticateToken);
 
-router.get('/files', async (req: AuthRequest, res: Response) => {
-  const files = await FileModel.find({ user: req.user?._id }).sort({ createdAt: -1 });
-  return res.json(files);
-});
+function formatFile(f: any) {
+  const obj = f.toObject ? f.toObject() : f;
+  const { _id, __v, ...rest } = obj;
+  return {
+    id: _id ? _id.toString() : obj.id,
+    ...rest,
+  };
+}
 
-router.post('/files', upload.single('file'), async (req: AuthRequest, res: Response) => {
+const getFiles = async (req: AuthRequest, res: Response) => {
+  const files = await FileModel.find({ user: req.user?._id }).sort({ createdAt: -1 });
+  return res.json(files.map(formatFile));
+};
+
+router.get('/files', getFiles);
+router.get('/files/', getFiles);
+
+const createFile = async (req: AuthRequest, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -38,11 +50,22 @@ router.post('/files', upload.single('file'), async (req: AuthRequest, res: Respo
       caption: req.body.caption || '',
     });
 
-    return res.status(201).json(fileDoc);
+    return res.status(201).json(formatFile(fileDoc));
   } catch (err: any) {
     console.error('Error uploading file to S3:', err);
     return res.status(500).json({ error: err.message || 'Failed to upload file to S3' });
   }
-});
+};
+
+router.post('/files', upload.single('file'), createFile);
+router.post('/files/', upload.single('file'), createFile);
+
+const deleteFile = async (req: AuthRequest, res: Response) => {
+  await FileModel.deleteOne({ _id: req.params.id, user: req.user?._id });
+  return res.json({ success: true });
+};
+
+router.delete('/files/:id', deleteFile);
+router.delete('/files/:id/', deleteFile);
 
 export default router;

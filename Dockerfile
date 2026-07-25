@@ -2,6 +2,9 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
+# Install build dependencies including git
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
+
 # Copy package manifests
 COPY package.json package-lock.json* ./
 COPY client/package.json client/package-lock.json* ./client/
@@ -26,12 +29,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Install runtime utilities
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# Install runtime utilities including git
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and install production dependencies
-COPY package.json ./
-RUN npm install --only=production
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev
 
 # Copy compiled dist and client build
 COPY --from=builder /app/dist ./dist
