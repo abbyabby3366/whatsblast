@@ -1,0 +1,15 @@
+{
+  "short_name": "WhatsBlast",
+  "name": "WhatsBlasting",
+  "icons": [
+    {
+      "src": "whatsblasting-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#22c55e",
+  "background_color": "#ecfdf5"
+}

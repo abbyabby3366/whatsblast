@@ -1,0 +1,535 @@
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from '@tanstack/react-table'
+import { Plus, Trash2, Search, Loader2 } from 'lucide-react'
+import dayjs from 'dayjs'
+import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+export const Route = createFileRoute('/merchant/customers')({
+  component: CustomersPage,
+})
+
+type Customer = {
+  id: string
+  name: string
+  phone_number: string
+  created_at: string
+}
+
+type CustomerImportResult = {
+  created: number
+  updated: number
+  skipped: number
+}
+
+type CustomerResponse = {
+  count: number
+  next: string | null
+  previous: string | null
+  page_size: number
+  results: Customer[]
+}
+
+const columnHelper = createColumnHelper<Customer>()
+
+const DeleteCustomerButton = ({ id, removeCustomerMutation }: { id: string, removeCustomerMutation: any }) => {
+  const [isOpen, setIsOpen] = useState(false)
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Are you sure?</DialogTitle>
+          <DialogDescription>
+            This action cannot be undone. This will permanently delete the customer.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={() => {
+              removeCustomerMutation.mutate(id, {
+                onSuccess: () => setIsOpen(false)
+              })
+            }}
+            disabled={removeCustomerMutation.isPending}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {removeCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CustomersPage() {
+  const queryClient = useQueryClient()
+  const [globalFilter, setGlobalFilter] = useState('')
+  const [isAddOpen, setIsAddOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [pageIndex, setPageIndex] = useState(0)
+  const [pageSize, setPageSize] = useState(20)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const { data: response, isLoading } = useQuery({
+    queryKey: ['customers', pageIndex, pageSize, globalFilter],
+    queryFn: () => {
+      const searchParams = new URLSearchParams()
+      searchParams.set('page', String(pageIndex + 1))
+      searchParams.set('page_size', String(pageSize))
+
+      if (globalFilter.trim()) {
+        searchParams.set('search', globalFilter.trim())
+      }
+
+      return api.get('customers/', { searchParams }).json<CustomerResponse | Customer[]>()
+    },
+    placeholderData: (previousData) => previousData,
+  })
+
+  // Support paginated results from DRF ({ results: [] }) or flat array
+  const customers: Customer[] = useMemo(() => {
+    if (!response) return []
+    return Array.isArray(response) ? response : response.results
+  }, [response])
+  const totalCount = Array.isArray(response) ? response.length : response?.count || 0
+  const pageCount = Math.ceil(totalCount / pageSize)
+
+  useEffect(() => {
+    setPageIndex(0)
+  }, [globalFilter])
+
+  const addCustomerMutation = useMutation({
+    mutationFn: (newCustomer: { name: string; phone_number: string }) =>
+      api.post('customers/', { json: newCustomer }).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      setNewName('')
+      setNewPhone('')
+      setIsAddOpen(false)
+      toast.success('Customer added successfully!')
+    },
+    onError: () => toast.error('Failed to add customer.')
+  })
+
+  const importCustomersMutation = useMutation({
+    mutationFn: (importedCustomers: { name: string; phone_number: string }[]) =>
+      api.post('customers/import/', { json: { customers: importedCustomers } }).json<CustomerImportResult>(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+    },
+  })
+
+  const removeCustomerMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`customers/${id}/`),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      setSelectedIds((current) => current.filter((selectedId) => selectedId !== id))
+      toast.success('Customer removed')
+    },
+    onError: () => toast.error('Failed to remove customer.')
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post('customers/bulk-delete/', { json: { ids } }).json<{ deleted: number }>(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      setSelectedIds([])
+      setBulkDeleteOpen(false)
+      toast.success(`${data.deleted} customer${data.deleted === 1 ? '' : 's'} removed`)
+    },
+    onError: () => toast.error('Failed to remove selected customers.')
+  })
+
+  const handleExportTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([{ name: 'John Doe', phone_number: '60123456789' }])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Template')
+    XLSX.writeFile(wb, 'customer_template.csv', { bookType: 'csv' })
+  }
+
+  const handleExportCustomers = () => {
+    if (customers.length === 0) {
+      toast.error('No customers to export')
+      return
+    }
+    const data = customers.map(c => ({ name: c.name, phone_number: c.phone_number }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Customers')
+    XLSX.writeFile(wb, 'customers.csv', { bookType: 'csv' })
+  }
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json<{name: string, phone_number?: string, phone?: string}>(ws)
+        
+        const importedCustomers: { name: string; phone_number: string }[] = []
+        for (const row of data) {
+          const phone = row.phone_number || row.phone
+          if (row.name && phone) {
+            importedCustomers.push({ name: String(row.name), phone_number: String(phone) })
+          }
+        }
+        const result = await importCustomersMutation.mutateAsync(importedCustomers)
+        toast.success(`Import complete: ${result.created} added, ${result.updated} updated, ${result.skipped} skipped.`)
+      } catch (err) {
+        toast.error('Failed to import CSV file.')
+      }
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  const handleAdd = () => {
+    if (!newName || !newPhone) {
+      toast.error('Please fill in both name and phone.')
+      return
+    }
+    addCustomerMutation.mutate({ name: newName, phone_number: newPhone })
+  }
+
+  const visibleIds = useMemo(() => customers.map((customer) => customer.id), [customers])
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id))
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((selectedId) => selectedId !== id))
+  }
+  const toggleAllVisible = (checked: boolean) => {
+    setSelectedIds((current) => checked ? Array.from(new Set([...current, ...visibleIds])) : current.filter((id) => !visibleIds.includes(id)))
+  }
+
+  const columns = useMemo(
+    () => [
+      columnHelper.display({
+        id: 'select',
+        header: () => (
+          <input
+            type="checkbox"
+            checked={allVisibleSelected}
+            onChange={(e) => toggleAllVisible(e.target.checked)}
+            aria-label="Select all visible customers"
+          />
+        ),
+        cell: (info) => (
+          <input
+            type="checkbox"
+            checked={selectedIds.includes(info.row.original.id)}
+            onChange={(e) => toggleSelected(info.row.original.id, e.target.checked)}
+            aria-label={`Select ${info.row.original.name}`}
+          />
+        ),
+      }),
+      columnHelper.accessor('name', {
+        header: 'Name',
+        cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+      }),
+      columnHelper.accessor('phone_number', {
+        header: 'Phone Number',
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor('created_at', {
+        header: 'Date Added',
+        cell: (info) => dayjs(info.getValue()).format('MMM D, YYYY h:mm A'),
+      }),
+      columnHelper.display({
+        id: 'actions',
+        cell: (info) => (
+          <DeleteCustomerButton id={info.row.original.id} removeCustomerMutation={removeCustomerMutation} />
+        ),
+      }),
+    ],
+    [removeCustomerMutation, selectedIds, allVisibleSelected, visibleIds]
+  )
+
+  const table = useReactTable({
+    data: customers,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    pageCount,
+    state: {
+      pagination: {
+        pageIndex,
+        pageSize,
+      },
+    },
+    onPaginationChange: (updater) => {
+      if (typeof updater === 'function') {
+        const newState = updater({ pageIndex, pageSize })
+        setPageIndex(newState.pageIndex)
+        setPageSize(newState.pageSize)
+      } else {
+        setPageIndex(updater.pageIndex)
+        setPageSize(updater.pageSize)
+      }
+    },
+  })
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Customers</h2>
+          <p className="text-slate-500">Manage your contact list for WhatsApp blasting.</p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input 
+            type="file" 
+            accept=".csv, .xlsx" 
+            className="hidden" 
+            ref={fileInputRef}
+            onChange={handleImportCSV} 
+          />
+          <Button variant="outline" onClick={handleExportTemplate}>
+            Template CSV
+          </Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+            Import CSV
+          </Button>
+          <Button variant="outline" onClick={handleExportCustomers}>
+            Export CSV
+          </Button>
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete selected ({selectedIds.length})
+            </Button>
+          )}
+          
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Customer
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Add New Customer</DialogTitle>
+              <DialogDescription>
+                Add a new customer to your contact list. Ensure the phone number includes the country code.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="name" className="text-right">
+                  Name
+                </Label>
+                <Input
+                  id="name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="John Doe"
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="phone" className="text-right">
+                  Phone
+                </Label>
+                <Input
+                  id="phone"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="60123456789"
+                  className="col-span-3"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" onClick={handleAdd} disabled={addCustomerMutation.isPending} className="bg-blue-600 hover:bg-blue-700">
+                {addCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Save Contact
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <div className="relative max-w-sm w-full">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+            <Input
+              placeholder="Search customers..."
+              className="pl-9 bg-slate-50 dark:bg-slate-950 w-full"
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+            />
+          </div>
+          <div className="text-sm font-medium text-slate-500">
+            Total Records: {totalCount}
+            {selectedIds.length > 0 ? ` • Selected: ${selectedIds.length}` : ''}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-600" />
+                  </TableCell>
+                </TableRow>
+              ) : table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && 'selected'}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-slate-500">
+                    No customers found. Try adding one!
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="text-sm text-slate-500">
+            Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1} • {totalCount} total • {table.getState().pagination.pageSize} / page
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={String(table.getState().pagination.pageSize)}
+              onValueChange={(v) => {
+                setPageIndex(0)
+                table.setPageSize(Number(v))
+              }}
+            >
+              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / page</SelectItem>
+                <SelectItem value="20">20 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+                <SelectItem value="100">100 / page</SelectItem>
+              </SelectContent>
+            </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </Button>
+          </div>
+        </div>
+      </div>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete selected customers?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete {selectedIds.length} selected customer{selectedIds.length === 1 ? '' : 's'}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => bulkDeleteMutation.mutate(selectedIds)}
+              disabled={bulkDeleteMutation.isPending || selectedIds.length === 0}
+            >
+              {bulkDeleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete selected
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

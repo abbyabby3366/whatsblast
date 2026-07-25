@@ -1,0 +1,23 @@
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_BACKEND_URL: https://whatsblasting.jona.my/api/
+        SERVER_URL: https://whatsblasting.jona.my/
+    container_name: whatsblasting-frontend
+    restart: unless-stopped
+    environment:
+      VITE_BACKEND_URL: https://whatsblasting.jona.my/api/
+      SERVER_URL: https://whatsblasting.jona.my/
+      HOST: 0.0.0.0
+      PORT: "25433"
+    ports:
+      # Host Nginx should proxy / to http://127.0.0.1:25433
+      - "127.0.0.1:25433:25433"
+    networks:
+      - whatsblasting-net
+
+networks:
+  whatsblasting-net:
+    external: true

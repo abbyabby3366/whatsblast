@@ -1,0 +1,18 @@
+# Environment
+.env
+.env.local
+
+# Node modules & builds
+node_modules/
+dist/
+client/dist/
+client/node_modules/
+sessions/
+uploads/
+
+# Logs & temp
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+.DS_Store
