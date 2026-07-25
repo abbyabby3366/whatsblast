@@ -45,9 +45,47 @@ function SessionsPage() {
   const { data: sessionsResponse, isLoading } = useQuery({
     queryKey: ['whatsapp-sessions'],
     queryFn: () => api.get('whatsapp-sessions/').json<any>(),
+    refetchInterval: isQrOpen ? 2500 : 5000,
   })
 
   const sessions = Array.isArray(sessionsResponse) ? sessionsResponse : sessionsResponse?.results || []
+
+  // Periodically query QR & status while QR modal is open
+  const { data: qrQueryData } = useQuery({
+    queryKey: ['session-qr', selectedSessionId],
+    queryFn: () => api.get(`whatsapp-sessions/${selectedSessionId}/qr/`).json<any>(),
+    enabled: isQrOpen && Boolean(selectedSessionId),
+    refetchInterval: isQrOpen ? 2000 : false,
+  })
+
+  useEffect(() => {
+    if (!isQrOpen) return
+
+    // Check if qrQueryData says connected
+    if (qrQueryData) {
+      const status = (qrQueryData.status || qrQueryData.data?.status || '').toLowerCase()
+      if (status === 'connected' || status === 'authenticated') {
+        setIsQrOpen(false)
+        setQrBase64(null)
+        toast.success('WhatsApp Session Connected Successfully! 🎉')
+        queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
+        return
+      }
+      const qr = qrQueryData.qrBase64 || qrQueryData.qr_code || qrQueryData.data?.qrBase64
+      if (qr) setQrBase64(qr)
+    }
+
+    // Check if sessions list says connected
+    if (selectedSessionId) {
+      const current = sessions.find((s: any) => s.id === selectedSessionId || s.session_id === selectedSessionId)
+      if (current && (current.status || '').toLowerCase() === 'connected') {
+        setIsQrOpen(false)
+        setQrBase64(null)
+        toast.success('WhatsApp Session Connected Successfully! 🎉')
+        queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
+      }
+    }
+  }, [isQrOpen, qrQueryData, sessions, selectedSessionId, queryClient])
 
   const createSessionMutation = useMutation({
     mutationFn: () => api.post('whatsapp-sessions/').json<any>(),
@@ -64,6 +102,12 @@ function SessionsPage() {
   const fetchQrMutation = useMutation({
     mutationFn: (id: string) => api.get(`whatsapp-sessions/${id}/qr/`).json<any>(),
     onSuccess: (data) => {
+      const status = (data.status || data.data?.status || '').toLowerCase()
+      if (status === 'connected' || status === 'authenticated') {
+        setIsQrOpen(false)
+        toast.success('WhatsApp Session Connected!')
+        return
+      }
       if (data.qrBase64) {
         setQrBase64(data.qrBase64)
       } else if (data.data?.qrBase64) {
@@ -105,14 +149,23 @@ function SessionsPage() {
     setIsManageOpen(true)
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'connected': return 'bg-emerald-100 text-emerald-800'
-      case 'connecting': return 'bg-amber-100 text-amber-800'
-      case 'initializing': return 'bg-teal-100 text-teal-800'
+  const getStatusColor = (status?: string) => {
+    const s = (status || 'unknown').toLowerCase()
+    switch (s) {
+      case 'connected':
+      case 'authenticated':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800 font-semibold'
+      case 'connecting':
+      case 'starting':
+      case 'initializing':
+        return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-800 font-semibold'
+      case 'qr_ready':
+        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-800 font-semibold'
       case 'disconnected': 
-      case 'logout': return 'bg-red-100 text-red-800'
-      default: return 'bg-slate-100 text-slate-800'
+      case 'logout': 
+        return 'bg-red-100 text-red-800 border-red-300 dark:bg-red-950/60 dark:text-red-400 dark:border-red-800 font-semibold'
+      default: 
+        return 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 font-semibold'
     }
   }
 
@@ -195,21 +248,6 @@ function SessionsPage() {
                       <Copy className="w-3 h-3 text-slate-400" />
                     </button>
                   </div>
-                  <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                    <span className="font-medium">Redis Auth:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(`wa_session:${session.session_id || session.id}`)
-                        toast.success('Redis key prefix copied!')
-                      }}
-                      className="font-mono text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900 transition-colors flex items-center gap-1"
-                      title="Click to copy Redis key prefix"
-                    >
-                      wa_session:{session.session_id || session.id}
-                      <Copy className="w-3 h-3 opacity-70" />
-                    </button>
-                  </div>
                 </div>
 
                 <div className="text-xs text-slate-500">
@@ -218,7 +256,7 @@ function SessionsPage() {
                 
                 <div className="flex justify-between items-center pt-2">
                   <div className="flex space-x-2">
-                    {session.status === 'connected' ? (
+                    {(session.status || '').toLowerCase() === 'connected' ? (
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button 

@@ -98,6 +98,23 @@ router.post('/blast-campaigns/', createCampaign);
 router.post('/blast-campaigns/full-create', createCampaign);
 router.post('/blast-campaigns/full-create/', createCampaign);
 
+const getCampaignById = async (req: AuthRequest, res: Response) => {
+  const filter: any = { _id: req.params.id };
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+
+  const campaign = await BlastCampaign.findOne(filter).populate('user', 'phone_number role').populate('template');
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  return res.json(formatCampaign(campaign));
+};
+
+router.get('/blast-campaigns/:id', getCampaignById);
+router.get('/blast-campaigns/:id/', getCampaignById);
+
 const patchCampaign = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
   if (req.user?.role !== 'admin') {
@@ -109,11 +126,19 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
-  const { name, status, recipient_phones, templates } = req.body;
-  if (name) campaign.name = name;
-  if (status) campaign.status = status;
-  if (recipient_phones) campaign.recipient_phones = recipient_phones;
-  if (templates) campaign.templates = templates;
+  const { name, status, recipient_phones, contacts, templates, min_interval_seconds, max_interval_seconds, enable_warmup } = req.body;
+  if (name !== undefined) campaign.name = name;
+  if (status !== undefined) campaign.status = status;
+  if (recipient_phones !== undefined || contacts !== undefined) {
+    const list = recipient_phones || contacts || [];
+    campaign.recipient_phones = list;
+    campaign.contacts = list;
+    campaign.stats.total = list.length;
+  }
+  if (templates !== undefined) campaign.templates = templates;
+  if (min_interval_seconds !== undefined) campaign.min_interval_seconds = min_interval_seconds;
+  if (max_interval_seconds !== undefined) campaign.max_interval_seconds = max_interval_seconds;
+  if (enable_warmup !== undefined) campaign.enable_warmup = Boolean(enable_warmup);
 
   await campaign.save();
   return res.json(formatCampaign(campaign));

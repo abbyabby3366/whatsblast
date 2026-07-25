@@ -43,7 +43,7 @@ const BlastCampaignSchema = new Schema<IBlastCampaign>(
     status: { type: String, enum: Object.values(CampaignStatus), default: CampaignStatus.DRAFT },
     min_interval_seconds: { type: Number, default: 10 },
     max_interval_seconds: { type: Number, default: 15 },
-    enable_warmup: { type: Boolean, default: false },
+    enable_warmup: { type: Boolean, default: true },
     scheduled_at: { type: Date },
     started_at: { type: Date },
     completed_at: { type: Date },

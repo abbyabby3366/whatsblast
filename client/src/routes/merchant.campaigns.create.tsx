@@ -11,7 +11,13 @@ import {
   RotateCcw,
   Sparkles,
   Users,
+  FolderOpen,
+  Save,
+  Clock,
+  FileText,
+  AlertCircle,
 } from 'lucide-react'
+import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -34,6 +40,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 export const Route = createFileRoute('/merchant/campaigns/create')({
   component: CreateCampaignPage,
@@ -131,7 +144,7 @@ function CreateCampaignPage() {
   const [name, setName] = useState('')
   const [minInterval, setMinInterval] = useState(10)
   const [maxInterval, setMaxInterval] = useState(15)
-  const [enableWarmup, setEnableWarmup] = useState(false)
+  const [enableWarmup, setEnableWarmup] = useState(true)
   const [templateDrafts, setTemplateDrafts] = useState<TemplateDraft[]>([createEmptyTemplateDraft()])
   const [activeTemplateIndex, setActiveTemplateIndex] = useState(0)
   const [recipients, setRecipients] = useState<string[]>([])
@@ -142,6 +155,74 @@ function CreateCampaignPage() {
   const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false)
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
+  const [isDraftsDialogOpen, setIsDraftsDialogOpen] = useState(false)
+
+  // Fetch saved server drafts
+  const { data: serverDrafts = [], refetch: refetchDrafts } = useQuery({
+    queryKey: ['draft-campaigns'],
+    queryFn: async () => {
+      const res = await api.get('blast-campaigns/?status=DRAFT').json<any>()
+      return Array.isArray(res) ? res : res.results || []
+    },
+  })
+
+  // Save Draft Mutation
+  const saveDraftMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        name: name.trim() || `Draft (${dayjs().format('MMM D, HH:mm')})`,
+        status: 'DRAFT',
+        min_interval_seconds: minInterval,
+        max_interval_seconds: maxInterval,
+        enable_warmup: enableWarmup,
+        recipient_phones: recipients,
+        templates: templateDrafts.map(buildTemplatePayload),
+      }
+
+      if (editingCampaignId) {
+        return api.patch(`blast-campaigns/${editingCampaignId}/`, { json: payload }).json<any>()
+      } else {
+        return api.post('blast-campaigns/full-create/', { json: payload }).json<any>()
+      }
+    },
+    onSuccess: (savedCampaign: any) => {
+      localStorage.removeItem(DRAFT_STORAGE_KEY)
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
+      toast.success('Draft saved successfully!')
+
+      if (savedCampaign?.id && !editingCampaignId) {
+        navigate({
+          to: '/merchant/campaigns/create',
+          search: { edit: savedCampaign.id, step: String(step) },
+        })
+      }
+    },
+    onError: () => toast.error('Failed to save draft.'),
+  })
+
+  const handleSaveDraft = () => {
+    saveDraftMutation.mutate()
+  }
+
+  const handleLoadDraft = (draft: any) => {
+    navigate({
+      to: '/merchant/campaigns/create',
+      search: { edit: draft.id, step: '1' },
+    })
+    setIsDraftsDialogOpen(false)
+    toast.success(`Loaded draft: ${draft.name || 'Untitled Draft'}`)
+  }
+
+  const deleteDraftMutation = useMutation({
+    mutationFn: (id: string | number) => api.delete(`blast-campaigns/${id}/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
+      toast.success('Draft deleted.')
+    },
+    onError: () => toast.error('Failed to delete draft.'),
+  })
 
   // Restore draft on mount if not editing
   useEffect(() => {
@@ -185,7 +266,7 @@ function CreateCampaignPage() {
     setName('')
     setMinInterval(10)
     setMaxInterval(15)
-    setEnableWarmup(false)
+    setEnableWarmup(true)
     setTemplateDrafts([createEmptyTemplateDraft()])
     setActiveTemplateIndex(0)
     setRecipients([])
@@ -245,7 +326,7 @@ function CreateCampaignPage() {
     mutationFn: async (params: { file: File; type: string }) => {
       const formData = new FormData()
       formData.append('file_type', params.type)
-      formData.append(params.type, params.file)
+      formData.append('file', params.file)
       return api.post('files/', { body: formData }).json<any>()
     },
     onSuccess: () => toast.success('File uploaded successfully!'),
@@ -297,27 +378,29 @@ function CreateCampaignPage() {
     }
   }
 
-  // Submit mutation
-  const createCampaignMutation = useMutation({
-    mutationFn: (data: any) => api.post('blast-campaigns/full-create/', { json: data }).json(),
+  // Launch Campaign mutation (runs blast directly)
+  const launchCampaignMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      let campaignId = editingCampaignId
+      if (editingCampaignId) {
+        await api.patch(`blast-campaigns/${editingCampaignId}/`, { json: { ...payload, status: 'RUNNING' } }).json()
+      } else {
+        const created = await api.post('blast-campaigns/full-create/', { json: { ...payload, status: 'RUNNING' } }).json<any>()
+        campaignId = created.id
+      }
+      if (campaignId) {
+        await api.post(`blast-campaigns/${campaignId}/run/`).json().catch(() => null)
+      }
+      return campaignId
+    },
     onSuccess: () => {
       localStorage.removeItem(DRAFT_STORAGE_KEY)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      toast.success('Campaign created successfully!')
+      queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
+      toast.success('Campaign launched! Blast execution started.')
       navigate({ to: '/merchant/campaigns' })
     },
-    onError: () => toast.error('Failed to create campaign.'),
-  })
-
-  const updateCampaignMutation = useMutation({
-    mutationFn: (data: any) => api.patch(`blast-campaigns/${editingCampaignId}/`, { json: data }).json(),
-    onSuccess: () => {
-      localStorage.removeItem(DRAFT_STORAGE_KEY)
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      toast.success('Campaign updated successfully!')
-      navigate({ to: '/merchant/campaigns' })
-    },
-    onError: () => toast.error('Failed to update campaign.'),
+    onError: () => toast.error('Failed to launch campaign.'),
   })
 
   // Customer fetching
@@ -408,11 +491,7 @@ function CreateCampaignPage() {
       templates: templateDrafts.map(buildTemplatePayload),
     }
 
-    if (editingCampaignId) {
-      updateCampaignMutation.mutate(payload)
-    } else {
-      createCampaignMutation.mutate(payload)
-    }
+    launchCampaignMutation.mutate(payload)
   }
 
   const handleNextStep1 = () => {
@@ -466,24 +545,26 @@ function CreateCampaignPage() {
           </div>
         </div>
 
-        {!editingCampaignId && (
-          <div className="flex items-center gap-2">
-            {isDraftRestored && (
-              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                <Sparkles className="h-3.5 w-3.5" /> Auto-Saved Draft Restored
-              </span>
-            )}
+        <div className="flex flex-wrap items-center gap-2">
+          {isDraftRestored && !editingCampaignId && (
+            <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex dark:text-emerald-400">
+              <Sparkles className="h-3.5 w-3.5" /> Auto-Saved Draft
+            </span>
+          )}
+
+          {!editingCampaignId && (
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={clearDraft}
               className="text-slate-500 hover:text-slate-700"
+              title="Reset current form"
             >
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset Draft
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset Form
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 3-Step Navigation Stepper */}
@@ -550,6 +631,21 @@ function CreateCampaignPage() {
         </button>
       </div>
 
+      {/* EDITING NOTICE BANNER */}
+      {editingCampaignId && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="space-y-0.5 text-sm">
+            <p className="font-semibold text-amber-950 dark:text-amber-100">
+              Notice: Editing Queued Campaign
+            </p>
+            <p className="text-xs text-amber-800 dark:text-amber-300">
+              Edits made here will <strong>only affect unsent messages remaining in the queue</strong>. Messages that have already been sent to WhatsApp recipients cannot be edited or modified.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* STEP 1: CAMPAIGN NAME & SETTINGS */}
       {step === 1 && (
         <Card className="border-slate-200 dark:border-slate-800">
@@ -575,7 +671,7 @@ function CreateCampaignPage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="min-interval">Min Interval (seconds)</Label>
+                <Label htmlFor="min-interval">Min Interval (minutes)</Label>
                 <Input
                   id="min-interval"
                   type="number"
@@ -587,7 +683,7 @@ function CreateCampaignPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="max-interval">Max Interval (seconds)</Label>
+                <Label htmlFor="max-interval">Max Interval (minutes)</Label>
                 <Input
                   id="max-interval"
                   type="number"
@@ -708,10 +804,10 @@ function CreateCampaignPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="text">Text Only</SelectItem>
+                    <SelectItem value="buttons">Interactive Buttons</SelectItem>
                     <SelectItem value="image">Image</SelectItem>
                     <SelectItem value="video">Video</SelectItem>
                     <SelectItem value="document">Document</SelectItem>
-                    <SelectItem value="buttons">Interactive Buttons</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -819,32 +915,8 @@ function CreateCampaignPage() {
                         <div className="mt-2 flex flex-col gap-2 rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-900 dark:bg-green-900/20">
                           {['image', 'video'].includes(
                             activeTemplate.messageType === 'buttons'
-                              ? activeTemplate.buttonMediaType
-                              : activeTemplate.messageType
-                          ) &&
-                            activeTemplate.previewUrl && (
-                              <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-md bg-black/5">
-                                {(activeTemplate.messageType === 'buttons'
-                                  ? activeTemplate.buttonMediaType
-                                  : activeTemplate.messageType) === 'image' ? (
-                                  <img
-                                    src={activeTemplate.previewUrl}
-                                    alt="Preview"
-                                    className="h-full w-full object-contain"
-                                  />
-                                ) : (
-                                  <video
-                                    src={activeTemplate.previewUrl}
-                                    controls
-                                    className="h-full w-full object-contain"
-                                  />
-                                )}
-                              </div>
-                            )}
-                          <div className="flex w-full items-center justify-between">
-                            <p className="px-2 text-sm font-medium text-green-600">
-                              File uploaded successfully.
-                            </p>
+                          )}
+                          <div className="mt-2 flex justify-end">
                             <Button
                               type="button"
                               variant="ghost"
@@ -855,7 +927,7 @@ function CreateCampaignPage() {
                                 updateActiveTemplate({ fileId: '', previewUrl: null })
                               }}
                             >
-                              <Trash2 className="mr-1 h-4 w-4" /> Remove
+                              <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove Media
                             </Button>
                           </div>
                         </div>
@@ -869,9 +941,9 @@ function CreateCampaignPage() {
               <div className="space-y-2">
                 <Label>Message Template</Label>
                 <Textarea
+                  placeholder="Type your message template text here... Use {{phone}} for customer phone number."
                   value={activeTemplate.template}
                   onChange={(e) => updateActiveTemplate({ template: e.target.value })}
-                  placeholder="Hello! We have a special offer for you..."
                   className="min-h-[100px] bg-white dark:bg-slate-950"
                 />
               </div>
@@ -893,7 +965,7 @@ function CreateCampaignPage() {
                               updateActiveButton(index, { type: val, value: val === 'reply' ? '' : btn.value })
                             }
                           >
-                            <SelectTrigger className="w-[120px] bg-slate-50">
+                            <SelectTrigger className="w-[150px] bg-slate-50">
                               <SelectValue placeholder="Type" />
                             </SelectTrigger>
                             <SelectContent>
@@ -927,7 +999,7 @@ function CreateCampaignPage() {
                         </div>
 
                         {btn.type !== 'reply' && (
-                          <div className="pl-[128px]">
+                          <div className="pl-[158px]">
                             <Input
                               value={btn.value || ''}
                               placeholder={
@@ -966,13 +1038,28 @@ function CreateCampaignPage() {
             </div>
 
             {/* Step 2 Actions */}
-            <div className="flex justify-between pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <Button type="button" variant="outline" onClick={() => setStep(1)}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back: Campaign Name
               </Button>
-              <Button onClick={handleNextStep2} className="bg-emerald-600 text-white hover:bg-emerald-700">
-                Next: Select Recipients <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save as Draft
+                </Button>
+                <Button onClick={handleNextStep2} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                  Next: Select Recipients <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1085,28 +1172,45 @@ function CreateCampaignPage() {
                   </div>
                   <div>
                     <span className="text-xs text-emerald-600 dark:text-emerald-500">Interval:</span>
-                    <p className="font-medium">{minInterval}s - {maxInterval}s</p>
+                    <p className="font-medium">{minInterval} mins - {maxInterval} mins</p>
                   </div>
                 </div>
               </div>
 
               {/* Step 3 Actions */}
-              <div className="flex justify-between pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => setStep(2)}>
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back: Message Template
                 </Button>
-                <Button
-                  onClick={handleFinalSubmit}
-                  disabled={createCampaignMutation.isPending || updateCampaignMutation.isPending}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700"
-                >
-                  {createCampaignMutation.isPending || updateCampaignMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Megaphone className="mr-2 h-4 w-4" />
-                  )}
-                  {editingCampaignId ? 'Update Campaign' : 'Launch Campaign'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    disabled={saveDraftMutation.isPending}
+                  >
+                    {saveDraftMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Save as Draft
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={handleFinalSubmit}
+                    disabled={launchCampaignMutation.isPending}
+                    className="bg-emerald-600 font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700"
+                  >
+                    {launchCampaignMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Megaphone className="mr-2 h-4 w-4" />
+                    )}
+                    Launch Campaign
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

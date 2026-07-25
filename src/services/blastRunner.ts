@@ -114,9 +114,9 @@ async function processCampaigns(): Promise<void> {
         await campaign.save();
       }
 
-      // Random delay between messages
-      const minDelay = (campaign.min_interval_seconds || 10) * 1000;
-      const maxDelay = (campaign.max_interval_seconds || 15) * 1000;
+      // Random delay between messages (intervals are specified in minutes)
+      const minDelay = (campaign.min_interval_seconds || 10) * 60 * 1000;
+      const maxDelay = (campaign.max_interval_seconds || 15) * 60 * 1000;
       const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
 
       await new Promise((res) => setTimeout(res, randomDelay));
