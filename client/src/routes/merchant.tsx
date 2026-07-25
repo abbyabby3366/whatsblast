@@ -22,7 +22,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -87,53 +86,55 @@ function MerchantLayout() {
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
           <SidebarHeader className="h-16 flex items-center px-4 border-b border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2 font-bold text-lg text-primary">
-              <Megaphone className="w-6 h-6 text-blue-600" />
-              <span>WhatsBlasting</span>
+            <div className="flex items-center gap-2.5 font-bold text-lg text-emerald-600 dark:text-emerald-400">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/20">
+                <Megaphone className="w-5 h-5" />
+              </div>
+              <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlasting</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Menu</SidebarGroupLabel>
+            <SidebarGroup className="px-3 py-3">
+              <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Menu</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu>
+                <SidebarMenu className="space-y-1">
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/merchant" activeProps={{ className: 'bg-slate-100 dark:bg-slate-800 font-semibold text-blue-600' }} activeOptions={{ exact: true }}>
-                        <LayoutDashboard className="w-4 h-4 mr-2" />
-                        Dashboard
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/merchant" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} activeOptions={{ exact: true }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <LayoutDashboard className="w-4 h-4 shrink-0" />
+                        <span>Dashboard</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/merchant/customers" activeProps={{ className: 'bg-slate-100 dark:bg-slate-800 font-semibold text-blue-600' }}>
-                        <Users className="w-4 h-4 mr-2" />
-                        Customers
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/merchant/customers" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <Users className="w-4 h-4 shrink-0" />
+                        <span>Customers</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/merchant/campaigns" activeProps={{ className: 'bg-slate-100 dark:bg-slate-800 font-semibold text-blue-600' }}>
-                        <Megaphone className="w-4 h-4 mr-2" />
-                        Campaigns
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/merchant/campaigns" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <Megaphone className="w-4 h-4 shrink-0" />
+                        <span>Campaigns</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/merchant/messages" activeProps={{ className: 'bg-slate-100 dark:bg-slate-800 font-semibold text-blue-600' }}>
-                        <MessageSquare className="w-4 h-4 mr-2" />
-                        Messages
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/merchant/messages" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <MessageSquare className="w-4 h-4 shrink-0" />
+                        <span>Messages</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/merchant/whatsapp-sessions" activeProps={{ className: 'bg-slate-100 dark:bg-slate-800 font-semibold text-blue-600' }}>
-                        <Smartphone className="w-4 h-4 mr-2" />
-                        WhatsApp Sessions
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/merchant/whatsapp-sessions" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <Smartphone className="w-4 h-4 shrink-0" />
+                        <span>WhatsApp Sessions</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -172,7 +173,7 @@ function MerchantLayout() {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center p-0">
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center p-0 shadow-md shadow-emerald-600/20">
                     <span className="text-sm font-medium">M</span>
                   </Button>
                 </DropdownMenuTrigger>

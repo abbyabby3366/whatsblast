@@ -68,53 +68,55 @@ function AdminLayout() {
     return null
   }
 
-  const activeClass = 'bg-slate-800 font-semibold text-white'
-  const linkClass = 'text-slate-300 hover:text-white hover:bg-slate-800/50'
+  const activeClass = 'bg-emerald-950/60 font-semibold text-emerald-400 border-l-2 border-emerald-500'
+  const linkClass = 'text-slate-300 hover:text-white hover:bg-slate-800/60'
 
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 bg-slate-900 text-slate-100 dark:border-slate-800">
           <SidebarHeader className="flex h-16 items-center border-b border-slate-800 px-4">
-            <div className="flex items-center gap-2 text-lg font-bold">
-              <Shield className="h-6 w-6 text-blue-500" />
-              <span><span className="text-blue-500">Super</span>Admin</span>
+            <div className="flex items-center gap-2.5 text-lg font-bold">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                <Shield className="h-5 w-5" />
+              </div>
+              <span className="tracking-tight text-white"><span className="text-emerald-400">Super</span>Admin</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel className="text-slate-400">Management</SidebarGroupLabel>
+            <SidebarGroup className="px-3 py-3">
+              <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Management</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu>
+                <SidebarMenu className="space-y-1">
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/admin" activeProps={{ className: activeClass }} activeOptions={{ exact: true }} className={linkClass}>
-                        <LayoutDashboard className="mr-2 h-4 w-4" />
-                        Dashboard
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/admin" activeProps={{ className: activeClass }} activeOptions={{ exact: true }} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${linkClass}`}>
+                        <LayoutDashboard className="h-4 w-4 shrink-0" />
+                        <span>Dashboard</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/admin/users" activeProps={{ className: activeClass }} className={linkClass}>
-                        <Store className="mr-2 h-4 w-4" />
-                        Users & Merchants
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/admin/users" activeProps={{ className: activeClass }} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${linkClass}`}>
+                        <Store className="h-4 w-4 shrink-0" />
+                        <span>Users & Merchants</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/admin/campaigns" activeProps={{ className: activeClass }} className={linkClass}>
-                        <Megaphone className="mr-2 h-4 w-4" />
-                        Campaigns
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/admin/campaigns" activeProps={{ className: activeClass }} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${linkClass}`}>
+                        <Megaphone className="h-4 w-4 shrink-0" />
+                        <span>Campaigns</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link to="/admin/sessions" activeProps={{ className: activeClass }} className={linkClass}>
-                        <Smartphone className="mr-2 h-4 w-4" />
-                        WhatsApp Sessions
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/admin/sessions" activeProps={{ className: activeClass }} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${linkClass}`}>
+                        <Smartphone className="h-4 w-4 shrink-0" />
+                        <span>WhatsApp Sessions</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

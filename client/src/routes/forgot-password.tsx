@@ -59,45 +59,40 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="flex flex-col items-center text-center space-y-2">
-          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-4">
-            <Megaphone className="w-6 h-6 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight">Forgot password?</h1>
-          <p className="text-slate-500">Enter your phone number and we'll send an OTP to WhatsApp</p>
-        </div>
-
-        <Card className="border-slate-200 dark:border-slate-800 shadow-xl shadow-blue-900/5">
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <Card className="border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-900/5 backdrop-blur-sm p-2">
           <form onSubmit={handleSubmit}>
-            <CardHeader>
-              <CardTitle>Request OTP</CardTitle>
-              <CardDescription>
-                Use the phone number connected to your WhatsBlasting account
+            <CardHeader className="text-center pt-6 pb-4 space-y-2">
+              <div className="mx-auto w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-600/25 mb-1">
+                <Megaphone className="w-6 h-6 text-white" />
+              </div>
+              <CardTitle className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Forgot password?</CardTitle>
+              <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
+                Enter your WhatsApp phone number to receive a verification OTP
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Phone Number</Label>
+            <CardContent className="space-y-4 px-6 pt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="phoneNumber" className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone Number</Label>
                 <Input
                   id="phoneNumber"
                   type="text"
                   placeholder="60123456789"
                   value={phoneNumber}
                   onChange={e => setPhoneNumber(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-900"
+                  className="h-11 px-3.5 bg-slate-50/70 dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" disabled={isLoading || otpCooldown > 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+            <CardFooter className="flex flex-col gap-4 px-6 pt-3 pb-6">
+              <Button type="submit" disabled={isLoading || otpCooldown > 0} className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-md shadow-emerald-600/20 rounded-lg transition-all">
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 {otpCooldown > 0 ? `Wait ${otpCooldown}s` : 'Send OTP'}
               </Button>
-              <div className="text-sm text-center text-slate-500">
+              <div className="text-sm text-center text-slate-500 dark:text-slate-400">
                 Remember your password?{' '}
-                <Link to="/login" className="text-blue-600 hover:underline font-medium">
+                <Link to="/login" className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold">
                   Sign in
                 </Link>
               </div>

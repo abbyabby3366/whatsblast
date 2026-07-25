@@ -27,13 +27,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,
@@ -390,7 +383,7 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
     
     // Parse warmup string to array of ints
     if (warmup.trim()) {
-      const parts = warmup.split(',').map(s => parseInt(s.trim()))
+      const parts = warmup.split(',').map((s: string) => parseInt(s.trim()))
       if (parts.some(isNaN)) {
         toast.error('Warmup schedule must be a comma-separated list of numbers')
         return

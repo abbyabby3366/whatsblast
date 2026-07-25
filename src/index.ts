@@ -40,15 +40,43 @@ app.get('/health', (_req, res) => {
 });
 
 // Serve frontend static production build if present (e.g. on Render)
-const clientDistPath = path.resolve(process.cwd(), 'client/dist');
+let clientDistPath = path.resolve(process.cwd(), 'client/dist/client');
+if (!fs.existsSync(clientDistPath)) {
+  clientDistPath = path.resolve(process.cwd(), 'client/dist');
+}
+
 if (fs.existsSync(clientDistPath)) {
+  const indexPath = path.join(clientDistPath, 'index.html');
   console.log(`🌐 Serving static frontend from ${clientDistPath}`);
   app.use(express.static(clientDistPath));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();
     }
-    res.sendFile(path.join(clientDistPath, 'index.html'));
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    return res.send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h2>🚀 WhatsBlast Server is Running</h2>
+        <p>In development mode, access the React Frontend UI at: <br/><br/>
+           <a href="http://localhost:25433" style="font-size: 18px; font-weight: bold; color: #2563eb;">http://localhost:25433</a>
+        </p>
+        <p>Backend REST API Base: <code>http://localhost:3000/api</code></p>
+      </div>
+    `);
+  });
+} else {
+  app.get('/', (_req, res) => {
+    res.send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h2>🚀 WhatsBlast Server is Running</h2>
+        <p>In development mode, access the React Frontend UI at: <br/><br/>
+           <a href="http://localhost:25433" style="font-size: 18px; font-weight: bold; color: #2563eb;">http://localhost:25433</a>
+        </p>
+        <p>Backend REST API Base: <code>http://localhost:3000/api</code></p>
+      </div>
+    `);
   });
 }
 
