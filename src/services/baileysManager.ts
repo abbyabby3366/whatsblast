@@ -5,7 +5,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   Browsers,
   AuthenticationState,
-} from '@whiskeysockets/baileys';
+} from 'baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import path from 'path';

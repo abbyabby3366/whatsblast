@@ -11,10 +11,7 @@ import {
   RotateCcw,
   Sparkles,
   Users,
-  FolderOpen,
   Save,
-  Clock,
-  FileText,
   AlertCircle,
 } from 'lucide-react'
 import dayjs from 'dayjs'
@@ -40,13 +37,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 
 export const Route = createFileRoute('/merchant/campaigns/create')({
   component: CreateCampaignPage,
@@ -65,6 +55,7 @@ type TemplateDraft = {
   id?: string
   messageType: string
   template: string
+  footer?: string
   fileId: string
   buttons: ButtonDraft[]
   buttonMediaType: string
@@ -74,6 +65,7 @@ type TemplateDraft = {
 const createEmptyTemplateDraft = (): TemplateDraft => ({
   messageType: 'text',
   template: '',
+  footer: '',
   fileId: '',
   buttons: [],
   buttonMediaType: 'none',
@@ -103,30 +95,24 @@ const normalizeButtonType = (type?: string): ButtonDraft['type'] => {
 
 const buildTemplatePayload = (value: TemplateDraft) => {
   const existing = value.id ? { id: value.id } : {}
-  if (value.messageType === 'text') {
-    return { ...existing, text: value.template }
+  return {
+    ...existing,
+    text: value.template,
+    footer: value.footer || '',
+    type: value.messageType,
+    ...(value.fileId ? { file_id: value.fileId } : {}),
+    ...(value.buttonMediaType !== 'none' && value.fileId ? { button_image_id: value.fileId } : {}),
+    ...(value.buttons?.length
+      ? {
+          buttons: value.buttons.map((b) => ({
+            id: b.id,
+            displayText: b.display_text,
+            type: b.type,
+            value: b.value,
+          })),
+        }
+      : {}),
   }
-  if (['image', 'video', 'document'].includes(value.messageType)) {
-    return {
-      ...existing,
-      file_id: value.fileId,
-      text: value.template,
-    }
-  }
-  if (value.messageType === 'buttons') {
-    return {
-      ...existing,
-      text: value.template,
-      ...(value.buttonMediaType !== 'none' && value.fileId ? { button_image_id: value.fileId } : {}),
-      buttons: value.buttons.map((b) => ({
-        id: b.id,
-        displayText: b.display_text,
-        type: b.type,
-        value: b.value,
-      })),
-    }
-  }
-  return { ...existing, text: value.template }
 }
 
 function CreateCampaignPage() {
@@ -155,16 +141,6 @@ function CreateCampaignPage() {
   const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false)
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
-  const [isDraftsDialogOpen, setIsDraftsDialogOpen] = useState(false)
-
-  // Fetch saved server drafts
-  const { data: serverDrafts = [], refetch: refetchDrafts } = useQuery({
-    queryKey: ['draft-campaigns'],
-    queryFn: async () => {
-      const res = await api.get('blast-campaigns/?status=DRAFT').json<any>()
-      return Array.isArray(res) ? res : res.results || []
-    },
-  })
 
   // Save Draft Mutation
   const saveDraftMutation = useMutation({
@@ -204,25 +180,6 @@ function CreateCampaignPage() {
   const handleSaveDraft = () => {
     saveDraftMutation.mutate()
   }
-
-  const handleLoadDraft = (draft: any) => {
-    navigate({
-      to: '/merchant/campaigns/create',
-      search: { edit: draft.id, step: '1' },
-    })
-    setIsDraftsDialogOpen(false)
-    toast.success(`Loaded draft: ${draft.name || 'Untitled Draft'}`)
-  }
-
-  const deleteDraftMutation = useMutation({
-    mutationFn: (id: string | number) => api.delete(`blast-campaigns/${id}/`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
-      toast.success('Draft deleted.')
-    },
-    onError: () => toast.error('Failed to delete draft.'),
-  })
 
   // Restore draft on mount if not editing
   useEffect(() => {
@@ -305,6 +262,7 @@ function CreateCampaignPage() {
           id: t.id,
           messageType: t.type || (t.buttons?.length ? 'buttons' : t.file_id ? 'image' : 'text'),
           template: t.text || '',
+          footer: t.footer || '',
           fileId: t.file_id || t.file?.id || '',
           buttons: (t.buttons || []).map((b: any) => ({
             id: b.id || Date.now().toString(),
@@ -912,24 +870,22 @@ function CreateCampaignPage() {
                       )}
 
                       {activeTemplate.fileId && !uploadFileMutation.isPending && (
-                        <div className="mt-2 flex flex-col gap-2 rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-900 dark:bg-green-900/20">
-                          {['image', 'video'].includes(
-                            activeTemplate.messageType === 'buttons'
-                          )}
-                          <div className="mt-2 flex justify-end">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-red-500 hover:bg-red-50 hover:text-red-700"
-                              onClick={() => {
-                                if (activeTemplate.fileId) deleteFileMutation.mutate(activeTemplate.fileId)
-                                updateActiveTemplate({ fileId: '', previewUrl: null })
-                              }}
-                            >
-                              <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove Media
-                            </Button>
-                          </div>
+                        <div className="mt-2 flex items-center justify-between rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-900 dark:bg-green-900/20">
+                          <p className="px-2 text-xs font-medium text-green-700 dark:text-green-300">
+                            Media attached successfully.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-red-500 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => {
+                              if (activeTemplate.fileId) deleteFileMutation.mutate(activeTemplate.fileId)
+                              updateActiveTemplate({ fileId: '', previewUrl: null })
+                            }}
+                          >
+                            <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove Media
+                          </Button>
                         </div>
                       )}
                     </>
@@ -945,6 +901,17 @@ function CreateCampaignPage() {
                   value={activeTemplate.template}
                   onChange={(e) => updateActiveTemplate({ template: e.target.value })}
                   className="min-h-[100px] bg-white dark:bg-slate-950"
+                />
+              </div>
+
+              {/* MESSAGE FOOTER INPUT (OPTIONAL) */}
+              <div className="space-y-2">
+                <Label>Message Footer (Optional)</Label>
+                <Input
+                  placeholder="e.g. Reply STOP to unsubscribe or WhatsBlast"
+                  value={activeTemplate.footer || ''}
+                  onChange={(e) => updateActiveTemplate({ footer: e.target.value })}
+                  className="bg-white dark:bg-slate-950 text-sm"
                 />
               </div>
 

@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.750.0",
-    "@whiskeysockets/baileys": "^6.7.15",
+    "@whiskeysockets/baileys": "github:JonathanChuahE-Jay/Baileys",
+    "baileys": "github:JonathanChuahE-Jay/Baileys",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
