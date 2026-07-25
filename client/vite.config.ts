@@ -11,7 +11,13 @@ const config = defineConfig({
   plugins: [devtools(), tailwindcss(), tanstackStart(), viteReact()],
   server: {
     allowedHosts: ['jona.my', 'whatsblasting.jona.my'],
-  }
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
 
 export default config

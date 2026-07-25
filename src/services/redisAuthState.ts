@@ -29,7 +29,6 @@ export function getRedisClient(): Redis | null {
       retryStrategy: (times) => Math.min(times * 50, 2000),
     });
 
-    redisClient.on('connect', () => console.log('🔴 Connected to Redis Cloud for WhatsApp session storage'));
     redisClient.on('error', (err) => console.error('Redis Client Error:', err.message));
 
     return redisClient;

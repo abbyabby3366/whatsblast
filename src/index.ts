@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -80,6 +80,15 @@ if (fs.existsSync(clientDistPath)) {
   });
 }
 
+// Global Express Error Handler
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON body in request' });
+  }
+  console.error('Unhandled Express Error:', err);
+  return res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
 async function main() {
   await connectDB();
   await restoreAllSessions();
@@ -87,7 +96,7 @@ async function main() {
 
   app.listen(PORT, () => {
     console.log(`\n🚀 WhatsBlast Server listening on port ${PORT}`);
-    console.log(`👉 API Base: http://localhost:${PORT}/api`);
+    console.log(`👉 API Base: http://localhost:3000/api`);
   });
 }
 

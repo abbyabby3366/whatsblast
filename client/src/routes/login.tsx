@@ -89,7 +89,7 @@ function LoginPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Password</Label>
-                  <Link to="/forgot-password" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-medium">Forgot password?</Link>
+                  <Link to="/forgot-password" tabIndex={-1} className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-medium">Forgot password?</Link>
                 </div>
                 <Input 
                   id="password" 

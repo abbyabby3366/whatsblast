@@ -27,7 +27,6 @@ async function seedAdminUser(): Promise<void> {
       existing.is_staff = true;
       existing.is_active = true;
       await existing.save();
-      console.log('👑 Admin user (phone: 001) set with password: admin123');
     } else {
       await User.create({
         phone_number: adminPhone,
@@ -36,7 +35,6 @@ async function seedAdminUser(): Promise<void> {
         is_staff: true,
         is_active: true,
       });
-      console.log('👑 Admin user (phone: 001) created with password: admin123');
     }
   } catch (err) {
     console.error('Failed to seed admin user:', err);

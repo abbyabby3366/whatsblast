@@ -4,6 +4,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   AuthenticationState,
 } from '@whiskeysockets/baileys';
+import pino from 'pino';
 import QRCode from 'qrcode';
 import path from 'path';
 import fs from 'fs';
@@ -43,7 +44,6 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
       state = redisAuth.state;
       saveCreds = redisAuth.saveCreds;
       clearCreds = redisAuth.clearCreds;
-      console.log(`🔐 Using Redis auth storage for WhatsApp session ${sessionId}`);
     } catch (err) {
       console.warn(`⚠️ Failed to use Redis auth for ${sessionId}, falling back to disk storage`, err);
       const sessionFolder = path.join(SESSIONS_DIR, sessionId);
@@ -67,6 +67,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     version,
     auth: state,
     printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
   });
 
   const sessionObj: ActiveSession = { socket: sock, sessionId, clearCreds };
@@ -120,8 +121,6 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
       if (shouldReconnect) {
         console.log(`🔄 Reconnecting session ${sessionId}...`);
         setTimeout(() => initWhatsAppSession(sessionId).catch(console.error), 3000);
-      } else {
-        console.log(`❌ Session ${sessionId} logged out.`);
         if (clearCreds) {
           await clearCreds();
         } else {

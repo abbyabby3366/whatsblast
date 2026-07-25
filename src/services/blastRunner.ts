@@ -10,7 +10,6 @@ let isProcessing = false;
 
 export function startBlastRunner(intervalMs = 3000): void {
   if (runnerInterval) return;
-  console.log('🚀 Blast Campaign Runner initialized');
   runnerInterval = setInterval(processCampaigns, intervalMs);
 }
 

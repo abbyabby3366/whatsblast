@@ -40,10 +40,7 @@ function AdminDashboard() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">System Overview</h2>
-          <p className="text-slate-500">Global metrics across merchants, campaigns, and WhatsApp sessions.</p>
-        </div>
+        <p className="text-slate-500 text-sm">Global metrics across merchants, campaigns, and WhatsApp sessions.</p>
         <Button asChild>
           <Link to="/admin/users">Manage Users</Link>
         </Button>

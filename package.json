@@ -4,7 +4,7 @@
   "description": "WhatsBlast - WhatsApp Multi-Session Bulk Messaging Platform",
   "main": "dist/index.js",
   "scripts": {
-    "dev:server": "tsx watch src/index.ts",
+    "dev:server": "nodemon --exec tsx src/index.ts",
     "dev:client": "cd client && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build:client": "cd client && npm install --legacy-peer-deps && npm run build",
@@ -38,6 +38,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/ws": "^8.5.14",
     "concurrently": "^9.1.2",
+    "nodemon": "^3.1.14",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }

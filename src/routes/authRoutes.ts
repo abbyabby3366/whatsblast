@@ -15,7 +15,8 @@ router.post('/register/send-otp', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Phone number is required' });
   }
 
-  const existing = await User.findOne({ phone_number });
+  const cleanPhone = String(phone_number).trim();
+  const existing = await User.findOne({ phone_number: cleanPhone });
   if (existing) {
     return res.status(400).json({ error: 'Phone number already registered' });
   }
@@ -23,10 +24,9 @@ router.post('/register/send-otp', async (req: Request, res: Response) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-  await OTP.deleteMany({ phone_number });
-  await OTP.create({ phone_number, code, expiresAt });
+  await OTP.deleteMany({ phone_number: cleanPhone });
+  await OTP.create({ phone_number: cleanPhone, code, expiresAt });
 
-  console.log(`🔑 OTP generated for ${phone_number}: ${code}`);
   return res.json({ success: true, message: 'OTP sent successfully', debug_otp: code });
 });
 
@@ -37,17 +37,19 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Phone number and password are required' });
   }
 
+  const cleanPhone = String(phone_number).trim();
+
   if (otp) {
-    const validOtp = await OTP.findOne({ phone_number, code: otp });
+    const validOtp = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
     if (!validOtp) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
-    await OTP.deleteMany({ phone_number });
+    await OTP.deleteMany({ phone_number: cleanPhone });
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const user = await User.create({
-    phone_number,
+    phone_number: cleanPhone,
     password: hashedPassword,
     role: UserRole.MERCHANT,
   });
@@ -73,7 +75,9 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(400).json({ detail: 'Phone number and password are required' });
   }
 
-  const user = await User.findOne({ phone_number });
+  const cleanPhone = String(phone_number).trim();
+  const user = await User.findOne({ phone_number: cleanPhone });
+
   if (!user || !user.password) {
     return res.status(401).json({ detail: 'No active account found with the given credentials' });
   }

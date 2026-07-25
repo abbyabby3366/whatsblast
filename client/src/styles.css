@@ -33,8 +33,8 @@
   --card-foreground: oklch(0.141 0.005 285.823);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.55 0.16 160);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #059669;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
@@ -54,8 +54,8 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.55 0.16 160);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #059669;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: oklch(0.95 0.03 160);
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
@@ -223,13 +223,20 @@ body::after {
 }
 
 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+p a,
+.prose a {
   color: var(--lagoon-deep);
   text-decoration-color: rgba(50, 143, 151, 0.4);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 
-a:hover {
+p a:hover,
+.prose a:hover {
   color: #246f76;
 }
 
