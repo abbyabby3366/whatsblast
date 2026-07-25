@@ -32,9 +32,13 @@ ENV PORT=3000
 # Install runtime utilities including git
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
 
-# Copy package files and install production dependencies
+# Copy package manifests
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+COPY client/package.json client/package-lock.json* ./client/
+
+# Copy installed node_modules from builder stage
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/client/node_modules ./client/node_modules
 
 # Copy compiled dist and client build
 COPY --from=builder /app/dist ./dist
