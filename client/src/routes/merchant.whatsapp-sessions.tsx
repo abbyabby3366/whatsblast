@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Plus, QrCode, Trash2, Smartphone, Settings } from 'lucide-react'
+import { Loader2, Plus, QrCode, Trash2, Smartphone, Settings, Copy } from 'lucide-react'
 import dayjs from 'dayjs'
 
 import { api } from '@/lib/api'
@@ -166,7 +166,7 @@ function SessionsPage() {
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Smartphone className="w-4 h-4" /> Session
                     </CardTitle>
-                    <CardDescription className="mt-1">
+                    <CardDescription className="mt-1 font-mono text-xs">
                       {session.phone_number || 'No phone number'}
                     </CardDescription>
                   </div>
@@ -175,7 +175,40 @@ function SessionsPage() {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="pt-4 space-y-4">
+              <CardContent className="pt-4 space-y-3">
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-100 dark:border-slate-800 text-xs">
+                  <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                    <span className="font-medium">Session ID:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(session.session_id || session.id)
+                        toast.success('Session ID copied!')
+                      }}
+                      className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1"
+                      title="Click to copy Session ID"
+                    >
+                      {session.session_id || session.id}
+                      <Copy className="w-3 h-3 text-slate-400" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                    <span className="font-medium">Redis Auth:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`wa_session:${session.session_id || session.id}`)
+                        toast.success('Redis key prefix copied!')
+                      }}
+                      className="font-mono text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900 transition-colors flex items-center gap-1"
+                      title="Click to copy Redis key prefix"
+                    >
+                      wa_session:{session.session_id || session.id}
+                      <Copy className="w-3 h-3 opacity-70" />
+                    </button>
+                  </div>
+                </div>
+
                 <div className="text-xs text-slate-500">
                   Created {dayjs(session.created_at).format('MMM D, YYYY h:mm A')}
                 </div>
@@ -416,6 +449,37 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-500 font-medium">Session ID:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(session.session_id || session.id)
+                  toast.success('Session ID copied!')
+                }}
+                className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1"
+              >
+                {session.session_id || session.id}
+                <Copy className="w-3 h-3 text-slate-400" />
+              </button>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-500 font-medium">Redis Auth Key:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`wa_session:${session.session_id || session.id}`)
+                  toast.success('Redis key prefix copied!')
+                }}
+                className="font-mono text-xs bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center gap-1"
+              >
+                wa_session:{session.session_id || session.id}
+                <Copy className="w-3 h-3 opacity-70" />
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Session Settings</h3>
             

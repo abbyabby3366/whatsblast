@@ -88,16 +88,6 @@ const normalizeButtonType = (type?: string): ButtonDraft['type'] => {
   return 'reply'
 }
 
-const parseButtonParams = (params: any) => {
-  if (!params) return {}
-  if (typeof params === 'object') return params
-  try {
-    return JSON.parse(params)
-  } catch {
-    return {}
-  }
-}
-
 const buildTemplatePayload = (value: TemplateDraft) => {
   const existing = value.id ? { id: value.id } : {}
   if (value.messageType === 'text') {
@@ -343,7 +333,6 @@ function CreateCampaignPage() {
   })
 
   const currentCustomers = customersPageData?.results || []
-  const currentPagePhones = currentCustomers.map((c: any) => c.phone_number || c.phone).filter(Boolean)
 
   const fetchAllCustomerPhones = async (search = searchTerm) => {
     const phones: string[] = []
@@ -1126,4 +1115,3 @@ function CreateCampaignPage() {
     </div>
   )
 }
-                                     

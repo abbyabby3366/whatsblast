@@ -3,6 +3,7 @@ import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js'
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone } from '../models/MasterPhone.js';
 import { initWhatsAppSession, getActiveSession } from '../services/baileysManager.js';
+import { useRedisAuthState } from '../services/redisAuthState.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -166,7 +167,13 @@ const logoutSession = async (req: AuthRequest, res: Response) => {
   const active = getActiveSession(session.session_id);
   if (active) {
     try {
+      await active.clearCreds?.();
       await active.socket.logout();
+    } catch (_) {}
+  } else {
+    try {
+      const redisAuth = await useRedisAuthState(session.session_id);
+      await redisAuth.clearCreds();
     } catch (_) {}
   }
 
@@ -193,6 +200,19 @@ const deleteSession = async (req: AuthRequest, res: Response) => {
   });
 
   if (session) {
+    const active = getActiveSession(session.session_id);
+    if (active) {
+      try {
+        await active.clearCreds?.();
+        active.socket.end(undefined);
+      } catch (_) {}
+    } else {
+      try {
+        const redisAuth = await useRedisAuthState(session.session_id);
+        await redisAuth.clearCreds();
+      } catch (_) {}
+    }
+
     const folder = path.join(SESSIONS_DIR, session.session_id);
     if (fs.existsSync(folder)) {
       fs.rmSync(folder, { recursive: true, force: true });

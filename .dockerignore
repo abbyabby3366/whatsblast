@@ -1,0 +1,12 @@
+node_modules
+client/node_modules
+dist
+client/dist
+.git
+.dockerignore
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
