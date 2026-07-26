@@ -72,6 +72,11 @@ function ProfilePage() {
     })
   }
 
+  const initialParts = userProfile?.min_interval_minutes?.split('-') || []
+  const initialMin = initialParts[0] ?? '10'
+  const initialMax = initialParts[1] ?? '15'
+  const isUnchanged = minInterval === initialMin && maxInterval === initialMax
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -101,7 +106,7 @@ function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label>Phone Number</Label>
+            <Label>Login Phone Number</Label>
             <Input disabled value={userProfile?.phone_number || ''} className="bg-slate-50 text-slate-500" />
             <p className="text-xs text-slate-500">Phone number cannot be changed.</p>
           </div>
@@ -144,7 +149,7 @@ function ProfilePage() {
         <CardFooter className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-6">
           <Button 
             onClick={handleSave} 
-            disabled={updateProfileMutation.isPending}
+            disabled={isUnchanged || updateProfileMutation.isPending}
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             {updateProfileMutation.isPending ? (

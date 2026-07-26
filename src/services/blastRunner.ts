@@ -236,6 +236,26 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
           await campaign.save();
           break;
         }
+
+        // Active Sending Time Window Check
+        const startTime = sessionDoc.active_start_time || '00:00';
+        const endTime = sessionDoc.active_end_time || '23:59';
+        const currentTime = dayjs().format('HH:mm');
+
+        let isWithinActiveHours = false;
+        if (startTime <= endTime) {
+          isWithinActiveHours = currentTime >= startTime && currentTime <= endTime;
+        } else {
+          // Overnight range (e.g. 22:00 to 06:00)
+          isWithinActiveHours = currentTime >= startTime || currentTime <= endTime;
+        }
+
+        if (!isWithinActiveHours) {
+          console.log(`⏰ Session ${sessionId} is outside active sending window (${startTime} - ${endTime}). Current time: ${currentTime}. Pausing campaign "${campaign.name}".`);
+          campaign.status = CampaignStatus.PAUSED;
+          await campaign.save();
+          break;
+        }
       }
 
       const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
@@ -295,14 +315,32 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         console.log(`💬 Campaign "${campaign.name}": Sent to ${cleanPhone} (${campaign.current_index}/${campaign.contacts.length})`);
       } catch (err: any) {
         console.error(`❌ Error sending message for campaign ${campaign.name}:`, err.message || err);
+        try {
+          await Message.create({
+            session: sessionDoc?._id,
+            campaign: campaign._id,
+            direction: MessageDirection.OUTBOUND,
+            type: 'text',
+            status: MessageStatus.FAILED,
+            recipient_phone: cleanPhone,
+            to_jid: targetJid,
+            error: err.message || String(err),
+            content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
+            wa_timestamp: new Date(),
+          });
+        } catch (mErr) {
+          console.error('Failed to log failed message:', mErr);
+        }
         campaign.stats.failed += 1;
         campaign.current_index += 1;
         await campaign.save();
       }
 
-      // Random delay between contacts
-      const minDelay = (campaign.min_interval_seconds || 10) * 1000;
-      const maxDelay = (campaign.max_interval_seconds || 15) * 1000;
+      // Random delay between contacts (binded to session, inherits default 10s - 15s or campaign settings)
+      const minIntervalSec = sessionDoc?.min_interval_seconds ?? campaign.min_interval_seconds ?? 10;
+      const maxIntervalSec = sessionDoc?.max_interval_seconds ?? campaign.max_interval_seconds ?? 15;
+      const minDelay = minIntervalSec * 1000;
+      const maxDelay = maxIntervalSec * 1000;
       const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
 
       await new Promise((res) => setTimeout(res, randomDelay));

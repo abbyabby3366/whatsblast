@@ -14,7 +14,14 @@ import {
   BarChart3,
   Sparkles,
   LayoutGrid,
-  Table as TableIcon,
+  List,
+  AlertCircle,
+  RefreshCw,
+  ArrowLeft,
+  User,
+  MoreVertical,
+  CheckCheck,
+  Mic,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
@@ -56,6 +63,28 @@ function CampaignsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [selectedProgressCampaign, setSelectedProgressCampaign] = useState<any>(null)
+  const [selectedPreviewCampaign, setSelectedPreviewCampaign] = useState<any>(null)
+
+  const getCampaignTemplates = (campaign: any) => {
+    if (Array.isArray(campaign?.templates) && campaign.templates.length > 0) {
+      return campaign.templates
+    }
+    if (campaign?.template) {
+      return [campaign.template]
+    }
+    return []
+  }
+
+  // Fetch campaign execution logs when view progress modal is open
+  const { data: campaignLogsData, isLoading: isLoadingLogs, refetch: refetchLogs } = useQuery({
+    queryKey: ['campaign-logs', selectedProgressCampaign?.id],
+    queryFn: () =>
+      selectedProgressCampaign
+        ? api.get('messages/', { searchParams: { campaign_id: selectedProgressCampaign.id, page_size: '100' } }).json<any>()
+        : Promise.resolve({ count: 0, results: [] }),
+    enabled: Boolean(selectedProgressCampaign?.id),
+    refetchInterval: (selectedProgressCampaign?.status || '').toLowerCase() === 'running' ? 3000 : false,
+  })
 
   // Fetch campaigns
   const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
@@ -124,7 +153,15 @@ function CampaignsPage() {
     navigate({ to: '/merchant/campaigns/create', search: { edit: campaign.id } })
   }
 
-  const [viewMode, setViewMode] = useState<'card' | 'table'>('card')
+  const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
+    const saved = localStorage.getItem('campaigns_view_mode')
+    return saved === 'table' ? 'table' : 'card'
+  })
+
+  const handleViewModeChange = (mode: 'card' | 'table') => {
+    setViewMode(mode)
+    localStorage.setItem('campaigns_view_mode', mode)
+  }
 
   return (
     <div className="space-y-6">
@@ -143,29 +180,31 @@ function CampaignsPage() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setViewMode('card')}
-              className={`h-8 px-3 text-xs ${
+              onClick={() => handleViewModeChange('card')}
+              className={`h-8 w-8 p-0 ${
                 viewMode === 'card'
                   ? 'bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
                   : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
               }`}
+              title="Cards view"
+              aria-label="Cards view"
             >
-              <LayoutGrid className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
-              Cards
+              <LayoutGrid className="h-4 w-4 text-emerald-600" />
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setViewMode('table')}
-              className={`h-8 px-3 text-xs ${
+              onClick={() => handleViewModeChange('table')}
+              className={`h-8 w-8 p-0 ${
                 viewMode === 'table'
                   ? 'bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
                   : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
               }`}
+              title="Table view"
+              aria-label="Table view"
             >
-              <TableIcon className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
-              Table
+              <List className="h-4 w-4 text-emerald-600" />
             </Button>
           </div>
 
@@ -208,7 +247,7 @@ function CampaignsPage() {
                   <TableHead>Recipients</TableHead>
                   <TableHead>Templates</TableHead>
                   <TableHead className="w-[180px]">Progress</TableHead>
-                  <TableHead>Created Date</TableHead>
+                  <TableHead>Created / Completed Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -232,22 +271,41 @@ function CampaignsPage() {
                             cStatus === 'completed'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                               : cStatus === 'scheduled'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                               : cStatus === 'running'
-                              ? 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300'
+                              ? 'bg-teal-100 text-teal-800 border border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800'
                               : cStatus === 'paused'
-                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300'
-                              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
+                              : cStatus === 'failed'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                              : cStatus === 'cancelled'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                              : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
                           }`}
                         >
                           {cStatus.toUpperCase()}
                         </span>
                       </TableCell>
                       <TableCell className="text-sm font-medium">
-                        {total} customers
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProgressCampaign(campaign)}
+                          className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
+                          title="Click to view customer list and delivery status"
+                        >
+                          {total} customers
+                        </button>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {campaign.templates?.length || 1} template(s)
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPreviewCampaign(campaign)}
+                          className="inline-flex items-center gap-1.5 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
+                          title="Click to preview message"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          {campaign.templates?.length || (campaign.template ? 1 : 1)} template(s)
+                        </button>
                       </TableCell>
                       <TableCell>
                         {cStatus === 'draft' ? (
@@ -267,8 +325,17 @@ function CampaignsPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-slate-500">
-                        {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY h:mm A')}
+                      <TableCell className="text-xs text-slate-500 whitespace-nowrap">
+                        <div>
+                          <span className="text-slate-400">Created:</span>{' '}
+                          {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY h:mm A')}
+                        </div>
+                        {(campaign.completed_at || campaign.completedAt || (cStatus === 'completed' && campaign.updatedAt)) && (
+                          <div className="mt-0.5 font-medium text-emerald-600 dark:text-emerald-400">
+                            <span className="text-emerald-600/80 dark:text-emerald-400/80">Completed:</span>{' '}
+                            {dayjs(campaign.completed_at || campaign.completedAt || campaign.updatedAt).format('MMM D, YYYY h:mm A')}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
@@ -386,38 +453,45 @@ function CampaignsPage() {
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold
-                      ${
-                        campaign.status === 'completed'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold'
-                          : campaign.status === 'scheduled'
-                            ? 'bg-amber-100 text-amber-800'
-                            : campaign.status === 'running'
-                            ? 'bg-teal-100 text-teal-800'
-                            : campaign.status === 'paused'
-                            ? 'bg-orange-100 text-orange-800'
-                            : 'bg-slate-100 text-slate-800'
-                      }`}
-                    >
-                      {campaign.status === 'draft' && (
-                        <Clock className="mr-1 h-3 w-3" />
-                      )}
-                      {campaign.status === 'scheduled' && (
-                        <Clock className="mr-1 h-3 w-3" />
-                      )}
-                      {campaign.status === 'running' && (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      )}
-                      {campaign.status === 'completed' && (
-                        <CheckCircle2 className="mr-1 h-3 w-3" />
-                      )}
-                      {campaign.status === 'paused' && (
-                        <Pause className="mr-1 h-3 w-3" />
-                      )}
-                      {(campaign.status || 'draft').charAt(0).toUpperCase() +
-                        (campaign.status || 'draft').slice(1)}
-                    </span>
+                    {(() => {
+                      const cStatus = (campaign.status || 'draft').toLowerCase()
+                      return (
+                        <span
+                          className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            cStatus === 'completed'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold'
+                              : cStatus === 'scheduled'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                              : cStatus === 'running'
+                              ? 'bg-teal-100 text-teal-800 border border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800'
+                              : cStatus === 'paused'
+                              ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
+                              : cStatus === 'failed'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                              : cStatus === 'cancelled'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                              : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
+                          }`}
+                        >
+                          {cStatus === 'draft' && (
+                            <Clock className="mr-1 h-3 w-3" />
+                          )}
+                          {cStatus === 'scheduled' && (
+                            <Clock className="mr-1 h-3 w-3" />
+                          )}
+                          {cStatus === 'running' && (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          )}
+                          {cStatus === 'completed' && (
+                            <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                          )}
+                          {cStatus === 'paused' && (
+                            <Pause className="mr-1 h-3 w-3" />
+                          )}
+                          {cStatus.toUpperCase()}
+                        </span>
+                      )
+                    })()}
 
                     <Dialog>
                       <DialogTrigger asChild>
@@ -467,16 +541,32 @@ function CampaignsPage() {
                     <p className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
                       Recipients
                     </p>
-                    <p className="text-sm font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProgressCampaign(campaign)}
+                      className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
+                      title="Click to view customer list and delivery status"
+                    >
                       {campaign.recipient_phones?.length || 0} customers
-                    </p>
+                    </button>
                   </div>
 
                   {campaign.templates?.length ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
-                        Message Preview ({campaign.templates.length} template{campaign.templates.length === 1 ? '' : 's'})
-                      </p>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                          Message Preview ({campaign.templates.length} template{campaign.templates.length === 1 ? '' : 's'})
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950/40 cursor-pointer"
+                          onClick={() => setSelectedPreviewCampaign(campaign)}
+                        >
+                          Phone Preview
+                        </Button>
+                      </div>
                       <div className="space-y-3">
                         {campaign.templates.map((template: any, templateIndex: number) => (
                           <div key={template.id || templateIndex} className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
@@ -610,19 +700,19 @@ function CampaignsPage() {
       </div>
       )}
 
-      {/* CAMPAIGN PROGRESS MODAL */}
+      {/* CAMPAIGN PROGRESS & DETAILED BLAST REPORT MODAL */}
       <Dialog
         open={Boolean(selectedProgressCampaign)}
         onOpenChange={(open) => !open && setSelectedProgressCampaign(null)}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Activity className="h-5 w-5 text-emerald-600" />
-              Campaign Blast Progress
+              Campaign Blast Execution Report
             </DialogTitle>
             <DialogDescription>
-              Detailed real-time execution statistics for {selectedProgressCampaign?.name}
+              Detailed real-time delivery report for {selectedProgressCampaign?.name}
             </DialogDescription>
           </DialogHeader>
 
@@ -635,6 +725,51 @@ function CampaignsPage() {
             const percent = total > 0 ? Math.min(100, Math.round(((sent + failed) / total) * 100)) : 0
             const cStatus = (selectedProgressCampaign.status || 'draft').toUpperCase()
 
+            const logs: any[] = campaignLogsData?.results || []
+            const recipientPhones: string[] = selectedProgressCampaign.recipient_phones || selectedProgressCampaign.contacts?.map((c: any) => typeof c === 'string' ? c : c.phone || c.recipient_phone) || []
+
+            // Generate detailed report rows
+            const reportRows = recipientPhones.length > 0
+              ? recipientPhones.map((phone, idx) => {
+                  const cleanP = phone.replace(/[^0-9]/g, '')
+                  const matchedLog = logs.find((l) => l.recipient_phone?.replace(/[^0-9]/g, '') === cleanP || l.to_jid?.includes(cleanP))
+                  
+                  if (matchedLog) {
+                    return {
+                      phone: phone,
+                      status: matchedLog.status || 'sent',
+                      time: matchedLog.created_at || matchedLog.wa_timestamp || matchedLog.createdAt,
+                      error: matchedLog.error || null,
+                      message: matchedLog.content?.text || 'Template message sent',
+                    }
+                  }
+
+                  if (idx < (selectedProgressCampaign.current_index || 0)) {
+                    return {
+                      phone: phone,
+                      status: 'failed',
+                      time: null,
+                      error: 'Send failed during execution',
+                      message: 'Template message failed',
+                    }
+                  }
+
+                  return {
+                    phone: phone,
+                    status: 'pending',
+                    time: null,
+                    error: null,
+                    message: 'Scheduled in queue',
+                  }
+                })
+              : logs.map((l) => ({
+                  phone: l.recipient_phone || l.to_jid || 'Recipient',
+                  status: l.status || 'sent',
+                  time: l.created_at || l.wa_timestamp,
+                  error: l.error || null,
+                  message: l.content?.text || 'Message',
+                }))
+
             return (
               <div className="space-y-6 py-2">
                 {/* Header overview badge */}
@@ -646,25 +781,29 @@ function CampaignsPage() {
                     </p>
                   </div>
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      cStatus === 'COMPLETED'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                        : cStatus === 'RUNNING'
-                        ? 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 animate-pulse'
-                        : cStatus === 'PAUSED'
-                        ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300'
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                    className={`rounded-full px-3 py-1 text-xs font-semibold border ${
+                      cStatus === 'COMPLETED' || cStatus === 'completed'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold'
+                        : cStatus === 'RUNNING' || cStatus === 'running'
+                        ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800 animate-pulse'
+                        : cStatus === 'PAUSED' || cStatus === 'paused'
+                        ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
+                        : cStatus === 'SCHEDULED' || cStatus === 'scheduled'
+                        ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                        : cStatus === 'FAILED' || cStatus === 'failed'
+                        ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                        : 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
                     }`}
                   >
-                    {cStatus}
+                    {cStatus.toUpperCase()}
                   </span>
                 </div>
 
                 {/* Progress Bar */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm font-medium">
-                    <span className="text-slate-700 dark:text-slate-300">Overall Progress</span>
-                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}%</span>
+                    <span className="text-slate-700 dark:text-slate-300">Blast Progress</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}% ({sent + failed}/{total})</span>
                   </div>
                   <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                     <div
@@ -676,46 +815,96 @@ function CampaignsPage() {
 
                 {/* Metrics Breakdown */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-center dark:border-slate-800 dark:bg-slate-900">
-                    <p className="text-xs font-medium text-slate-500">Total Recipients</p>
+                  <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-3 text-center dark:border-slate-800 dark:bg-slate-900">
+                    <p className="min-h-[2.25rem] text-xs font-medium text-slate-500 flex items-center justify-center text-center leading-tight">Total Recipients</p>
                     <p className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">{total}</p>
                   </div>
 
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                    <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Sent Messages</p>
+                  <div className="flex flex-col justify-between rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                    <p className="min-h-[2.25rem] text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center justify-center text-center leading-tight">Success / Sent</p>
                     <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">{sent}</p>
                   </div>
 
-                  <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 text-center dark:border-red-900/40 dark:bg-red-950/20">
-                    <p className="text-xs font-medium text-red-700 dark:text-red-400">Failed</p>
-                    <p className="mt-1 text-xl font-bold text-red-600 dark:text-red-400">{failed}</p>
+                  <div className="flex flex-col justify-between rounded-lg border border-rose-200 bg-rose-50/50 p-3 text-center dark:border-rose-900/40 dark:bg-rose-950/20">
+                    <p className="min-h-[2.25rem] text-xs font-medium text-rose-700 dark:text-rose-400 flex items-center justify-center text-center leading-tight">Failed</p>
+                    <p className="mt-1 text-xl font-bold text-rose-600 dark:text-rose-400">{failed}</p>
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-900">
-                    <p className="text-xs font-medium text-slate-500">Pending</p>
+                  <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-900">
+                    <p className="min-h-[2.25rem] text-xs font-medium text-slate-500 flex items-center justify-center text-center leading-tight">Pending</p>
                     <p className="mt-1 text-xl font-bold text-slate-700 dark:text-slate-300">{pending}</p>
                   </div>
                 </div>
 
-                {/* Details */}
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 space-y-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
-                  <div className="flex justify-between">
-                    <span>Sending Interval:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {selectedProgressCampaign.min_interval_seconds || 10} min - {selectedProgressCampaign.max_interval_seconds || 15} min
-                    </span>
+                {/* Detailed WhatsApp Blast Report Table */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Recipient Delivery Log ({reportRows.length})
+                    </h4>
+                    {isLoadingLogs && <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />}
                   </div>
-                  <div className="flex justify-between">
-                    <span>Account Warmup Mode:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {selectedProgressCampaign.enable_warmup ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Templates Attached:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {selectedProgressCampaign.templates?.length || 1} Sequence Template(s)
-                    </span>
+
+                  <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                    <Table>
+                      <TableHeader className="bg-slate-50 dark:bg-slate-800/60 sticky top-0">
+                        <TableRow>
+                          <TableHead className="text-xs">Recipient Phone</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Time</TableHead>
+                          <TableHead className="text-xs">Message Preview</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reportRows.map((row, idx) => {
+                          const st = (row.status || 'pending').toLowerCase()
+                          const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
+                          const isFailed = st === 'failed' || st === 'error'
+
+                          return (
+                            <TableRow key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 text-xs">
+                              <TableCell className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                                {row.phone}
+                              </TableCell>
+                              <TableCell>
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                    isSuccess
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                      : isFailed
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                                      : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                  }`}
+                                >
+                                  {isSuccess && <CheckCircle2 className="h-3 w-3" />}
+                                  {isFailed && <AlertCircle className="h-3 w-3" />}
+                                  {row.status ? row.status.toUpperCase() : 'PENDING'}
+                                </span>
+                                {row.error && (
+                                  <p className="mt-0.5 text-[10px] text-rose-600 dark:text-rose-400 font-normal">
+                                    {row.error}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-slate-500 whitespace-nowrap">
+                                {row.time ? dayjs(row.time).format('MMM D, YYYY h:mm:ss A') : '-'}
+                              </TableCell>
+                              <TableCell className="text-slate-600 dark:text-slate-400 max-w-xs truncate">
+                                {row.message}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+
+                        {reportRows.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="py-6 text-center text-slate-500">
+                              No log records found for this campaign.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
 
@@ -723,17 +912,173 @@ function CampaignsPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
+                    onClick={() => {
+                      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+                      refetchLogs()
+                    }}
                   >
-                    Refresh Status
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    Refresh Report
                   </Button>
                   <Button type="button" onClick={() => setSelectedProgressCampaign(null)}>
-                    Close
+                    Close Report
                   </Button>
                 </div>
               </div>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* WHATSAPP MESSAGE PREVIEW MODAL */}
+      <Dialog
+        open={Boolean(selectedPreviewCampaign)}
+        onOpenChange={(open) => !open && setSelectedPreviewCampaign(null)}
+      >
+        <DialogContent showCloseButton={false} className="sm:max-w-md bg-transparent border-none shadow-none p-0 flex justify-center">
+          <DialogTitle className="sr-only">Message Preview</DialogTitle>
+          <DialogDescription className="sr-only">WhatsApp UI Message Preview</DialogDescription>
+          
+          {/* Phone Frame */}
+          <div className="w-[340px] h-[650px] border-[14px] border-slate-900 rounded-[3rem] overflow-hidden relative shadow-2xl flex flex-col bg-[#efeae2] dark:bg-[#0b141a]">
+            {/* Phone Notch/Dynamic Island */}
+            <div className="absolute top-0 inset-x-0 h-6 flex justify-center z-20 pointer-events-none">
+              <div className="w-32 h-6 bg-slate-900 rounded-b-2xl"></div>
+            </div>
+            
+            {/* WhatsApp Header */}
+            <div className="bg-[#008069] dark:bg-[#202c33] text-white pt-8 pb-3 px-2 flex items-center gap-2 z-10 shadow-sm shrink-0">
+              <button 
+                onClick={() => setSelectedPreviewCampaign(null)} 
+                className="flex items-center justify-center p-1 -ml-1 rounded-full hover:bg-white/20 transition-colors cursor-pointer"
+                aria-label="Back"
+              >
+                <ArrowLeft className="w-[22px] h-[22px] text-white" />
+              </button>
+              <div className="w-10 h-10 rounded-full bg-slate-300 dark:bg-slate-600 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                <User className="w-6 h-6 text-slate-500 dark:text-slate-400" />
+              </div>
+              <div className="flex flex-col flex-1 min-w-0 ml-1">
+                <span className="font-semibold text-[16px] truncate leading-tight">
+                  {selectedPreviewCampaign?.recipient_phones?.[0] || selectedPreviewCampaign?.contacts?.[0] || selectedPreviewCampaign?.name || 'Sample Contact'}
+                </span>
+                <span className="text-xs text-white/80 font-medium">online</span>
+              </div>
+              <MoreVertical className="w-5 h-5 text-white/90 shrink-0" />
+            </div>
+
+            {/* Chat Background Pattern */}
+            <div className="absolute inset-0 top-20 bottom-14 opacity-[0.06] dark:opacity-[0.03] pointer-events-none mix-blend-multiply" 
+                 style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: 'cover' }}>
+            </div>
+
+            {/* Chat Area */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 relative z-10">
+              {/* Date Badge */}
+              <div className="flex justify-center my-2">
+                <span className="bg-[#e1f3fb]/90 dark:bg-[#182229]/90 text-[#54656f] dark:text-[#8696a0] text-xs px-3 py-1.5 rounded-lg shadow-sm font-medium uppercase tracking-wide text-[10px]">
+                  {selectedPreviewCampaign?.created_at || selectedPreviewCampaign?.createdAt 
+                    ? dayjs(selectedPreviewCampaign.created_at || selectedPreviewCampaign.createdAt).format('MMMM D, YYYY') 
+                    : 'Today'}
+                </span>
+              </div>
+
+              {/* Message Bubbles for each template */}
+              {selectedPreviewCampaign && (() => {
+                const templates = getCampaignTemplates(selectedPreviewCampaign)
+                const displayTemplates = templates.length > 0 ? templates : [{ text: 'No template content' }]
+
+                return displayTemplates.map((template: any, idx: number) => {
+                  const fileObj = template.file || {}
+                  const buttonImgObj = template.button_image || {}
+                  const mediaUrl = fileObj.file_url || fileObj.url || fileObj.image || fileObj.file || buttonImgObj.file_url || buttonImgObj.url || buttonImgObj.image || buttonImgObj.file || template.file_url || template.button_image_url
+                  const fileType = fileObj.file_type || template.type || 'text'
+                  const hasMedia = Boolean(mediaUrl || fileObj.file_type || buttonImgObj.file_url)
+
+                  return (
+                    <div key={idx} className="space-y-1">
+                      {displayTemplates.length > 1 && (
+                        <div className="text-[10px] font-semibold text-slate-500 text-right pr-1">
+                          Template {idx + 1}
+                        </div>
+                      )}
+                      <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2 max-w-[85%] self-end relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">
+                        {hasMedia && (
+                          <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 flex flex-col">
+                            {buttonImgObj && (buttonImgObj.file_url || buttonImgObj.image || buttonImgObj.file || buttonImgObj.url) && (
+                              <img
+                                src={buttonImgObj.file_url || buttonImgObj.image || buttonImgObj.file || buttonImgObj.url}
+                                alt="Button media"
+                                className="w-full h-auto max-h-64 object-cover"
+                              />
+                            )}
+                            {fileType === 'image' && mediaUrl && (
+                              <img src={mediaUrl} alt="Media" className="w-full h-auto max-h-64 object-cover" />
+                            )}
+                            {fileType === 'video' && mediaUrl && (
+                              <video src={mediaUrl} controls className="w-full h-auto max-h-64 bg-black" />
+                            )}
+                            {fileType === 'audio' && mediaUrl && (
+                              <audio src={mediaUrl} controls className="w-full max-w-full h-10 mt-1 mb-1" />
+                            )}
+                            {fileType === 'document' && (
+                              <div className="flex items-center gap-2 p-3 bg-black/5 dark:bg-white/5">
+                                <div className="w-10 h-10 rounded bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-xs shadow-sm">FILE</div>
+                                <span className="text-sm truncate font-medium flex-1">{fileObj.file_name || 'Document Attachment'}</span>
+                              </div>
+                            )}
+                            {fileType === 'sticker' && mediaUrl && (
+                              <img src={mediaUrl} alt="Sticker" className="w-24 h-24 object-contain bg-transparent m-2" />
+                            )}
+                          </div>
+                        )}
+                        
+                        <div className="mb-3">
+                          {template.text || template.template || `[${fileType} message]`}
+                        </div>
+
+                        {template.buttons?.length ? (
+                          <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
+                            {template.buttons.map((button: any, bIdx: number) => (
+                              <div
+                                key={button.id || bIdx}
+                                className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-sm dark:bg-[#111b21]/50 dark:text-[#53bdeb]"
+                              >
+                                {button.displayText || button.display_text || button.value || 'Button'}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        
+                        {/* Meta row: Time and Ticks */}
+                        <div className="flex justify-end items-center gap-1 float-right mt-[-10px] ml-2">
+                          <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
+                            12:00
+                          </span>
+                          <CheckCheck className="w-[15px] h-[15px] text-[#53bdeb]" />
+                        </div>
+                        
+                        {/* Bubble Tail SVG */}
+                        <svg viewBox="0 0 8 13" className="absolute top-0 -right-2 w-2 h-3 text-[#d9fdd3] dark:text-[#005c4b] fill-current">
+                          <path d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z"></path>
+                        </svg>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+
+            {/* Input Footer */}
+            <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-2 py-2.5 flex items-center gap-2 z-10 shrink-0 pb-6 sm:pb-3 border-t border-black/5 dark:border-white/5">
+              <div className="flex-1 bg-white dark:bg-[#2a3942] h-10 rounded-full flex items-center px-4 shadow-sm border border-transparent dark:border-white/5">
+                <span className="text-[#8696a0] text-[15px]">Message</span>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center shrink-0 shadow-sm text-white">
+                <Mic className="w-5 h-5 fill-current" />
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

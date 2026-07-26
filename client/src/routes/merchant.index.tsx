@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { Users, Megaphone, CheckCircle2, Clock, Loader2 } from 'lucide-react'
+import { Users, Megaphone, CheckCircle2, Clock, Loader2, ChevronRight } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -44,8 +44,8 @@ function MerchantDashboard() {
 
   const totalCustomers = customers.length
   const totalCampaigns = campaigns.length
-  const completedCampaigns = campaigns.filter((c: any) => c.status === 'completed').length
-  const scheduledCampaigns = campaigns.filter((c: any) => c.status === 'scheduled' || c.status === 'running').length
+  const completedCampaigns = campaigns.filter((c: any) => (c.status || '').toLowerCase() === 'completed').length
+  const scheduledCampaigns = campaigns.filter((c: any) => ['scheduled', 'running'].includes((c.status || '').toLowerCase())).length
 
   const chartData = useMemo(() => {
     // Generate simple chart data based on loaded items
@@ -90,7 +90,16 @@ function MerchantDashboard() {
         <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-            <Users className="h-4 w-4 text-emerald-600" />
+            <div className="flex items-center gap-1">
+              <Users className="h-4 w-4 text-emerald-600" />
+              <Link 
+                to="/merchant/customers" 
+                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Go to Customers"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCustomers}</div>
@@ -100,7 +109,16 @@ function MerchantDashboard() {
         <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Campaigns</CardTitle>
-            <Megaphone className="h-4 w-4 text-emerald-600" />
+            <div className="flex items-center gap-1">
+              <Megaphone className="h-4 w-4 text-emerald-600" />
+              <Link 
+                to="/merchant/campaigns" 
+                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Go to Campaigns"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCampaigns}</div>
@@ -109,8 +127,17 @@ function MerchantDashboard() {
         </Card>
         <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed Blasts</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-teal-600" />
+            <CardTitle className="text-sm font-medium">Completed Campaigns</CardTitle>
+            <div className="flex items-center gap-1">
+              <CheckCircle2 className="h-4 w-4 text-teal-600" />
+              <Link 
+                to="/merchant/campaigns" 
+                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Go to Campaigns"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{completedCampaigns}</div>
@@ -119,8 +146,17 @@ function MerchantDashboard() {
         </Card>
         <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Scheduled / Running</CardTitle>
-            <Clock className="h-4 w-4 text-amber-500" />
+            <CardTitle className="text-sm font-medium">Scheduled / Running Campaigns</CardTitle>
+            <div className="flex items-center gap-1">
+              <Clock className="h-4 w-4 text-amber-500" />
+              <Link 
+                to="/merchant/campaigns" 
+                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Go to Campaigns"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{scheduledCampaigns}</div>
@@ -168,13 +204,20 @@ function MerchantDashboard() {
                     </p>
                   </div>
                   <div className="ml-auto font-medium">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
-                      ${campaign.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 
-                        campaign.status === 'scheduled' ? 'bg-amber-100 text-amber-800' : 
-                        campaign.status === 'running' ? 'bg-teal-100 text-teal-800' :
-                        'bg-slate-100 text-slate-800'}`}>
-                      {campaign.status || 'draft'}
-                    </span>
+                    {(() => {
+                      const cStatus = (campaign.status || 'draft').toLowerCase()
+                      return (
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border
+                          ${cStatus === 'completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold' : 
+                            cStatus === 'scheduled' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800' : 
+                            cStatus === 'running' ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800' :
+                            cStatus === 'paused' ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800' :
+                            cStatus === 'failed' ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800' :
+                            'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'}`}>
+                          {cStatus.toUpperCase()}
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               ))}

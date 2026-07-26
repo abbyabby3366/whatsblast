@@ -6,7 +6,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Search, Loader2, User, MoreVertical, CheckCheck, Mic, ArrowLeft, Filter } from 'lucide-react'
+import { Search, Loader2, User, MoreVertical, CheckCheck, Mic, ArrowLeft, Filter, X } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 
@@ -127,21 +127,37 @@ function MessagesPage() {
 
   const columns = useMemo(
     () => [
+      columnHelper.accessor('campaign_name' as any, {
+        header: 'Campaign Name',
+        cell: (info) => {
+          const cName = info.getValue() || info.row.original.campaign?.name || info.row.original.campaign_name || (info.row.original.campaign ? 'Campaign Blast' : 'Testing')
+          const isTesting = cName.toLowerCase().includes('testing') || cName.toLowerCase().includes('test') || (!info.row.original.campaign && !info.row.original.campaign_name)
+          return (
+            <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ${
+              isTesting 
+                ? 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800' 
+                : 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800'
+            }`}>
+              {cName}
+            </span>
+          )
+        },
+      }),
       columnHelper.accessor('sender_phone', {
         header: 'Sent From',
-        cell: (info) => <span className="font-medium text-slate-700">{info.row.original.session_phone || info.getValue() || info.row.original.from_jid || 'Unknown'}</span>,
+        cell: (info) => <span className="font-medium text-slate-700 dark:text-slate-200">{info.row.original.session_phone || info.getValue() || info.row.original.from_jid || 'System'}</span>,
       }),
       columnHelper.accessor('recipient_phone', {
         header: 'Sent To',
-        cell: (info) => <span className="font-medium text-emerald-600">{info.getValue() || info.row.original.to_jid || 'Unknown'}</span>,
+        cell: (info) => <span className="font-medium text-emerald-600 dark:text-emerald-400">{info.getValue() || info.row.original.to_jid || 'Unknown'}</span>,
       }),
       columnHelper.accessor('template.text', {
         header: 'Message',
         cell: (info) => {
-          const text = info.getValue()
-          const type = info.row.original.message_type
+          const text = info.getValue() || info.row.original.content?.text || info.row.original.text
+          const type = info.row.original.message_type || info.row.original.type || 'text'
           if (text) {
-            return <span className="line-clamp-2 text-sm text-slate-600 max-w-xs">{text}</span>
+            return <span className="line-clamp-2 text-sm text-slate-600 dark:text-slate-300 max-w-xs">{text}</span>
           }
           return <span className="text-slate-400 italic text-sm">[{type} message]</span>
         },
@@ -150,13 +166,17 @@ function MessagesPage() {
         header: 'Status',
         cell: (info) => {
           const status = (info.getValue() || 'UNKNOWN').toUpperCase()
-          let colorClass = "bg-slate-100 text-slate-800"
-          if (status === 'SENT' || status === 'DELIVERED' || status === 'READ') colorClass = "bg-green-100 text-green-800"
-          else if (status === 'FAILED' || status === 'ERROR') colorClass = "bg-red-100 text-red-800"
-          else if (status === 'PENDING' || status === 'QUEUED' || status === 'SENDING') colorClass = "bg-yellow-100 text-yellow-800"
+          let colorClass = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
+          if (status === 'SENT' || status === 'DELIVERED' || status === 'READ') {
+            colorClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 font-semibold"
+          } else if (status === 'FAILED' || status === 'ERROR') {
+            colorClass = "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-semibold"
+          } else if (status === 'PENDING' || status === 'QUEUED' || status === 'SENDING') {
+            colorClass = "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-semibold"
+          }
           
           return (
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${colorClass}`}>
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs ${colorClass}`}>
               {status}
             </span>
           )
@@ -165,7 +185,7 @@ function MessagesPage() {
       columnHelper.accessor('scheduled_datetime', {
         header: 'Scheduled Date Time',
         cell: (info) => {
-          const val = info.getValue()
+          const val = info.getValue() || info.row.original.created_at || info.row.original.createdAt
           if (!val) return <span className="text-slate-400 italic">Immediate</span>
           return dayjs(val).format('MMM D, YYYY h:mm:ss A')
         },
@@ -258,6 +278,23 @@ function MessagesPage() {
                 <SelectItem value="FAILED">Failed</SelectItem>
               </SelectContent>
             </Select>
+
+            {(Boolean(globalFilter) || statusFilter !== 'ALL' || Boolean(startDate) || Boolean(endDate)) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setGlobalFilter('')
+                  setStatusFilter('ALL')
+                  setStartDate('')
+                  setEndDate('')
+                }}
+                className="h-10 border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300 shrink-0 font-medium"
+              >
+                <X className="mr-1.5 h-4 w-4 text-rose-500" />
+                Clear Filters
+              </Button>
+            )}
           </div>
         </div>
         

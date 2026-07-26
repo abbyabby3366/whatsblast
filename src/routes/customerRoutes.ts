@@ -15,14 +15,26 @@ function formatCustomer(c: any) {
   };
 }
 
+const getCustomerLabels = async (req: AuthRequest, res: Response) => {
+  const labels = await Customer.distinct('label', { merchant: req.user?._id, label: { $nin: [null, ''] } });
+  return res.json(labels);
+};
+
+router.get('/customers/labels', getCustomerLabels);
+
 const getCustomers = async (req: AuthRequest, res: Response) => {
   const filter: any = { merchant: req.user?._id };
-  const { search } = req.query;
+  const { search, label } = req.query;
+
+  if (label && String(label).trim() && label !== 'all') {
+    filter.label = String(label).trim();
+  }
 
   if (search) {
     filter.$or = [
       { name: { $regex: String(search), $options: 'i' } },
       { phone_number: { $regex: String(search), $options: 'i' } },
+      { label: { $regex: String(search), $options: 'i' } },
       { notes: { $regex: String(search), $options: 'i' } },
     ];
   }
@@ -34,7 +46,7 @@ const getCustomers = async (req: AuthRequest, res: Response) => {
 router.get('/customers', getCustomers);
 
 const createCustomer = async (req: AuthRequest, res: Response) => {
-  const { phone_number, name, notes, custom_data } = req.body;
+  const { phone_number, name, label, notes, custom_data } = req.body;
   if (!phone_number) {
     return res.status(400).json({ error: 'phone_number is required' });
   }
@@ -42,7 +54,7 @@ const createCustomer = async (req: AuthRequest, res: Response) => {
   const cleanPhone = phone_number.replace(/[^0-9]/g, '');
   const customer = await Customer.findOneAndUpdate(
     { merchant: req.user?._id, phone_number: cleanPhone },
-    { name, notes, custom_data },
+    { name, label, notes, custom_data },
     { upsert: true, new: true }
   );
 
@@ -57,15 +69,49 @@ const importCustomers = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'customers array is required' });
   }
 
-  const operations = customers
-    .filter((c) => c.phone_number)
-    .map((c) => ({
+  const validCustomers = customers.filter((c) => c.phone_number);
+  const phones = validCustomers.map((c) => String(c.phone_number).replace(/[^0-9]/g, '')).filter(Boolean);
+
+  const existingCustomers = await Customer.find({ merchant: req.user?._id, phone_number: { $in: phones } });
+  const existingMap = new Map(existingCustomers.map((c) => [c.phone_number, c]));
+
+  const operations = [];
+
+  for (const c of validCustomers) {
+    const cleanPhone = String(c.phone_number).replace(/[^0-9]/g, '');
+    if (!cleanPhone) continue;
+
+    const existing = existingMap.get(cleanPhone);
+    let finalLabel = c.label ? String(c.label).trim() : '';
+
+    if (existing && existing.label) {
+      const existingLabels = existing.label.split(',').map((s) => s.trim()).filter(Boolean);
+      const newLabels = finalLabel ? finalLabel.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      finalLabel = Array.from(new Set([...existingLabels, ...newLabels])).join(', ');
+    }
+
+    const updateFields: any = {
+      label: finalLabel,
+    };
+    if (c.name) updateFields.name = c.name;
+    if (c.notes !== undefined) updateFields.notes = c.notes;
+    if (c.custom_data) updateFields.custom_data = c.custom_data;
+
+    operations.push({
       updateOne: {
-        filter: { merchant: req.user?._id, phone_number: String(c.phone_number).replace(/[^0-9]/g, '') },
-        update: { $set: { name: c.name || '', notes: c.notes || '', custom_data: c.custom_data || {} } },
+        filter: { merchant: req.user?._id, phone_number: cleanPhone },
+        update: {
+          $set: updateFields,
+          $setOnInsert: {
+            name: c.name || '',
+            notes: c.notes || '',
+            custom_data: c.custom_data || {},
+          },
+        },
         upsert: true,
       },
-    }));
+    });
+  }
 
   if (operations.length > 0) {
     await Customer.bulkWrite(operations);

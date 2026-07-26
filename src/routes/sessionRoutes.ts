@@ -64,6 +64,10 @@ router.get('/whatsapp-sessions', getSessions);
 const createSession = async (req: AuthRequest, res: Response) => {
   const sessionId = req.body.session_id || `session_${Date.now()}`;
   const maxMessages = req.body.max_message_count_per_day || 50;
+  const minInterval = req.body.min_interval_seconds !== undefined ? Number(req.body.min_interval_seconds) : 10;
+  const maxInterval = req.body.max_interval_seconds !== undefined ? Number(req.body.max_interval_seconds) : 15;
+  const activeStart = req.body.active_start_time || '00:00';
+  const activeEnd = req.body.active_end_time || '23:59';
 
   let session = await WhatsAppSession.findOne({ session_id: sessionId });
   if (!session) {
@@ -71,6 +75,10 @@ const createSession = async (req: AuthRequest, res: Response) => {
       user: req.user?._id,
       session_id: sessionId,
       max_message_count_per_day: maxMessages,
+      min_interval_seconds: minInterval,
+      max_interval_seconds: maxInterval,
+      active_start_time: activeStart,
+      active_end_time: activeEnd,
       status: SessionStatus.STARTING,
     });
   }
@@ -121,10 +129,23 @@ const patchSession = async (req: AuthRequest, res: Response) => {
     return res.status(403).json({ error: 'Unauthorized to modify this session' });
   }
 
-  const { status, max_message_count_per_day, warmup_schedule, user: userId } = req.body;
+  const {
+    status,
+    max_message_count_per_day,
+    warmup_schedule,
+    min_interval_seconds,
+    max_interval_seconds,
+    active_start_time,
+    active_end_time,
+    user: userId,
+  } = req.body;
   if (status) session.status = status;
   if (max_message_count_per_day !== undefined) session.max_message_count_per_day = max_message_count_per_day;
   if (warmup_schedule !== undefined) session.warmup_schedule = warmup_schedule;
+  if (min_interval_seconds !== undefined) session.min_interval_seconds = Number(min_interval_seconds);
+  if (max_interval_seconds !== undefined) session.max_interval_seconds = Number(max_interval_seconds);
+  if (active_start_time !== undefined) session.active_start_time = String(active_start_time);
+  if (active_end_time !== undefined) session.active_end_time = String(active_end_time);
   if (userId && req.user?.role === 'admin') session.user = userId;
 
   await session.save();

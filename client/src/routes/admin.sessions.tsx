@@ -51,6 +51,10 @@ type Session = {
   user?: string | User
   warmup_schedule?: number[]
   max_message_count_per_day?: number
+  min_interval_seconds?: number
+  max_interval_seconds?: number
+  active_start_time?: string
+  active_end_time?: string
   created_at?: string
 }
 type MasterPhone = {
@@ -673,6 +677,10 @@ function ManageAdminSessionDialog({
   const [selectedUser, setSelectedUser] = useState(ownerId(session.user))
   const [maxMessages, setMaxMessages] = useState<number>(session.max_message_count_per_day ?? 50)
   const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
+  const [minInterval, setMinInterval] = useState<number>(session.min_interval_seconds ?? 10)
+  const [maxInterval, setMaxInterval] = useState<number>(session.max_interval_seconds ?? 15)
+  const [activeStartTime, setActiveStartTime] = useState<string>(session.active_start_time || '00:00')
+  const [activeEndTime, setActiveEndTime] = useState<string>(session.active_end_time || '23:59')
   const [newAgentPhone, setNewAgentPhone] = useState('')
   const [testPhone, setTestPhone] = useState('')
   const [testText, setTestText] = useState('Hello! This is a test message sent from WhatsBlast session.')
@@ -683,6 +691,10 @@ function ManageAdminSessionDialog({
       setSelectedUser(ownerId(session.user))
       setMaxMessages(session.max_message_count_per_day ?? 50)
       setWarmup(session.warmup_schedule?.join(', ') || '')
+      setMinInterval(session.min_interval_seconds ?? 10)
+      setMaxInterval(session.max_interval_seconds ?? 15)
+      setActiveStartTime(session.active_start_time || '00:00')
+      setActiveEndTime(session.active_end_time || '23:59')
       setNewAgentPhone('')
       setTestPhone('')
       setTestText('Hello! This is a test message sent from WhatsBlast session.')
@@ -733,6 +745,10 @@ function ManageAdminSessionDialog({
       patchData.user = selectedUser
     }
     patchData.max_message_count_per_day = Number(maxMessages) || 50
+    patchData.min_interval_seconds = Number(minInterval) || 10
+    patchData.max_interval_seconds = Number(maxInterval) || 15
+    patchData.active_start_time = activeStartTime || '00:00'
+    patchData.active_end_time = activeEndTime || '23:59'
 
     if (warmup.trim()) {
       const parts = warmup.split(',').map((s) => parseInt(s.trim()))
@@ -872,6 +888,48 @@ function ManageAdminSessionDialog({
                     value={warmup}
                     onChange={(e) => setWarmup(e.target.value)}
                     placeholder="e.g. 5, 10, 15, 20, 30"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Min Interval (seconds)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={minInterval}
+                    onChange={(e) => setMinInterval(parseInt(e.target.value, 10) || 1)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Max Interval (seconds)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={maxInterval}
+                    onChange={(e) => setMaxInterval(parseInt(e.target.value, 10) || 1)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Active Window Start</Label>
+                  <Input
+                    type="time"
+                    value={activeStartTime}
+                    onChange={(e) => setActiveStartTime(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Active Window End</Label>
+                  <Input
+                    type="time"
+                    value={activeEndTime}
+                    onChange={(e) => setActiveEndTime(e.target.value)}
                   />
                 </div>
               </div>

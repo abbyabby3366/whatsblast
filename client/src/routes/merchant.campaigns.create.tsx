@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,9 +13,14 @@ import {
   Users,
   Save,
   AlertCircle,
+  FileSpreadsheet,
+  Download,
+  Info,
+  Upload,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { api } from '@/lib/api'
@@ -37,6 +42,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 export const Route = createFileRoute('/merchant/campaigns/create')({
   component: CreateCampaignPage,
@@ -141,6 +154,88 @@ function CreateCampaignPage() {
   const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false)
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
+
+  // CSV Import State
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
+  const [saveToContacts, setSaveToContacts] = useState(true)
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [isImportingCsv, setIsImportingCsv] = useState(false)
+  const csvFileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleDownloadCsvTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([{ name: 'John Doe', phone_number: '60123456789', label: 'VIP' }])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Template')
+    XLSX.writeFile(wb, 'campaign_recipients_template.csv', { bookType: 'csv' })
+  }
+
+  const handleProcessCsvImport = async () => {
+    if (!csvFile) {
+      toast.error('Please select a CSV file first.')
+      return
+    }
+
+    setIsImportingCsv(true)
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json<any>(ws)
+
+        const importedContacts: { name: string; phone_number: string; label?: string }[] = []
+        const newPhones: string[] = []
+
+        for (const row of data) {
+          const phoneVal = row.phone_number || row.phone || row['Phone Number'] || row['Phone'] || row['phone number']
+          const nameVal = row.name || row.Name || row['Full Name'] || ''
+          const labelVal = row.label || row.Label || row['TAG'] || row['tag'] || ''
+
+          if (phoneVal) {
+            const cleanPhone = String(phoneVal).replace(/[^0-9]/g, '')
+            if (cleanPhone) {
+              newPhones.push(cleanPhone)
+              importedContacts.push({
+                name: String(nameVal),
+                phone_number: cleanPhone,
+                label: labelVal ? String(labelVal) : '',
+              })
+            }
+          }
+        }
+
+        if (newPhones.length === 0) {
+          toast.error('No valid phone numbers found in the CSV file.')
+          setIsImportingCsv(false)
+          return
+        }
+
+        // Add phone numbers to campaign recipients
+        setRecipients((prev) => Array.from(new Set([...prev, ...newPhones])))
+
+        // If "Add these customers to contacts" option is selected
+        if (saveToContacts && importedContacts.length > 0) {
+          await api.post('customers/import/', { json: { customers: importedContacts } }).json()
+          queryClient.invalidateQueries({ queryKey: ['customers'] })
+          queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
+          toast.success(`Imported ${newPhones.length} recipient(s) & saved to contacts!`)
+        } else {
+          toast.success(`Imported ${newPhones.length} recipient(s) for this campaign.`)
+        }
+
+        setIsCsvModalOpen(false)
+        setCsvFile(null)
+      } catch (err) {
+        console.error(err)
+        toast.error('Failed to parse or import CSV file.')
+      } finally {
+        setIsImportingCsv(false)
+      }
+    }
+    reader.readAsBinaryString(csvFile)
+  }
 
   // Save Draft Mutation
   const saveDraftMutation = useMutation({
@@ -1063,6 +1158,16 @@ function CreateCampaignPage() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    onClick={() => setIsCsvModalOpen(true)}
+                  >
+                    <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
+                    Import CSV
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     disabled={isSelectingAllCustomers}
                     onClick={handleSelectAllMatching}
                   >
@@ -1103,9 +1208,16 @@ function CreateCampaignPage() {
                           }`}
                         >
                           <div>
-                            <p className="font-medium text-slate-900 dark:text-slate-100">
-                              {customer.name || 'Unnamed Contact'}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-slate-900 dark:text-slate-100">
+                                {customer.name || 'Unnamed Contact'}
+                              </p>
+                              {customer.label && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80">
+                                  {customer.label}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-slate-500">{phone}</p>
                           </div>
                           <input
@@ -1183,6 +1295,103 @@ function CreateCampaignPage() {
           </Card>
         </div>
       )}
+
+      {/* CSV Import Modal Dialog */}
+      <Dialog open={isCsvModalOpen} onOpenChange={setIsCsvModalOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+              <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+              Import Recipients via CSV
+            </DialogTitle>
+            <DialogDescription>
+              Upload a CSV or Excel file to directly add recipient phone numbers to this campaign.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* File Upload Area */}
+            <div
+              className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-lg p-5 text-center hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+              onClick={() => csvFileInputRef.current?.click()}
+            >
+              <input
+                type="file"
+                accept=".csv, .xlsx"
+                className="hidden"
+                ref={csvFileInputRef}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) setCsvFile(file)
+                }}
+              />
+              <Upload className="mx-auto h-8 w-8 text-slate-400 mb-2" />
+              {csvFile ? (
+                <div>
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400 text-sm">{csvFile.name}</p>
+                  <p className="text-xs text-slate-500 font-normal mt-0.5">
+                    {(csvFile.size / 1024).toFixed(1)} KB • Click to change file
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Click to select CSV or XLSX file</p>
+                  <p className="text-xs text-slate-400 mt-1">Columns: name, phone_number, label</p>
+                </div>
+              )}
+            </div>
+
+            {/* Save to contacts option checkbox & notice */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-2 bg-slate-50/50 dark:bg-slate-900/50">
+              <label className="flex items-center gap-2.5 cursor-pointer font-medium text-sm text-slate-800 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={saveToContacts}
+                  onChange={(e) => setSaveToContacts(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>Add these customers to contacts</span>
+              </label>
+
+              {saveToContacts && (
+                <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 p-2.5 border border-amber-200/80 dark:border-amber-900/50 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                  <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p>
+                    <span className="font-semibold">Note:</span> If phone number matches an existing contact, details will be overwritten, and new labels will be added on.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Download Template */}
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+              <span>Need a sample template?</span>
+              <button
+                type="button"
+                onClick={handleDownloadCsvTemplate}
+                className="text-emerald-600 hover:underline inline-flex items-center gap-1 font-medium"
+              >
+                <Download className="h-3.5 w-3.5" /> Download CSV Template
+              </button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsCsvModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleProcessCsvImport}
+              disabled={!csvFile || isImportingCsv}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isImportingCsv && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Import Recipients
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

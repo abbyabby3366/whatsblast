@@ -410,6 +410,10 @@ function SessionsPage() {
 function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, onClose: () => void, session: any }) {
   const queryClient = useQueryClient()
   const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
+  const [minInterval, setMinInterval] = useState<number>(session.min_interval_seconds ?? 10)
+  const [maxInterval, setMaxInterval] = useState<number>(session.max_interval_seconds ?? 15)
+  const [activeStartTime, setActiveStartTime] = useState<string>(session.active_start_time || '00:00')
+  const [activeEndTime, setActiveEndTime] = useState<string>(session.active_end_time || '23:59')
   const [newAgentPhone, setNewAgentPhone] = useState('')
   const [testPhone, setTestPhone] = useState('')
   const [testText, setTestText] = useState('Hello! This is a test message sent from WhatsBlast session.')
@@ -418,6 +422,10 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
   useEffect(() => {
     if (isOpen) {
       setWarmup(session.warmup_schedule?.join(', ') || '')
+      setMinInterval(session.min_interval_seconds ?? 10)
+      setMaxInterval(session.max_interval_seconds ?? 15)
+      setActiveStartTime(session.active_start_time || '00:00')
+      setActiveEndTime(session.active_end_time || '23:59')
       setNewAgentPhone('')
       setTestPhone('')
       setTestText('Hello! This is a test message sent from WhatsBlast session.')
@@ -482,6 +490,11 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
     } else {
       data.warmup_schedule = []
     }
+
+    data.min_interval_seconds = Number(minInterval) || 10
+    data.max_interval_seconds = Number(maxInterval) || 15
+    data.active_start_time = activeStartTime || '00:00'
+    data.active_end_time = activeEndTime || '23:59'
 
     updateSessionMutation.mutate(data)
   }
@@ -593,6 +606,46 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
                   onChange={(e) => setWarmup(e.target.value)} 
                   placeholder="e.g. 5, 10, 15, 20, 30"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Min Interval (seconds)</Label>
+                  <Input 
+                    type="number" 
+                    min={1} 
+                    value={minInterval} 
+                    onChange={(e) => setMinInterval(parseInt(e.target.value, 10) || 1)} 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Max Interval (seconds)</Label>
+                  <Input 
+                    type="number" 
+                    min={1} 
+                    value={maxInterval} 
+                    onChange={(e) => setMaxInterval(parseInt(e.target.value, 10) || 1)} 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Active Window Start</Label>
+                  <Input 
+                    type="time" 
+                    value={activeStartTime} 
+                    onChange={(e) => setActiveStartTime(e.target.value)} 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Active Window End</Label>
+                  <Input 
+                    type="time" 
+                    value={activeEndTime} 
+                    onChange={(e) => setActiveEndTime(e.target.value)} 
+                  />
+                </div>
               </div>
 
               <Button 

@@ -24,6 +24,10 @@ export interface IWhatsAppSession extends Document {
   current_day?: string;
   warmup_schedule?: Record<string, any>;
   agent_phone_numbers: IAgentPhoneNumber[];
+  min_interval_seconds: number;
+  max_interval_seconds: number;
+  active_start_time: string;
+  active_end_time: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +50,10 @@ const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
     current_day: { type: String },
     warmup_schedule: { type: Schema.Types.Mixed },
     agent_phone_numbers: [AgentPhoneNumberSchema],
+    min_interval_seconds: { type: Number, default: 10 },
+    max_interval_seconds: { type: Number, default: 15 },
+    active_start_time: { type: String, default: '00:00' },
+    active_end_time: { type: String, default: '23:59' },
   },
   { timestamps: true }
 );

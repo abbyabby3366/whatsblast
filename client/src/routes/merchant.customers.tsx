@@ -43,13 +43,18 @@ type Customer = {
   id: string
   name: string
   phone_number: string
+  label?: string
   created_at: string
 }
 
 type CustomerImportResult = {
-  created: number
-  updated: number
-  skipped: number
+  success?: boolean
+  imported?: number
+  created?: number
+  updated?: number
+  skipped?: number
+  count?: number
+  total?: number
 }
 
 type CustomerResponse = {
@@ -106,17 +111,24 @@ const DeleteCustomerButton = ({ id, removeCustomerMutation }: { id: string, remo
 function CustomersPage() {
   const queryClient = useQueryClient()
   const [globalFilter, setGlobalFilter] = useState('')
+  const [selectedLabel, setSelectedLabel] = useState<string>('all')
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('')
+  const [newLabel, setNewLabel] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [pageIndex, setPageIndex] = useState(0)
   const [pageSize, setPageSize] = useState(20)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const { data: availableLabels = [] } = useQuery({
+    queryKey: ['customer-labels'],
+    queryFn: () => api.get('customers/labels/').json<string[]>().catch(() => []),
+  })
+
   const { data: response, isLoading } = useQuery({
-    queryKey: ['customers', pageIndex, pageSize, globalFilter],
+    queryKey: ['customers', pageIndex, pageSize, globalFilter, selectedLabel],
     queryFn: () => {
       const searchParams = new URLSearchParams()
       searchParams.set('page', String(pageIndex + 1))
@@ -124,6 +136,9 @@ function CustomersPage() {
 
       if (globalFilter.trim()) {
         searchParams.set('search', globalFilter.trim())
+      }
+      if (selectedLabel && selectedLabel !== 'all') {
+        searchParams.set('label', selectedLabel)
       }
 
       return api.get('customers/', { searchParams }).json<CustomerResponse | Customer[]>()
@@ -141,15 +156,17 @@ function CustomersPage() {
 
   useEffect(() => {
     setPageIndex(0)
-  }, [globalFilter])
+  }, [globalFilter, selectedLabel])
 
   const addCustomerMutation = useMutation({
-    mutationFn: (newCustomer: { name: string; phone_number: string }) =>
+    mutationFn: (newCustomer: { name: string; phone_number: string; label?: string }) =>
       api.post('customers/', { json: newCustomer }).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
       setNewName('')
       setNewPhone('')
+      setNewLabel('')
       setIsAddOpen(false)
       toast.success('Customer added successfully!')
     },
@@ -157,10 +174,11 @@ function CustomersPage() {
   })
 
   const importCustomersMutation = useMutation({
-    mutationFn: (importedCustomers: { name: string; phone_number: string }[]) =>
+    mutationFn: (importedCustomers: { name: string; phone_number: string; label?: string }[]) =>
       api.post('customers/import/', { json: { customers: importedCustomers } }).json<CustomerImportResult>(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
     },
   })
 
@@ -168,6 +186,7 @@ function CustomersPage() {
     mutationFn: (id: string) => api.delete(`customers/${id}/`),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
       setSelectedIds((current) => current.filter((selectedId) => selectedId !== id))
       toast.success('Customer removed')
     },
@@ -178,6 +197,7 @@ function CustomersPage() {
     mutationFn: (ids: string[]) => api.post('customers/bulk-delete/', { json: { ids } }).json<{ deleted: number }>(),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
       setSelectedIds([])
       setBulkDeleteOpen(false)
       toast.success(`${data.deleted} customer${data.deleted === 1 ? '' : 's'} removed`)
@@ -186,7 +206,7 @@ function CustomersPage() {
   })
 
   const handleExportTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([{ name: 'John Doe', phone_number: '60123456789' }])
+    const ws = XLSX.utils.json_to_sheet([{ name: 'John Doe', phone_number: '60123456789', label: 'VIP' }])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Template')
     XLSX.writeFile(wb, 'customer_template.csv', { bookType: 'csv' })
@@ -197,7 +217,7 @@ function CustomersPage() {
       toast.error('No customers to export')
       return
     }
-    const data = customers.map(c => ({ name: c.name, phone_number: c.phone_number }))
+    const data = customers.map(c => ({ name: c.name, phone_number: c.phone_number, label: c.label || '' }))
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Customers')
@@ -215,17 +235,19 @@ function CustomersPage() {
         const wb = XLSX.read(bstr, { type: 'binary' })
         const wsname = wb.SheetNames[0]
         const ws = wb.Sheets[wsname]
-        const data = XLSX.utils.sheet_to_json<{name: string, phone_number?: string, phone?: string}>(ws)
+        const data = XLSX.utils.sheet_to_json<any>(ws)
         
-        const importedCustomers: { name: string; phone_number: string }[] = []
+        const importedCustomers: { name: string; phone_number: string; label?: string }[] = []
         for (const row of data) {
-          const phone = row.phone_number || row.phone
-          if (row.name && phone) {
-            importedCustomers.push({ name: String(row.name), phone_number: String(phone) })
+          const phone = row.phone_number || row.phone || row['Phone Number'] || row['Phone'] || row['phone number']
+          const name = row.name || row.Name || row['Full Name']
+          const label = row.label || row.Label || row['TAG'] || row['tag'] || ''
+          if (name && phone) {
+            importedCustomers.push({ name: String(name), phone_number: String(phone), label: label ? String(label) : '' })
           }
         }
         const result = await importCustomersMutation.mutateAsync(importedCustomers)
-        toast.success(`Import complete: ${result.created} added, ${result.updated} updated, ${result.skipped} skipped.`)
+        toast.success(`Import complete: ${result.created || result.imported || importedCustomers.length} added/updated.`)
       } catch (err) {
         toast.error('Failed to import CSV file.')
       }
@@ -239,7 +261,7 @@ function CustomersPage() {
       toast.error('Please fill in both name and phone.')
       return
     }
-    addCustomerMutation.mutate({ name: newName, phone_number: newPhone })
+    addCustomerMutation.mutate({ name: newName, phone_number: newPhone, label: newLabel })
   }
 
   const visibleIds = useMemo(() => customers.map((customer) => customer.id), [customers])
@@ -279,6 +301,19 @@ function CustomersPage() {
       columnHelper.accessor('phone_number', {
         header: 'Phone Number',
         cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor('label', {
+        header: 'Label',
+        cell: (info) => {
+          const val = info.getValue()
+          return val ? (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80">
+              {val}
+            </span>
+          ) : (
+            <span className="text-slate-400 dark:text-slate-600">-</span>
+          )
+        },
       }),
       columnHelper.accessor('created_at', {
         header: 'Date Added',
@@ -393,6 +428,18 @@ function CustomersPage() {
                   className="col-span-3"
                 />
               </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="label" className="text-right">
+                  Label
+                </Label>
+                <Input
+                  id="label"
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="VIP, Retail, etc."
+                  className="col-span-3"
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" onClick={handleAdd} disabled={addCustomerMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
@@ -407,14 +454,29 @@ function CustomersPage() {
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div className="relative max-w-sm w-full">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-            <Input
-              placeholder="Search customers..."
-              className="pl-9 bg-slate-50 dark:bg-slate-950 w-full"
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-            />
+          <div className="flex flex-col sm:flex-row gap-3 max-w-lg w-full">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search customers..."
+                className="pl-9 bg-slate-50 dark:bg-slate-950 w-full"
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+              />
+            </div>
+            <Select value={selectedLabel} onValueChange={setSelectedLabel}>
+              <SelectTrigger className="w-full sm:w-44 bg-slate-50 dark:bg-slate-950">
+                <SelectValue placeholder="All Labels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Labels</SelectItem>
+                {availableLabels.map((lbl) => (
+                  <SelectItem key={lbl} value={lbl}>
+                    {lbl}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="text-sm font-medium text-slate-500">
             Total Records: {totalCount}
