@@ -59,7 +59,6 @@ const getSessions = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/whatsapp-sessions', getSessions);
-router.get('/whatsapp-sessions/', getSessions);
 
 // Create WhatsApp Session
 const createSession = async (req: AuthRequest, res: Response) => {
@@ -82,7 +81,6 @@ const createSession = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/whatsapp-sessions', createSession);
-router.post('/whatsapp-sessions/', createSession);
 
 // Get QR code for session
 const getSessionQr = async (req: AuthRequest, res: Response) => {
@@ -107,7 +105,6 @@ const getSessionQr = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/whatsapp-sessions/:id/qr', getSessionQr);
-router.get('/whatsapp-sessions/:id/qr/', getSessionQr);
 
 // Patch WhatsApp Session (disconnect/update)
 const patchSession = async (req: AuthRequest, res: Response) => {
@@ -136,7 +133,6 @@ const patchSession = async (req: AuthRequest, res: Response) => {
 };
 
 router.patch('/whatsapp-sessions/:id', patchSession);
-router.patch('/whatsapp-sessions/:id/', patchSession);
 
 // Reconnect session
 const reconnectSession = async (req: AuthRequest, res: Response) => {
@@ -161,7 +157,6 @@ const reconnectSession = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/whatsapp-sessions/:id/reconnect', reconnectSession);
-router.post('/whatsapp-sessions/:id/reconnect/', reconnectSession);
 
 // Logout session
 const logoutSession = async (req: AuthRequest, res: Response) => {
@@ -204,7 +199,6 @@ const logoutSession = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/whatsapp-sessions/:id/logout', logoutSession);
-router.post('/whatsapp-sessions/:id/logout/', logoutSession);
 
 // Delete session
 const deleteSession = async (req: AuthRequest, res: Response) => {
@@ -245,7 +239,6 @@ const deleteSession = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/whatsapp-sessions/:id', deleteSession);
-router.delete('/whatsapp-sessions/:id/', deleteSession);
 
 // Master Phone Numbers CRUD (Admin only)
 const getMasterPhones = async (_req: AuthRequest, res: Response) => {
@@ -266,7 +259,6 @@ const getMasterPhones = async (_req: AuthRequest, res: Response) => {
 };
 
 router.get('/master-phone-numbers', getMasterPhones);
-router.get('/master-phone-numbers/', getMasterPhones);
 
 const createMasterPhone = async (req: AuthRequest, res: Response) => {
   const { session, is_active } = req.body;
@@ -301,7 +293,6 @@ const createMasterPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/master-phone-numbers', createMasterPhone);
-router.post('/master-phone-numbers/', createMasterPhone);
 
 const patchMasterPhone = async (req: AuthRequest, res: Response) => {
   const paramId = String(req.params.id);
@@ -326,7 +317,6 @@ const patchMasterPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.patch('/master-phone-numbers/:id', patchMasterPhone);
-router.patch('/master-phone-numbers/:id/', patchMasterPhone);
 
 const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
   const paramId = String(req.params.id);
@@ -335,6 +325,5 @@ const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/master-phone-numbers/:id', deleteMasterPhone);
-router.delete('/master-phone-numbers/:id/', deleteMasterPhone);
 
 export default router;

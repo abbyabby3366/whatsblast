@@ -52,7 +52,6 @@ const getCampaigns = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/blast-campaigns', getCampaigns);
-router.get('/blast-campaigns/', getCampaigns);
 
 const createCampaign = async (req: AuthRequest, res: Response) => {
   const { name, template, contacts, recipient_phones, templates, user: targetUserId, min_interval_seconds, max_interval_seconds, enable_warmup } = req.body;
@@ -94,9 +93,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/blast-campaigns', createCampaign);
-router.post('/blast-campaigns/', createCampaign);
 router.post('/blast-campaigns/full-create', createCampaign);
-router.post('/blast-campaigns/full-create/', createCampaign);
 
 const getCampaignById = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
@@ -113,7 +110,6 @@ const getCampaignById = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/blast-campaigns/:id', getCampaignById);
-router.get('/blast-campaigns/:id/', getCampaignById);
 
 const patchCampaign = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
@@ -145,7 +141,6 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
 };
 
 router.patch('/blast-campaigns/:id', patchCampaign);
-router.patch('/blast-campaigns/:id/', patchCampaign);
 
 const startCampaign = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
@@ -166,11 +161,8 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/blast-campaigns/:id/start', startCampaign);
-router.post('/blast-campaigns/:id/start/', startCampaign);
 router.post('/blast-campaigns/:id/run', startCampaign);
-router.post('/blast-campaigns/:id/run/', startCampaign);
 router.post('/blast-campaigns/:id/resume', startCampaign);
-router.post('/blast-campaigns/:id/resume/', startCampaign);
 
 const pauseCampaign = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
@@ -190,7 +182,6 @@ const pauseCampaign = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/blast-campaigns/:id/pause', pauseCampaign);
-router.post('/blast-campaigns/:id/pause/', pauseCampaign);
 
 const deleteCampaign = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
@@ -203,6 +194,5 @@ const deleteCampaign = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/blast-campaigns/:id', deleteCampaign);
-router.delete('/blast-campaigns/:id/', deleteCampaign);
 
 export default router;

@@ -55,4 +55,7 @@ const MessageSchema = new Schema<IMessage>(
   { timestamps: true }
 );
 
+MessageSchema.index({ session: 1, wa_timestamp: -1 });
+MessageSchema.index({ campaign: 1, status: 1 });
+
 export const Message = mongoose.model<IMessage>('Message', MessageSchema);

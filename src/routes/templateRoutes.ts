@@ -21,7 +21,6 @@ const getTemplates = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/message-templates', getTemplates);
-router.get('/message-templates/', getTemplates);
 
 const createTemplate = async (req: AuthRequest, res: Response) => {
   const { name, text, type, file, payload } = req.body;
@@ -42,7 +41,6 @@ const createTemplate = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/message-templates', createTemplate);
-router.post('/message-templates/', createTemplate);
 
 const updateTemplate = async (req: AuthRequest, res: Response) => {
   const { name, text, type, file, payload } = req.body;
@@ -60,9 +58,7 @@ const updateTemplate = async (req: AuthRequest, res: Response) => {
 };
 
 router.put('/message-templates/:id', updateTemplate);
-router.put('/message-templates/:id/', updateTemplate);
 router.patch('/message-templates/:id', updateTemplate);
-router.patch('/message-templates/:id/', updateTemplate);
 
 const deleteTemplate = async (req: AuthRequest, res: Response) => {
   await MessageTemplate.deleteOne({ _id: req.params.id, user: req.user?._id });
@@ -70,6 +66,5 @@ const deleteTemplate = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/message-templates/:id', deleteTemplate);
-router.delete('/message-templates/:id/', deleteTemplate);
 
 export default router;

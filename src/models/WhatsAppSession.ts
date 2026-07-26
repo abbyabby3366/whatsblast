@@ -50,4 +50,6 @@ const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
   { timestamps: true }
 );
 
+WhatsAppSessionSchema.index({ user: 1, status: 1 });
+
 export const WhatsAppSession = mongoose.model<IWhatsAppSession>('WhatsAppSession', WhatsAppSessionSchema);

@@ -56,7 +56,6 @@ const getUsers = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/users', getUsers);
-router.get('/users/', getUsers);
 
 const getUsersMe = async (req: AuthRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -64,7 +63,6 @@ const getUsersMe = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/users/me', getUsersMe);
-router.get('/users/me/', getUsersMe);
 
 const patchUsersMe = async (req: AuthRequest, res: Response) => {
   const { min_interval_minutes } = req.body;
@@ -76,7 +74,6 @@ const patchUsersMe = async (req: AuthRequest, res: Response) => {
 };
 
 router.patch('/users/me', patchUsersMe);
-router.patch('/users/me/', patchUsersMe);
 
 // Create User (Admin feature)
 const createUser = async (req: AuthRequest, res: Response) => {
@@ -108,7 +105,6 @@ const createUser = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/users', createUser);
-router.post('/users/', createUser);
 
 // Update User (Admin feature)
 const updateUser = async (req: AuthRequest, res: Response) => {
@@ -137,7 +133,6 @@ const updateUser = async (req: AuthRequest, res: Response) => {
 };
 
 router.patch('/users/:id', updateUser);
-router.patch('/users/:id/', updateUser);
 
 // Delete User (Admin feature)
 const deleteUser = async (req: AuthRequest, res: Response) => {
@@ -151,7 +146,6 @@ const deleteUser = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/users/:id', deleteUser);
-router.delete('/users/:id/', deleteUser);
 
 // Agent Phone Numbers Management
 const getAgentPhones = async (req: AuthRequest, res: Response) => {
@@ -185,7 +179,6 @@ const getAgentPhones = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/agent-phone-numbers', getAgentPhones);
-router.get('/agent-phone-numbers/', getAgentPhones);
 
 const createAgentPhone = async (req: AuthRequest, res: Response) => {
   const { session_id, session, phone_number } = req.body;
@@ -214,7 +207,6 @@ const createAgentPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/agent-phone-numbers', createAgentPhone);
-router.post('/agent-phone-numbers/', createAgentPhone);
 
 const deleteAgentPhone = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
@@ -237,6 +229,5 @@ const deleteAgentPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/agent-phone-numbers/:id', deleteAgentPhone);
-router.delete('/agent-phone-numbers/:id/', deleteAgentPhone);
 
 export default router;

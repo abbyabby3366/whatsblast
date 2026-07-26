@@ -182,20 +182,22 @@ export async function sendBaileysTemplateMessage(
   return await sock.sendMessage(targetJid, { text: messageText });
 }
 
-async function processCampaigns(): Promise<void> {
-  if (isProcessing) return;
-  isProcessing = true;
+const activeCampaigns = new Set<string>();
 
+async function runSingleCampaign(campaignId: string): Promise<void> {
   try {
-    const runningCampaigns = await BlastCampaign.find({ status: CampaignStatus.RUNNING });
+    while (true) {
+      const campaign = await BlastCampaign.findById(campaignId);
+      if (!campaign || campaign.status !== CampaignStatus.RUNNING) {
+        break;
+      }
 
-    for (const campaign of runningCampaigns) {
       if (campaign.current_index >= campaign.contacts.length) {
         campaign.status = CampaignStatus.COMPLETED;
         campaign.completed_at = new Date();
         await campaign.save();
         console.log(`🎉 Campaign "${campaign.name}" completed!`);
-        continue;
+        break;
       }
 
       const recipientPhone = campaign.contacts[campaign.current_index];
@@ -205,47 +207,58 @@ async function processCampaigns(): Promise<void> {
         continue;
       }
 
+      let sessionId: string;
       try {
-        const sessionId = await pickUserSession(campaign.user.toString());
-        let activeSession = getActiveSession(sessionId);
-        if (!activeSession) {
-          activeSession = await initWhatsAppSession(sessionId);
+        sessionId = await pickUserSession(campaign.user.toString());
+      } catch (err: any) {
+        console.warn(`⚠️ Campaign "${campaign.name}" paused: ${err.message || 'No available session'}`);
+        campaign.status = CampaignStatus.PAUSED;
+        await campaign.save();
+        break;
+      }
+
+      let activeSession = getActiveSession(sessionId);
+      if (!activeSession) {
+        activeSession = await initWhatsAppSession(sessionId);
+      }
+
+      const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
+      if (sessionDoc) {
+        const today = dayjs().format('YYYY-MM-DD');
+        if (sessionDoc.current_day !== today) {
+          sessionDoc.current_day = today;
+          sessionDoc.current_message_count = 0;
         }
 
-        const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
-        if (sessionDoc) {
-          const today = dayjs().format('YYYY-MM-DD');
-          if (sessionDoc.current_day !== today) {
-            sessionDoc.current_day = today;
-            sessionDoc.current_message_count = 0;
-          }
-
-          if (sessionDoc.current_message_count >= sessionDoc.max_message_count_per_day) {
-            console.log(`⚠️ Session ${sessionId} reached daily limit (${sessionDoc.max_message_count_per_day}). Skipping contact for now.`);
-            continue;
-          }
-        }
-
-        const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
-        const targetJid = `${cleanPhone}@s.whatsapp.net`;
-
-        // Resolve templates to send
-        let templatesToSend: any[] = [];
-        if (Array.isArray(campaign.templates) && campaign.templates.length > 0) {
-          templatesToSend = campaign.templates;
-        } else if (campaign.template) {
-          const tplDoc = await MessageTemplate.findById(campaign.template);
-          if (tplDoc) templatesToSend = [tplDoc];
-        }
-
-        if (templatesToSend.length === 0) {
-          campaign.status = CampaignStatus.FAILED;
+        if (sessionDoc.current_message_count >= sessionDoc.max_message_count_per_day) {
+          console.log(`⚠️ Session ${sessionId} reached daily limit (${sessionDoc.max_message_count_per_day}). Pausing campaign "${campaign.name}".`);
+          campaign.status = CampaignStatus.PAUSED;
           await campaign.save();
-          console.error(`Campaign ${campaign._id} failed: No templates found`);
-          continue;
+          break;
         }
+      }
 
-        // Send sequence of templates to recipient
+      const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
+      const targetJid = `${cleanPhone}@s.whatsapp.net`;
+
+      // Resolve templates to send
+      let templatesToSend: any[] = [];
+      if (Array.isArray(campaign.templates) && campaign.templates.length > 0) {
+        templatesToSend = campaign.templates;
+      } else if (campaign.template) {
+        const tplDoc = await MessageTemplate.findById(campaign.template);
+        if (tplDoc) templatesToSend = [tplDoc];
+      }
+
+      if (templatesToSend.length === 0) {
+        campaign.status = CampaignStatus.FAILED;
+        await campaign.save();
+        console.error(`Campaign ${campaign._id} failed: No templates found`);
+        break;
+      }
+
+      // Send sequence of templates to recipient
+      try {
         for (let i = 0; i < templatesToSend.length; i++) {
           const tplItem = templatesToSend[i];
           const result = await sendBaileysTemplateMessage(activeSession.socket, targetJid, tplItem, cleanPhone);
@@ -295,7 +308,38 @@ async function processCampaigns(): Promise<void> {
       await new Promise((res) => setTimeout(res, randomDelay));
     }
   } catch (err) {
-    console.error('Error in Blast Runner processing loop:', err);
+    console.error(`Error in runSingleCampaign (${campaignId}):`, err);
+  } finally {
+    activeCampaigns.delete(campaignId);
+  }
+}
+
+async function processCampaigns(): Promise<void> {
+  if (isProcessing) return;
+  isProcessing = true;
+
+  try {
+    const now = new Date();
+    const runningCampaigns = await BlastCampaign.find({
+      status: CampaignStatus.RUNNING,
+      $or: [
+        { scheduled_at: { $exists: false } },
+        { scheduled_at: null },
+        { scheduled_at: { $lte: now } },
+      ],
+    });
+
+    for (const campaign of runningCampaigns) {
+      const campaignId = campaign._id.toString();
+      if (!activeCampaigns.has(campaignId)) {
+        activeCampaigns.add(campaignId);
+        runSingleCampaign(campaignId).catch((err) =>
+          console.error(`Unhandled error in runSingleCampaign (${campaignId}):`, err)
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error in Blast Runner scheduler loop:', err);
   } finally {
     isProcessing = false;
   }

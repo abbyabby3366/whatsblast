@@ -22,5 +22,6 @@ const CustomerSchema = new Schema<ICustomer>(
 );
 
 CustomerSchema.index({ merchant: 1, phone_number: 1 }, { unique: true });
+CustomerSchema.index({ merchant: 1, createdAt: -1 });
 
 export const Customer = mongoose.model<ICustomer>('Customer', CustomerSchema);

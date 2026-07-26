@@ -57,4 +57,7 @@ const BlastCampaignSchema = new Schema<IBlastCampaign>(
   { timestamps: true }
 );
 
+BlastCampaignSchema.index({ user: 1, status: 1 });
+BlastCampaignSchema.index({ status: 1, scheduled_at: 1 });
+
 export const BlastCampaign = mongoose.model<IBlastCampaign>('BlastCampaign', BlastCampaignSchema);

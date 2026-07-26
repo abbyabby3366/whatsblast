@@ -32,7 +32,6 @@ const getCustomers = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/customers', getCustomers);
-router.get('/customers/', getCustomers);
 
 const createCustomer = async (req: AuthRequest, res: Response) => {
   const { phone_number, name, notes, custom_data } = req.body;
@@ -51,7 +50,6 @@ const createCustomer = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/customers', createCustomer);
-router.post('/customers/', createCustomer);
 
 const importCustomers = async (req: AuthRequest, res: Response) => {
   const customers = req.body.customers || req.body;
@@ -78,9 +76,7 @@ const importCustomers = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/customers/import', importCustomers);
-router.post('/customers/import/', importCustomers);
 router.post('/customers/bulk', importCustomers);
-router.post('/customers/bulk/', importCustomers);
 
 const bulkDeleteCustomers = async (req: AuthRequest, res: Response) => {
   const { ids } = req.body;
@@ -93,7 +89,6 @@ const bulkDeleteCustomers = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/customers/bulk-delete', bulkDeleteCustomers);
-router.post('/customers/bulk-delete/', bulkDeleteCustomers);
 
 const deleteCustomer = async (req: AuthRequest, res: Response) => {
   await Customer.deleteOne({ _id: req.params.id, merchant: req.user?._id });
@@ -101,6 +96,5 @@ const deleteCustomer = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/customers/:id', deleteCustomer);
-router.delete('/customers/:id/', deleteCustomer);
 
 export default router;

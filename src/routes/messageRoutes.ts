@@ -41,7 +41,6 @@ const getMessages = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/messages', getMessages);
-router.get('/messages/', getMessages);
 
 const sendTextMessage = async (req: AuthRequest, res: Response) => {
   const sessionId = req.params.session_id as string;
@@ -82,7 +81,6 @@ const sendTextMessage = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/messages/:session_id/send-text', sendTextMessage);
-router.post('/messages/:session_id/send-text/', sendTextMessage);
 
 const sendImageMessage = async (req: AuthRequest, res: Response) => {
   const sessionId = req.params.session_id as string;
@@ -126,6 +124,5 @@ const sendImageMessage = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/messages/:session_id/send-image', sendImageMessage);
-router.post('/messages/:session_id/send-image/', sendImageMessage);
 
 export default router;

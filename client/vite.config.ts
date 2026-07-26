@@ -18,6 +18,21 @@ const config = defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
+            if (id.includes('xlsx')) return 'vendor-excel';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (id.includes('@tanstack')) return 'vendor-tanstack';
+            if (id.includes('animejs')) return 'vendor-anime';
+          }
+        },
+      },
+    },
+  },
 })
 
 export default config

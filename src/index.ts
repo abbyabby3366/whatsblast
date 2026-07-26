@@ -24,6 +24,16 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Trailing slash normalization middleware
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  if (req.path.length > 1 && req.path.endsWith('/')) {
+    const query = req.url.slice(req.path.length);
+    const safepath = req.path.slice(0, -1);
+    req.url = safepath + query;
+  }
+  next();
+});
+
 // API Routes
 app.use('/api', authRoutes);
 app.use('/api', userRoutes);

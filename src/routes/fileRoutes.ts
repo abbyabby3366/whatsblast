@@ -24,7 +24,6 @@ const getFiles = async (req: AuthRequest, res: Response) => {
 };
 
 router.get('/files', getFiles);
-router.get('/files/', getFiles);
 
 const createFile = async (req: AuthRequest, res: Response) => {
   if (!req.file) {
@@ -58,7 +57,6 @@ const createFile = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/files', upload.single('file'), createFile);
-router.post('/files/', upload.single('file'), createFile);
 
 const deleteFile = async (req: AuthRequest, res: Response) => {
   await FileModel.deleteOne({ _id: req.params.id, user: req.user?._id });
@@ -66,6 +64,5 @@ const deleteFile = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/files/:id', deleteFile);
-router.delete('/files/:id/', deleteFile);
 
 export default router;
