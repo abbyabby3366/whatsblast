@@ -1,12 +1,12 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
-import { MessageTemplate } from '../models/MessageTemplate.js';
+import { MessageTemplate, IMessageTemplate } from '../models/MessageTemplate.js';
 
 const router = Router();
 
 router.use(authenticateToken);
 
-function formatTemplate(t: any) {
+function formatTemplate(t: IMessageTemplate | any) {
   const obj = t.toObject ? t.toObject() : t;
   const { _id, __v, ...rest } = obj;
   return {

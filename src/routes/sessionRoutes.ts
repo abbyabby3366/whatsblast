@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
-import { MasterPhone } from '../models/MasterPhone.js';
+import { MasterPhone, IMasterPhone } from '../models/MasterPhone.js';
 import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../services/baileysManager.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
 import fs from 'fs';
@@ -298,7 +298,7 @@ const patchMasterPhone = async (req: AuthRequest, res: Response) => {
   const paramId = String(req.params.id);
   const { is_active } = req.body;
 
-  const master = await MasterPhone.findById(paramId);
+  const master: IMasterPhone | null = await MasterPhone.findById(paramId);
   if (!master) {
     return res.status(404).json({ error: 'Master phone number not found' });
   }

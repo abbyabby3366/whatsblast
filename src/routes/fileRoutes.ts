@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
-import { FileModel, FileType } from '../models/File.js';
+import { FileModel, FileType, IFile } from '../models/File.js';
 import { uploadToS3 } from '../services/s3Service.js';
 
 const router = Router();
@@ -9,7 +9,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(authenticateToken);
 
-function formatFile(f: any) {
+function formatFile(f: IFile | any) {
   const obj = f.toObject ? f.toObject() : f;
   const { _id, __v, ...rest } = obj;
   return {

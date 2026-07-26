@@ -53,7 +53,7 @@ async function refreshAccessToken() {
   return refreshPromise;
 }
 
-export const authedInstance = baseInstance.extend((parent) => ({
+const authedInstance = baseInstance.extend((parent) => ({
   ...parent,
   hooks: {
     beforeRequest: [

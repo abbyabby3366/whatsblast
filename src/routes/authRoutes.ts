@@ -2,12 +2,27 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, UserRole } from '../models/User.js';
-import { OTP } from '../models/OTP.js';
+import { OTP, IOTP } from '../models/OTP.js';
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-whatsblast-2026';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'super-secret-refresh-key-whatsblast-2026';
+
+function sendAuthTokens(user: any, res: Response, statusCode = 200) {
+  const access = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+  const refresh = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+  return res.status(statusCode).json({
+    access,
+    refresh,
+    user: {
+      id: user._id,
+      phone_number: user.phone_number,
+      role: user.role,
+    },
+  });
+}
 
 router.post('/register/send-otp', async (req: Request, res: Response) => {
   const { phone_number } = req.body;
@@ -40,7 +55,7 @@ router.post('/register', async (req: Request, res: Response) => {
   const cleanPhone = String(phone_number).trim();
 
   if (otp) {
-    const validOtp = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
+    const validOtp: IOTP | null = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
     if (!validOtp) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
@@ -54,18 +69,7 @@ router.post('/register', async (req: Request, res: Response) => {
     role: UserRole.MERCHANT,
   });
 
-  const access = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-  const refresh = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
-
-  return res.status(201).json({
-    access,
-    refresh,
-    user: {
-      id: user._id,
-      phone_number: user.phone_number,
-      role: user.role,
-    },
-  });
+  return sendAuthTokens(user, res, 201);
 });
 
 router.post('/login', async (req: Request, res: Response) => {
@@ -87,18 +91,7 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(401).json({ detail: 'No active account found with the given credentials' });
   }
 
-  const access = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-  const refresh = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
-
-  return res.json({
-    access,
-    refresh,
-    user: {
-      id: user._id,
-      phone_number: user.phone_number,
-      role: user.role,
-    },
-  });
+  return sendAuthTokens(user, res, 200);
 });
 
 router.post('/token/refresh', async (req: Request, res: Response) => {

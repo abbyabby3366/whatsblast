@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
+import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/authMiddleware.js';
 import { User } from '../models/User.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 
@@ -104,7 +104,7 @@ const createUser = async (req: AuthRequest, res: Response) => {
   return res.status(201).json(formatUser(newUser));
 };
 
-router.post('/users', createUser);
+router.post('/users', requireAdmin, createUser);
 
 // Update User (Admin feature)
 const updateUser = async (req: AuthRequest, res: Response) => {
@@ -132,7 +132,7 @@ const updateUser = async (req: AuthRequest, res: Response) => {
   return res.json(formatUser(targetUser));
 };
 
-router.patch('/users/:id', updateUser);
+router.patch('/users/:id', requireAdmin, updateUser);
 
 // Delete User (Admin feature)
 const deleteUser = async (req: AuthRequest, res: Response) => {
@@ -145,7 +145,7 @@ const deleteUser = async (req: AuthRequest, res: Response) => {
   return res.json({ success: true });
 };
 
-router.delete('/users/:id', deleteUser);
+router.delete('/users/:id', requireAdmin, deleteUser);
 
 // Agent Phone Numbers Management
 const getAgentPhones = async (req: AuthRequest, res: Response) => {
