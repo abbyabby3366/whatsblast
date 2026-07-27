@@ -1,4 +1,3 @@
-import React from 'react'
 import { Rocket, Loader2, ArrowLeft, Save, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -34,8 +33,8 @@ export function Step5Summary({
   sessionMode,
   selectedSessions,
   recipients,
-  retryOnFailure = true,
-  enableWarmup = true,
+  retryOnFailure: _retryOnFailure = true,
+  enableWarmup: _enableWarmup = true,
   editingCampaignId,
   setIsPhonePreviewOpen,
   onBack,

@@ -8,7 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-export function PhoneActiveTooltip() {
+function BaseTooltip({ title, description }: { title: string; description: string }) {
   return (
     <TooltipProvider>
       <Tooltip>
@@ -20,10 +20,10 @@ export function PhoneActiveTooltip() {
         <TooltipContent side="top" className="max-w-xs text-xs p-2.5 bg-slate-900 text-slate-100 shadow-md z-50">
           <p className="font-semibold text-amber-300 flex items-center gap-1 mb-1">
             <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            Phone Sync Activity
+            {title}
           </p>
           <p className="text-slate-200 text-[11px] leading-relaxed">
-            Tracks network connection, keep-alives, and protocol sync events with WhatsApp servers.
+            {description}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -31,26 +31,21 @@ export function PhoneActiveTooltip() {
   )
 }
 
+export function PhoneActiveTooltip() {
+  return (
+    <BaseTooltip
+      title="Phone Sync Activity"
+      description="Tracks network connection, keep-alives, and protocol sync events with WhatsApp servers."
+    />
+  )
+}
+
 export function LastSentMessageTooltip() {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="cursor-help inline-flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-            <Info className="w-3 h-3 shrink-0 ml-0.5" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs p-2.5 bg-slate-900 text-slate-100 shadow-md z-50">
-          <p className="font-semibold text-amber-300 flex items-center gap-1 mb-1">
-            <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            WhatsApp 14-Day Activity Rule
-          </p>
-          <p className="text-slate-200 text-[11px] leading-relaxed">
-            Must send at least 1 message from your phone within 14 days to prevent getting logged out by WhatsApp.
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <BaseTooltip
+      title="WhatsApp 14-Day Activity Rule"
+      description="Must send at least 1 message from your phone within 14 days to prevent getting logged out by WhatsApp."
+    />
   )
 }
 

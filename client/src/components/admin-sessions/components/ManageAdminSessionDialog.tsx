@@ -61,7 +61,7 @@ export function ManageAdminSessionDialog({
   onDelete,
   isReconnecting,
   onUpdated,
-  getStatusBadge,
+  getStatusBadge: _getStatusBadge,
 }: ManageAdminSessionDialogProps) {
   const queryClient = useQueryClient()
   const [alias, setAlias] = useState(session.alias || '')

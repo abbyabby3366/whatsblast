@@ -1,4 +1,3 @@
-import React from 'react'
 import { Check, Smartphone, AlertCircle, ExternalLink, Flame, ArrowLeft, ArrowRight, Save, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -29,7 +28,7 @@ export function Step3SendingSessions({
   setSelectedSessions,
   connectedSessions,
   availableSessions,
-  isLoadingSessions,
+  isLoadingSessions: _isLoadingSessions,
   enableWarmup = true,
   setEnableWarmup,
   onNext,

@@ -1,4 +1,3 @@
-import React from 'react'
 import { ArrowLeft, CheckCheck, Mic, MoreVertical, User as UserIcon } from 'lucide-react'
 import dayjs from 'dayjs'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -12,7 +11,7 @@ export interface WhatsAppPhonePreviewModalProps {
   templates?: any[]
 }
 
-export const getCampaignTemplates = (campaign: any) => {
+const getCampaignTemplates = (campaign: any) => {
   if (Array.isArray(campaign?.templates) && campaign.templates.length > 0) return campaign.templates
   if (campaign?.template) return [campaign.template]
   return []
@@ -29,7 +28,7 @@ const formatMediaUrl = (u: any): string => {
   return `/${trimmed}`
 }
 
-export const resolveTemplateMediaList = (template: any) => {
+const resolveTemplateMediaList = (template: any) => {
   const list: Array<{ url: string; type: string; name?: string }> = []
   if (!template) return list
 
