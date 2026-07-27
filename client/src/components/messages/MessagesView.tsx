@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { api, getErrorMessage } from '@/lib/api'
+import { safeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -164,7 +165,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         header: 'Message Content',
         cell: (info) => {
           const tmpl = info.getValue()
-          const text = tmpl?.text || info.row.original.content || info.row.original.body || '-'
+          const rawText = tmpl?.text || info.row.original.content || info.row.original.body
+          const text = safeText(rawText, '-')
           return (
             <div className="max-w-[280px] sm:max-w-[360px] truncate text-slate-700 dark:text-slate-300 font-sans text-xs" title={text}>
               {text}
@@ -456,7 +458,13 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           isOpen={Boolean(selectedMessage)}
           onClose={() => setSelectedMessage(null)}
           title={selectedMessage.recipient_phone || 'Preview'}
-          templates={[selectedMessage.template || { text: selectedMessage.content || selectedMessage.body || '' }]}
+          templates={[
+            typeof selectedMessage.template === 'object' && selectedMessage.template !== null
+              ? selectedMessage.template
+              : typeof selectedMessage.content === 'object' && selectedMessage.content !== null
+              ? selectedMessage.content
+              : { text: safeText(selectedMessage.content || selectedMessage.body || '') }
+          ]}
         />
       )}
 

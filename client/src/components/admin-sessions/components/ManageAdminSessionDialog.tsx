@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { PhoneActiveIndicator } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
+import { PhoneActiveIndicator, PhoneActiveTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -222,7 +222,10 @@ export function ManageAdminSessionDialog({
                 <span className="font-mono">{session.phone_number || 'Not connected'}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Phone Active:</span>
+                <span className="text-slate-500 font-medium flex items-center gap-1">
+                  Phone Active:
+                  <PhoneActiveTooltip />
+                </span>
                 <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
               </div>
             </div>

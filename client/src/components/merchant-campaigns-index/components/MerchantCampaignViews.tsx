@@ -12,6 +12,7 @@ import {
   Edit3,
 } from 'lucide-react'
 import dayjs from 'dayjs'
+import { safeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -121,9 +122,9 @@ export function MerchantCampaignViews({
                             {cStatus.toUpperCase()}
                           </span>
                           {c.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                            <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight" title={c.error_message}>
+                            <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight" title={safeText(c.error_message)}>
                               <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
-                              <span className="truncate">{c.error_message}</span>
+                              <span className="truncate">{safeText(c.error_message)}</span>
                             </div>
                           )}
                         </div>

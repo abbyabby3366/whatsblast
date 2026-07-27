@@ -39,7 +39,7 @@ import type { Session, MasterPhone, User } from '@/components/admin-sessions/typ
 import { rows, ownerDisplay } from '@/components/admin-sessions/types'
 import { MasterPhonesCard } from '@/components/admin-sessions/components/MasterPhonesCard'
 import { ManageAdminSessionDialog } from '@/components/admin-sessions/components/ManageAdminSessionDialog'
-import { PhoneActiveIndicator } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
+import { PhoneActiveIndicator, PhoneActiveTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 
 export const Route = createFileRoute('/admin/sessions')({ ssr: false, component: AdminSessionsPage })
 
@@ -462,6 +462,7 @@ function AdminSessionsPage() {
                       <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                         <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                           <Smartphone className="w-3 h-3 text-slate-400" /> Phone Active:
+                          <PhoneActiveTooltip />
                         </span>
                         <PhoneActiveIndicator lastPhoneActivityAt={s.last_phone_activity_at} />
                       </div>
@@ -506,6 +507,13 @@ function AdminSessionsPage() {
                     <TableHead>Phone</TableHead>
                     <TableHead>Merchant / Owner</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Interval</TableHead>
+                    <TableHead>Active Window</TableHead>
+                    <TableHead>
+                      <span className="flex items-center gap-1">
+                        Phone Active <PhoneActiveTooltip />
+                      </span>
+                    </TableHead>
                     <TableHead>Warmup & Limit</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -551,6 +559,15 @@ function AdminSessionsPage() {
                         <div className="text-sm font-medium">{ownerDisplay(s.user)}</div>
                       </TableCell>
                       <TableCell>{getStatusBadge(s.status)}</TableCell>
+                      <TableCell className="font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                        {s.min_interval_seconds ?? 10}s - {s.max_interval_seconds ?? 15}s
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                        {s.active_start_time || '00:00'} - {s.active_end_time || '23:59'}
+                      </TableCell>
+                      <TableCell>
+                        <PhoneActiveIndicator lastPhoneActivityAt={s.last_phone_activity_at} />
+                      </TableCell>
                       <TableCell className="text-xs">
                         <div><span className="font-medium text-slate-500">Max/day:</span> {s.max_message_count_per_day ?? 50}</div>
                         <div className="truncate max-w-48 text-slate-400" title={s.warmup_schedule?.join(', ') || 'No schedule'}>

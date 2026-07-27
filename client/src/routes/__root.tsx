@@ -56,8 +56,39 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
   }),
   notFoundComponent: NotFound,
+  errorComponent: RootErrorComponent,
   shellComponent: RootDocument,
 })
+
+function RootErrorComponent({ error, reset }: { error: any; reset: () => void }) {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950 text-white text-center">
+      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto">
+          ⚠️
+        </div>
+        <h1 className="text-xl font-bold text-slate-100">Something went wrong</h1>
+        <p className="text-xs text-slate-400 font-mono bg-slate-950/80 p-3 rounded-lg text-left break-words overflow-auto max-h-32 border border-slate-800">
+          {error?.message || String(error)}
+        </p>
+        <div className="flex gap-3 justify-center pt-2">
+          <button
+            onClick={() => reset()}
+            className="px-4 py-2 bg-emerald-600 rounded-lg text-xs font-semibold hover:bg-emerald-500 transition-all text-white"
+          >
+            Try Again
+          </button>
+          <a
+            href="/"
+            className="px-4 py-2 bg-slate-800 rounded-lg text-xs font-semibold hover:bg-slate-700 transition-all text-slate-200 border border-slate-700"
+          >
+            Back to Home
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function NotFound() {
   return (

@@ -2,6 +2,7 @@ import React from 'react'
 import { ArrowLeft, CheckCheck, Mic, MoreVertical, User as UserIcon } from 'lucide-react'
 import dayjs from 'dayjs'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { safeText } from '@/lib/utils'
 
 export interface WhatsAppPhonePreviewModalProps {
   isOpen?: boolean
@@ -140,7 +141,7 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
             </div>
             <div className="flex flex-col flex-1 min-w-0 ml-1">
               <span className="font-semibold text-[16px] truncate leading-tight">
-                {campaign?.recipient_phones?.[0] || campaign?.contacts?.[0] || campaign?.name || 'Sample Contact'}
+                {activeCampaign?.recipient_phones?.[0] || activeCampaign?.contacts?.[0] || activeCampaign?.name || title || 'Sample Contact'}
               </span>
               <span className="text-xs text-white/80 font-medium">online</span>
             </div>
@@ -150,19 +151,21 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 relative z-10">
             <div className="flex justify-center my-2">
               <span className="bg-[#e1f3fb]/90 dark:bg-[#182229]/90 text-[#54656f] dark:text-[#8696a0] text-xs px-3 py-1.5 rounded-lg shadow-xs font-medium uppercase tracking-wide text-[10px]">
-                {campaign?.created_at || campaign?.createdAt
-                  ? dayjs(campaign.created_at || campaign.createdAt).format('MMMM D, YYYY')
+                {activeCampaign?.created_at || activeCampaign?.createdAt
+                  ? dayjs(activeCampaign.created_at || activeCampaign.createdAt).format('MMMM D, YYYY')
                   : 'Today'}
               </span>
             </div>
 
-            {campaign && (() => {
-              const templates = getCampaignTemplates(campaign)
-              const displayTemplates = templates.length > 0 ? templates : [{ text: 'No template content' }]
+            {activeCampaign && (() => {
+              const tmpls = getCampaignTemplates(activeCampaign)
+              const displayTemplates = tmpls.length > 0 ? tmpls : (templates && templates.length > 0 ? templates : [{ text: 'No template content' }])
 
               return displayTemplates.map((template: any, idx: number) => {
                 const mediaList = resolveTemplateMediaList(template)
                 const hasMedia = mediaList.length > 0
+                const mainText = safeText(template.text || template.template, hasMedia ? '' : '[message]')
+                const footerText = safeText(template.footer || template.footer_text, '')
 
                 return (
                   <div key={idx} className="space-y-1">
@@ -208,23 +211,23 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
                         </div>
                       )}
 
-                      {(template.text || template.template || !hasMedia) && (
+                      {mainText ? (
                         <div className="mb-1 font-normal">
-                          {template.text || template.template || '[message]'}
+                          {mainText}
                         </div>
-                      )}
+                      ) : null}
 
-                      {template.footer ? (
+                      {footerText ? (
                         <div className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-1 italic border-t border-black/5 dark:border-white/5 pt-1">
-                          {template.footer}
+                          {footerText}
                         </div>
                       ) : null}
 
                       {template.buttons?.length ? (
                         <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
                           {template.buttons.map((button: any, bIdx: number) => {
-                            const label = button.displayText || button.display_text || button.text || button.title || button.value || `Button ${bIdx + 1}`
-                            const val = button.value || button.url || button.phone_number || button.copy_code || ''
+                            const label = safeText(button.displayText || button.display_text || button.text || button.title || button.value, `Button ${bIdx + 1}`)
+                            const val = safeText(button.value || button.url || button.phone_number || button.copy_code, '')
                             return (
                               <div
                                 key={button.id || bIdx}

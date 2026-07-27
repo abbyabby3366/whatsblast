@@ -6,6 +6,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { api, getErrorMessage } from '@/lib/api'
+import { safeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -89,8 +90,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
               phone,
               status: (matchedLog.status || 'sent').toLowerCase(),
               time: matchedLog.created_at || matchedLog.wa_timestamp || matchedLog.createdAt,
-              error: matchedLog.error || null,
-              message: matchedLog.content?.text || 'Template message sent',
+              error: matchedLog.error ? safeText(matchedLog.error) : null,
+              message: safeText(matchedLog.content?.text || matchedLog.content, 'Template message sent'),
               retryCount: matchedLog.retry_count || matchedLog.retryCount || 0,
             }
           }
@@ -119,8 +120,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           phone: l.recipient_phone || l.to_jid || 'Recipient',
           status: (l.status || 'sent').toLowerCase(),
           time: l.created_at || l.wa_timestamp,
-          error: l.error || null,
-          message: l.content?.text || 'Message',
+          error: l.error ? safeText(l.error) : null,
+          message: safeText(l.content?.text || l.content, 'Message'),
           retryCount: l.retry_count || l.retryCount || 0,
         }))
 
@@ -313,11 +314,11 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                       <TableCell className="text-slate-500 whitespace-nowrap">
                         {row.time ? dayjs(row.time).format('DD/MM/YY h:mm A') : '-'}
                       </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400 max-w-[200px] truncate" title={row.error || row.message}>
+                      <TableCell className="text-slate-600 dark:text-slate-400 max-w-[200px] truncate" title={safeText(row.error || row.message)}>
                         {row.error ? (
-                          <span className="text-rose-600 dark:text-rose-400 font-medium">{row.error}</span>
+                          <span className="text-rose-600 dark:text-rose-400 font-medium">{safeText(row.error)}</span>
                         ) : (
-                          <span>{row.message}</span>
+                          <span>{safeText(row.message)}</span>
                         )}
                       </TableCell>
                       <TableCell className="text-center">

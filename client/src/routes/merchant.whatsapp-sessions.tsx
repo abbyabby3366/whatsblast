@@ -429,6 +429,13 @@ function SessionsPage() {
                 <TableHead className="text-xs">Alias</TableHead>
                 <TableHead className="text-xs">Phone Number</TableHead>
                 <TableHead className="text-xs">Session ID & Tags</TableHead>
+                <TableHead className="text-xs">Interval</TableHead>
+                <TableHead className="text-xs">Active Window</TableHead>
+                <TableHead className="text-xs">
+                  <span className="flex items-center gap-1">
+                    Phone Active <PhoneActiveTooltip />
+                  </span>
+                </TableHead>
                 <TableHead className="text-xs">Created At</TableHead>
                 <TableHead className="text-xs text-right">Actions</TableHead>
               </TableRow>
@@ -486,7 +493,16 @@ function SessionsPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="py-2.5 text-xs text-slate-500">
+                    <TableCell className="py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                      {session.min_interval_seconds ?? 10}s - {session.max_interval_seconds ?? 15}s
+                    </TableCell>
+                    <TableCell className="py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                      {session.active_start_time || '00:00'} - {session.active_end_time || '23:59'}
+                    </TableCell>
+                    <TableCell className="py-2.5">
+                      <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
+                    </TableCell>
+                    <TableCell className="py-2.5 text-xs text-slate-500 whitespace-nowrap">
                       {dayjs(session.created_at).format('DD/MM/YY · h:mm A')}
                     </TableCell>
                     <TableCell className="py-2.5 text-right">

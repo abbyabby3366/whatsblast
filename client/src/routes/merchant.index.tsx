@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { safeText } from '@/lib/utils'
 import { Users, Megaphone, CheckCircle2, Clock, Loader2, ChevronRight } from 'lucide-react'
 import {
   LineChart,
@@ -216,8 +217,8 @@ function MerchantDashboard() {
                         {actualSent}/{totalRecipients} sent • {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY')}
                       </p>
                       {campaign.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                        <p className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px]" title={campaign.error_message}>
-                          ⚠️ {campaign.error_message}
+                        <p className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px]" title={safeText(campaign.error_message)}>
+                          ⚠️ {safeText(campaign.error_message)}
                         </p>
                       )}
                     </div>

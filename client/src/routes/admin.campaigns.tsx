@@ -23,6 +23,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { api, getErrorMessage } from '@/lib/api'
+import { safeText } from '@/lib/utils'
 import {
   WhatsAppPhonePreviewModal,
 } from '@/components/campaigns/WhatsAppPhonePreviewModal'
@@ -349,9 +350,9 @@ function AdminCampaignsPage() {
                               {cStatus.toUpperCase()}
                             </span>
                             {c.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                              <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight" title={c.error_message}>
+                              <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight" title={safeText(c.error_message)}>
                                 <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
-                                <span className="truncate">{c.error_message}</span>
+                                <span className="truncate">{safeText(c.error_message)}</span>
                               </div>
                             )}
                           </div>

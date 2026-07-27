@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, useSearch, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, getErrorMessage } from '@/lib/api'
+import { safeText } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
 import {
@@ -187,8 +188,8 @@ function CampaignProgressPage() {
                 matchedLog.created_at ||
                 matchedLog.wa_timestamp ||
                 matchedLog.createdAt,
-              error: matchedLog.error || null,
-              message: matchedLog.content?.text || 'Template message sent',
+              error: matchedLog.error ? safeText(matchedLog.error) : null,
+              message: safeText(matchedLog.content?.text || matchedLog.content, 'Template message sent'),
             }
           }
 
@@ -214,8 +215,8 @@ function CampaignProgressPage() {
           phone: l.recipient_phone || l.to_jid || 'Recipient',
           status: l.status || 'sent',
           time: l.created_at || l.wa_timestamp,
-          error: l.error || null,
-          message: l.content?.text || 'Message',
+          error: l.error ? safeText(l.error) : null,
+          message: safeText(l.content?.text || l.content, 'Message'),
         }))
 
   return (
@@ -303,7 +304,7 @@ function CampaignProgressPage() {
           <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
             <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold">Campaign Execution Notice:</span> {campaign.error_message}
+              <span className="font-semibold">Campaign Execution Notice:</span> {safeText(campaign.error_message)}
             </div>
           </div>
         )}
@@ -394,7 +395,7 @@ function CampaignProgressPage() {
                         </span>
                         {row.error && (
                           <p className="mt-0.5 text-[10px] text-rose-600 dark:text-rose-400 font-normal">
-                            {row.error}
+                            {safeText(row.error)}
                           </p>
                         )}
                       </TableCell>
@@ -402,7 +403,7 @@ function CampaignProgressPage() {
                         {row.time ? dayjs(row.time).format('DD/MM/YY h:mm:ss A') : '-'}
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400 max-w-xs truncate">
-                        {row.message}
+                        {safeText(row.message)}
                       </TableCell>
                       <TableCell className="text-right">
                         {isFailed ? (
