@@ -173,18 +173,28 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     },
   });
 
-  // Immediately create PENDING messages for all recipients
+  // Immediately create PENDING messages for all recipients with cumulative random 10-15 minute intervals
   if (phoneList.length > 0) {
-    const avgIntervalSec = (minInterval + maxInterval) / 2;
+    const minIntervalMins = Number(minInterval) || 10;
+    const maxIntervalMins = Number(maxInterval) >= minIntervalMins ? Number(maxInterval) : minIntervalMins + 5;
     const baseScheduledAt = campaign.scheduled_at ? new Date(campaign.scheduled_at) : new Date();
 
     const primaryTpl = templateObjs.length > 0 ? templateObjs[0] : null;
     const tplText = primaryTpl ? (primaryTpl.text || primaryTpl.template || '') : '';
     const msgType = primaryTpl ? (primaryTpl.type || primaryTpl.messageType || 'text') : 'text';
 
+    let cumulativeTimeMs = baseScheduledAt.getTime();
+
     const pendingMessages = phoneList.map((contact: string, idx: number) => {
       const cleanPhone = contact.replace(/[^0-9]/g, '');
-      const scheduledTime = new Date(baseScheduledAt.getTime() + idx * avgIntervalSec * 1000);
+
+      if (idx > 0) {
+        // Random decimal minutes between minIntervalMins and maxIntervalMins (e.g. 11.45 minutes)
+        const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
+        cumulativeTimeMs += randomMinutes * 60 * 1000;
+      }
+
+      const scheduledTime = new Date(cumulativeTimeMs);
 
       return {
         campaign: campaign._id,
@@ -259,6 +269,25 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
   if (selected_sessions !== undefined) campaign.selected_sessions = Array.isArray(selected_sessions) ? selected_sessions : [];
 
   await campaign.save();
+
+  // Recalculate scheduled_at timestamps for pending messages using random 10-15 minute intervals
+  const minIntervalMins = Number(campaign.min_interval_seconds) || 10;
+  const maxIntervalMins = Number(campaign.max_interval_seconds) >= minIntervalMins ? Number(campaign.max_interval_seconds) : minIntervalMins + 5;
+
+  const pendingMsgs = await Message.find({ campaign: campaign._id, status: MessageStatus.PENDING }).sort({ createdAt: 1 });
+  if (pendingMsgs.length > 0) {
+    let cumulativeMs = Date.now();
+    for (let idx = 0; idx < pendingMsgs.length; idx++) {
+      const msg = pendingMsgs[idx];
+      if (idx > 0) {
+        const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
+        cumulativeMs += randomMinutes * 60 * 1000;
+      }
+      msg.scheduled_at = new Date(cumulativeMs);
+      await msg.save();
+    }
+  }
+
   return res.json(await formatCampaign(campaign));
 };
 
@@ -351,14 +380,19 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
   }
 
   const now = new Date();
-  const minInterval = campaign.min_interval_seconds || 10;
-  const maxInterval = campaign.max_interval_seconds || 15;
-  const avgIntervalSec = (minInterval + maxInterval) / 2;
+  const minInterval = Number(campaign.min_interval_seconds) || 10;
+  const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
+  let cumulativeMs = now.getTime();
 
   for (let idx = 0; idx < retryContacts.length; idx++) {
     const contact = retryContacts[idx];
     const clean = contact.replace(/[^0-9]/g, '');
-    const scheduledTime = new Date(now.getTime() + idx * avgIntervalSec * 1000);
+
+    if (idx > 0) {
+      const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
+      cumulativeMs += randomMinutes * 60 * 1000;
+    }
+    const scheduledTime = new Date(cumulativeMs);
 
     const updated = await Message.findOneAndUpdate(
       { campaign: campaign._id, recipient_phone: clean },

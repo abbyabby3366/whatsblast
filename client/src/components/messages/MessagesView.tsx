@@ -194,10 +194,47 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         },
       }),
       columnHelper.accessor('created_at', {
-        header: 'Sent / Created At',
+        header: 'Created At',
         cell: (info) => {
-          const sent = info.row.original.sent_at || info.getValue()
-          return sent ? dayjs(sent).format('DD/MM/YY h:mm A') : '-'
+          const val = info.getValue()
+          return val ? (
+            <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+              {dayjs(val).format('DD/MM/YY hh:mm:ss A')}
+            </span>
+          ) : '-'
+        },
+      }),
+      columnHelper.accessor('scheduled_at', {
+        header: 'Scheduled / Sent Time',
+        cell: (info) => {
+          const msg = info.row.original
+          const st = (msg.status || '').toLowerCase()
+          const isSent = st === 'sent' || st === 'delivered' || st === 'read'
+          const isFailed = st === 'failed'
+          const targetTime = isSent
+            ? (msg.sent_at || msg.wa_timestamp || msg.updatedAt)
+            : (msg.scheduled_at || msg.created_at)
+
+          if (!targetTime) return <span className="text-slate-400">-</span>
+
+          return (
+            <div className="flex flex-col">
+              <span
+                className={`font-mono text-xs font-medium ${
+                  isSent
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : isFailed
+                    ? 'text-rose-700 dark:text-rose-400'
+                    : 'text-amber-700 dark:text-amber-400'
+                }`}
+              >
+                {dayjs(targetTime).format('DD/MM/YY hh:mm:ss A')}
+              </span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                {isSent ? 'Sent' : isFailed ? 'Failed' : 'Scheduled'}
+              </span>
+            </div>
+          )
         },
       }),
     ]

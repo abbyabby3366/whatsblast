@@ -184,10 +184,9 @@ function CampaignProgressPage() {
             return {
               phone: phone,
               status: matchedLog.status || 'sent',
-              time:
-                matchedLog.created_at ||
-                matchedLog.wa_timestamp ||
-                matchedLog.createdAt,
+              scheduled_at: matchedLog.scheduled_at,
+              sent_at: matchedLog.sent_at || matchedLog.wa_timestamp,
+              created_at: matchedLog.created_at || matchedLog.createdAt,
               error: matchedLog.error ? safeText(matchedLog.error) : null,
               message: safeText(matchedLog.content?.text || matchedLog.content, 'Template message sent'),
             }
@@ -197,7 +196,9 @@ function CampaignProgressPage() {
             return {
               phone: phone,
               status: 'failed',
-              time: null,
+              scheduled_at: null,
+              sent_at: null,
+              created_at: null,
               error: 'Send failed during execution',
               message: 'Template message failed',
             }
@@ -206,7 +207,9 @@ function CampaignProgressPage() {
           return {
             phone: phone,
             status: 'pending',
-            time: null,
+            scheduled_at: null,
+            sent_at: null,
+            created_at: null,
             error: null,
             message: 'Scheduled in queue',
           }
@@ -214,7 +217,9 @@ function CampaignProgressPage() {
       : logs.map((l) => ({
           phone: l.recipient_phone || l.to_jid || 'Recipient',
           status: l.status || 'sent',
-          time: l.created_at || l.wa_timestamp,
+          scheduled_at: l.scheduled_at,
+          sent_at: l.sent_at || l.wa_timestamp,
+          created_at: l.created_at || l.createdAt,
           error: l.error ? safeText(l.error) : null,
           message: safeText(l.content?.text || l.content, 'Message'),
         }))
@@ -363,7 +368,7 @@ function CampaignProgressPage() {
                 <TableRow>
                   <TableHead className="text-xs">Recipient Phone</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Time</TableHead>
+                  <TableHead className="text-xs">Scheduled Send Time</TableHead>
                   <TableHead className="text-xs">Message Preview</TableHead>
                   <TableHead className="text-xs text-right">Action</TableHead>
                 </TableRow>
@@ -399,8 +404,33 @@ function CampaignProgressPage() {
                           </p>
                         )}
                       </TableCell>
-                      <TableCell className="text-slate-500 whitespace-nowrap">
-                        {row.time ? dayjs(row.time).format('DD/MM/YY h:mm:ss A') : '-'}
+                      <TableCell className="whitespace-nowrap">
+                        {(() => {
+                          const targetTime = isSuccess
+                            ? (row.sent_at || row.scheduled_at || row.created_at)
+                            : (row.scheduled_at || row.created_at)
+
+                          if (!targetTime) return <span className="text-slate-400">-</span>
+
+                          return (
+                            <div className="flex flex-col">
+                              <span
+                                className={`font-mono text-xs font-semibold ${
+                                  isSuccess
+                                    ? 'text-emerald-700 dark:text-emerald-400'
+                                    : isFailed
+                                    ? 'text-rose-700 dark:text-rose-400'
+                                    : 'text-amber-700 dark:text-amber-400'
+                                }`}
+                              >
+                                {dayjs(targetTime).format('DD/MM/YY hh:mm:ss A')}
+                              </span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                {isSuccess ? 'Sent' : isFailed ? 'Failed' : 'Scheduled'}
+                              </span>
+                            </div>
+                          )
+                        })()}
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400 max-w-xs truncate">
                         {safeText(row.message)}
