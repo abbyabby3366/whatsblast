@@ -71,10 +71,22 @@ async function formatCampaign(c: any) {
     }
   }
 
+  let formattedUser = rest.user;
+  if (formattedUser && typeof formattedUser === 'object') {
+    const uId = formattedUser._id ? formattedUser._id.toString() : formattedUser.id;
+    formattedUser = {
+      id: uId,
+      _id: uId,
+      phone_number: formattedUser.phone_number,
+      role: formattedUser.role,
+    };
+  }
+
   return {
     id: _id ? _id.toString() : obj.id,
     created_at: obj.createdAt,
     ...rest,
+    user: formattedUser,
   };
 }
 
@@ -184,7 +196,8 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     await Message.insertMany(pendingMessages);
   }
 
-  return res.status(201).json(await formatCampaign(campaign));
+  const populated = await BlastCampaign.findById(campaign._id).populate('user', 'phone_number role').populate('template');
+  return res.status(201).json(await formatCampaign(populated || campaign));
 };
 
 router.post('/blast-campaigns', createCampaign);
