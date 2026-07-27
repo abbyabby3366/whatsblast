@@ -5,6 +5,8 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   Browsers,
   AuthenticationState,
+  generateMessageIDV2,
+  generateMessageID,
 } from 'baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
@@ -45,7 +47,7 @@ export function removeActiveSession(sessionId: string): void {
 
 const systemSentMessageIds = new Set<string>();
 
-function markSystemSentMessageId(msgId?: string) {
+export function markSystemSentMessageId(msgId?: string) {
   if (!msgId) return;
   systemSentMessageIds.add(msgId);
   if (systemSentMessageIds.size > 10000) {
@@ -54,10 +56,20 @@ function markSystemSentMessageId(msgId?: string) {
   }
 }
 
-function isSystemSentMessageId(msgId?: string): boolean {
+export async function isSystemSentMessageId(msgId?: string): Promise<boolean> {
   if (!msgId) return false;
+  // Check in-memory set (pre-marked before transmission)
   if (systemSentMessageIds.has(msgId)) return true;
-  if (msgId.startsWith('BAE5')) return true;
+
+  // Fallback: check if this message was recorded in the DB by our system (handles server restarts)
+  try {
+    const exists = await Message.exists({ message_id: msgId, direction: MessageDirection.OUTBOUND });
+    if (exists) {
+      systemSentMessageIds.add(msgId);
+      return true;
+    }
+  } catch (_) { }
+
   return false;
 }
 
@@ -143,7 +155,15 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
   // Intercept all socket.sendMessage calls to automatically track system-sent message IDs
   const originalSendMessage = sock.sendMessage.bind(sock);
   sock.sendMessage = async (...args: Parameters<typeof originalSendMessage>) => {
-    const res = await originalSendMessage(...args);
+    const [jid, content, options] = args;
+    const opts = options || {};
+    const messageId = opts.messageId || (generateMessageIDV2 ? generateMessageIDV2(sock.user?.id) : generateMessageID());
+    const finalOpts = { ...opts, messageId };
+
+    // Pre-mark system message ID before transmission to prevent race condition with incoming messages.upsert WS frame
+    markSystemSentMessageId(messageId);
+
+    const res = await originalSendMessage(jid, content, finalOpts);
     if (res?.key?.id) {
       markSystemSentMessageId(res.key.id);
     }
@@ -248,7 +268,8 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
 
       if (msg.key.fromMe) {
         const msgId = msg.key.id || '';
-        if (isSystemSentMessageId(msgId)) {
+        const isSystem = await isSystemSentMessageId(msgId);
+        if (isSystem) {
           // Sent by WhatsBlast system -> updates general phone sync activity only
           updateLastPhoneActivity(sessionId, msgTime).catch(console.error);
         } else {

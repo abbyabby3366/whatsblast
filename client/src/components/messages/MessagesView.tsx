@@ -11,9 +11,7 @@ import {
   Trash2,
   RotateCcw,
   Eye,
-  MessageSquare,
   Store,
-  Calendar,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -133,9 +131,11 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         searchParams.set('user', selectedMerchant)
       }
       if (startDate) {
+        searchParams.set('start_date', startDate)
         searchParams.set('created_at_after', startDate)
       }
       if (endDate) {
+        searchParams.set('end_date', endDate)
         searchParams.set('created_at_before', endDate)
       }
 
@@ -353,18 +353,18 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <Input
-              placeholder="Search phone or text..."
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-              className="pl-9 h-9 text-xs bg-white dark:bg-slate-950"
-            />
-          </div>
+      <div className="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          <Input
+            placeholder="Search phone or text..."
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="pl-9 h-9 text-xs bg-white dark:bg-slate-950"
+          />
+        </div>
 
+        <div className="w-[170px]">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-950">
               <SelectValue placeholder="All Statuses" />
@@ -376,8 +376,10 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               <SelectItem value="FAILED">Failed</SelectItem>
             </SelectContent>
           </Select>
+        </div>
 
-          {isAdmin && (
+        {isAdmin && (
+          <div className="w-[180px]">
             <Select value={selectedMerchant} onValueChange={setSelectedMerchant}>
               <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-950">
                 <Store className="w-3.5 h-3.5 text-slate-400 mr-1" />
@@ -392,44 +394,97 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
                 ))}
               </SelectContent>
             </Select>
-          )}
-
-          <div className="relative">
-            <Calendar className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="pl-8 h-9 text-xs bg-white dark:bg-slate-950"
-              title="Start Date"
-            />
-          </div>
-
-          <div className="relative">
-            <Calendar className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="pl-8 h-9 text-xs bg-white dark:bg-slate-950"
-              title="End Date"
-            />
-          </div>
-        </div>
-
-        {hasActiveFilters && (
-          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800 text-xs">
-            <span className="text-slate-500 font-medium">Filters active</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleResetFilters}
-              className="h-6 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1"
-            >
-              <RotateCcw className="w-3 h-3 mr-1" /> Reset filters
-            </Button>
           </div>
         )}
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0">From</span>
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="h-9 text-xs bg-white dark:bg-slate-950 w-[140px]"
+            title="From Date"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0">To</span>
+          <Input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="h-9 text-xs bg-white dark:bg-slate-950 w-[140px]"
+            title="To Date"
+          />
+        </div>
+
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const today = dayjs().format('YYYY-MM-DD')
+              setStartDate(today)
+              setEndDate(today)
+            }}
+            className={`h-9 px-2 text-xs transition-colors ${
+              startDate === dayjs().format('YYYY-MM-DD') && endDate === dayjs().format('YYYY-MM-DD')
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 font-medium'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            Today
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const yest = dayjs().subtract(1, 'day').format('YYYY-MM-DD')
+              setStartDate(yest)
+              setEndDate(yest)
+            }}
+            className={`h-9 px-2 text-xs transition-colors ${
+              startDate === dayjs().subtract(1, 'day').format('YYYY-MM-DD') && endDate === dayjs().subtract(1, 'day').format('YYYY-MM-DD')
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 font-medium'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            Yesterday
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setStartDate(dayjs().subtract(6, 'day').format('YYYY-MM-DD'))
+              setEndDate(dayjs().format('YYYY-MM-DD'))
+            }}
+            className={`h-9 px-2 text-xs transition-colors ${
+              startDate === dayjs().subtract(6, 'day').format('YYYY-MM-DD') && endDate === dayjs().format('YYYY-MM-DD')
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 font-medium'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            Last 7 Days
+          </Button>
+        </div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleResetFilters}
+          disabled={!hasActiveFilters}
+          className={`h-9 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 ml-auto shrink-0 transition-opacity duration-150 ${
+            hasActiveFilters
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none invisible'
+          }`}
+        >
+          <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Reset filters
+        </Button>
       </div>
 
       {/* Main Table */}

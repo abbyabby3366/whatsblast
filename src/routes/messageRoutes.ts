@@ -40,7 +40,7 @@ function formatMessage(m: any) {
 
 const getMessages = async (req: AuthRequest, res: Response) => {
   const filter: any = {};
-  const { status, session_id, campaign_id, user_id, merchant_id, direction, is_campaign, search, start_date, end_date } = req.query;
+  const { status, session_id, campaign_id, user_id, merchant_id, user, direction, is_campaign, search, start_date, end_date, created_at_after, created_at_before } = req.query;
 
   if (req.user?.role !== 'admin') {
     const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
@@ -54,7 +54,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
       { campaign: { $in: campaignIds } },
     ];
   } else {
-    const targetUserId = user_id || merchant_id;
+    const targetUserId = user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
     if (targetUserId && targetUserId !== 'all') {
       const uSessions = await WhatsAppSession.find({ user: targetUserId }).select('_id');
       const uCampaigns = await BlastCampaign.find({ user: targetUserId }).select('_id');
@@ -129,10 +129,37 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     }
   }
 
-  if (start_date || end_date) {
-    filter.createdAt = {};
-    if (start_date) filter.createdAt.$gte = new Date(start_date as string);
-    if (end_date) filter.createdAt.$lte = new Date(end_date as string);
+  const startDateVal = (start_date || created_at_after) as string | undefined;
+  const endDateVal = (end_date || created_at_before) as string | undefined;
+
+  if (startDateVal || endDateVal) {
+    const dateCond: any = {};
+    if (startDateVal) {
+      const rawStart = startDateVal.trim();
+      const startD = new Date(rawStart.includes('T') ? rawStart : `${rawStart}T00:00:00.000`);
+      if (!isNaN(startD.getTime())) {
+        dateCond.$gte = startD;
+      }
+    }
+    if (endDateVal) {
+      const rawEnd = endDateVal.trim();
+      const endD = new Date(rawEnd.includes('T') ? rawEnd : `${rawEnd}T23:59:59.999`);
+      if (!isNaN(endD.getTime())) {
+        dateCond.$lte = endD;
+      }
+    }
+
+    if (Object.keys(dateCond).length > 0) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { createdAt: dateCond },
+          { scheduled_at: dateCond },
+          { sent_at: dateCond },
+          { wa_timestamp: dateCond },
+        ],
+      });
+    }
   }
 
   const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
