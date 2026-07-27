@@ -1,8 +1,12 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import dayjs from 'dayjs';
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/authMiddleware.js';
 import { User } from '../models/User.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
+import { Customer } from '../models/Customer.js';
+import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
+import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 
 const router = Router();
 
@@ -229,5 +233,97 @@ const deleteAgentPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/agent-phone-numbers/:id', deleteAgentPhone);
+
+const getMerchantDashboardStats = async (req: AuthRequest, res: Response) => {
+  try {
+    const merchantId = req.user?._id;
+    if (!merchantId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const totalCustomers = await Customer.countDocuments({ merchant: merchantId });
+    const totalCampaigns = await BlastCampaign.countDocuments({ user: merchantId });
+    const completedCampaigns = await BlastCampaign.countDocuments({
+      user: merchantId,
+      status: CampaignStatus.COMPLETED,
+    });
+    const scheduledCampaigns = await BlastCampaign.countDocuments({
+      user: merchantId,
+      status: { $in: [CampaignStatus.RUNNING, CampaignStatus.DRAFT, 'SCHEDULED'] },
+    });
+
+    const recentCampaignsDocs = await BlastCampaign.find({ user: merchantId })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    const recentCampaigns = recentCampaignsDocs.map((c: any) => {
+      const obj = c.toObject ? c.toObject() : c;
+      return {
+        id: obj._id ? obj._id.toString() : obj.id,
+        name: obj.name,
+        status: obj.status,
+        created_at: obj.createdAt,
+        error_message: obj.error_message,
+        stats: obj.stats || {},
+        recipient_phones: obj.recipient_phones || [],
+        contacts: obj.contacts || [],
+        recipients: obj.recipients || [],
+        current_index: obj.current_index || 0,
+      };
+    });
+
+    const userSessions = await WhatsAppSession.find({ user: merchantId }).select('_id');
+    const userCampaigns = await BlastCampaign.find({ user: merchantId }).select('_id');
+    const sessionIds = userSessions.map((s) => s._id);
+    const campaignIds = userCampaigns.map((c) => c._id);
+
+    const chartData = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayObj = dayjs().subtract(i, 'day');
+      const startOfDay = dayObj.startOf('day').toDate();
+      const endOfDay = dayObj.endOf('day').toDate();
+      const dateName = dayObj.format('MMM DD');
+
+      const customersCount = await Customer.countDocuments({
+        merchant: merchantId,
+        createdAt: { $gte: startOfDay, $lte: endOfDay },
+      });
+
+      const messageCount = await Message.countDocuments({
+        $or: [
+          { session: { $in: sessionIds } },
+          { campaign: { $in: campaignIds } },
+        ],
+        direction: MessageDirection.OUTBOUND,
+        status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
+        $or: [
+          { sent_at: { $gte: startOfDay, $lte: endOfDay } },
+          { wa_timestamp: { $gte: startOfDay, $lte: endOfDay } },
+          { createdAt: { $gte: startOfDay, $lte: endOfDay } },
+        ],
+      });
+
+      chartData.push({
+        name: dateName,
+        customers: customersCount,
+        messages: messageCount,
+      });
+    }
+
+    return res.json({
+      totalCustomers,
+      totalCampaigns,
+      completedCampaigns,
+      scheduledCampaigns,
+      chartData,
+      recentCampaigns,
+    });
+  } catch (error: any) {
+    console.error('Error fetching merchant dashboard stats:', error);
+    return res.status(500).json({ error: error.message || 'Failed to fetch dashboard stats' });
+  }
+};
+
+router.get('/merchant/dashboard-stats', getMerchantDashboardStats);
 
 export default router;

@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, Link, useNavigate, useLocation } from '@tansta
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -12,7 +13,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, Store } from 'lucide-react'
+import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, ChevronsUpDown } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
@@ -46,6 +47,7 @@ function MerchantLayout() {
   const location = useLocation()
   const [isLogoutOpen, setIsLogoutOpen] = useState(false)
   const [isCheckingRole, setIsCheckingRole] = useState(true)
+  const [userMe, setUserMe] = useState<{ role?: string; phone_number?: string } | null>(null)
 
   const getPageHeader = () => {
     if (location.pathname.startsWith('/merchant/customers')) {
@@ -78,7 +80,7 @@ function MerchantLayout() {
     let isMounted = true
 
     api.get('users/me/')
-      .json<{ role?: string }>()
+      .json<{ role?: string; phone_number?: string }>()
       .then((me) => {
         if (!isMounted) return
 
@@ -87,6 +89,7 @@ function MerchantLayout() {
           return
         }
 
+        setUserMe(me)
         setIsCheckingRole(false)
       })
       .catch(() => {
@@ -104,6 +107,9 @@ function MerchantLayout() {
   if (!token || isCheckingRole) {
     return null
   }
+
+  const userLetter = userMe?.phone_number ? userMe.phone_number[0].toUpperCase() : 'M'
+  const displayName = userMe?.phone_number || 'Merchant'
 
   return (
     <SidebarProvider>
@@ -164,6 +170,39 @@ function MerchantLayout() {
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
+
+          <SidebarFooter className="border-t border-slate-200 dark:border-slate-800 p-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group outline-none">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white font-semibold text-sm shadow-sm">
+                    {userLetter}
+                  </div>
+                  <div className="flex flex-1 flex-col overflow-hidden text-sm">
+                    <span className="font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate">Merchant Account</span>
+                  </div>
+                  <ChevronsUpDown className="h-4 w-4 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" className="w-56 mb-1">
+                <DropdownMenuItem asChild>
+                  <Link to="/merchant/profile" className="flex items-center cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Profile Settings</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-red-600 focus:bg-red-50 focus:text-red-600 cursor-pointer"
+                  onClick={() => setIsLogoutOpen(true)}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarFooter>
         </Sidebar>
         <main className="flex-1 flex flex-col overflow-hidden">
           <header className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 sm:px-6 justify-between shrink-0">
@@ -171,61 +210,36 @@ function MerchantLayout() {
               <SidebarTrigger className="mr-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" />
               <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{pageTitle}</h1>
             </div>
-            <div className="flex items-center gap-4">
-              <Dialog open={isLogoutOpen} onOpenChange={setIsLogoutOpen}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Are you sure?</DialogTitle>
-                    <DialogDescription>
-                      You are about to logout from your account.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsLogoutOpen(false)}>Cancel</Button>
-                    <Button
-                      className="bg-red-600 hover:bg-red-700 text-white"
-                      onClick={() => {
-                        setIsLogoutOpen(false)
-                        logout()
-                        navigate({ to: '/login' })
-                      }}
-                    >
-                      Logout
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center p-0 shadow-md shadow-emerald-600/20">
-                    <span className="text-sm font-medium">M</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem asChild>
-                    <Link to="/merchant/profile" className="flex items-center cursor-pointer">
-                      <User className="mr-2 h-4 w-4" />
-                      <span>Profile Settings</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-red-600 focus:bg-red-50 focus:text-red-600 cursor-pointer"
-                    onClick={() => setIsLogoutOpen(true)}
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Logout</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
           </header>
           <div className="flex-1 overflow-auto p-3.5 sm:p-4">
             <Outlet />
           </div>
         </main>
       </div>
+
+      <Dialog open={isLogoutOpen} onOpenChange={setIsLogoutOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Are you sure?</DialogTitle>
+            <DialogDescription>
+              You are about to logout from your account.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsLogoutOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => {
+                setIsLogoutOpen(false)
+                logout()
+                navigate({ to: '/login' })
+              }}
+            >
+              Logout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   )
 }

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import dayjs from 'dayjs'
 
+import { WhatsAppIcon } from '@/components/icons/WhatsAppIcon'
 import { api, getErrorMessage } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -307,7 +308,7 @@ function SessionsPage() {
                         ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400' 
                         : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                     }`}>
-                      <img src="/futuristic-whatsapp-logo.png" alt="WhatsApp" className="w-6 h-6 object-contain" />
+                      <WhatsAppIcon className="w-6 h-6" />
                     </div>
                     <div className="min-w-0 space-y-0.5">
                       <div className="font-bold text-base text-slate-900 dark:text-slate-100 font-mono whitespace-nowrap">

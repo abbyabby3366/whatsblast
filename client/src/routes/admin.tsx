@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -13,7 +14,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Store, LogOut, Megaphone, Smartphone, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, Store, LogOut, Megaphone, Smartphone, MessageSquare, User, ChevronsUpDown } from 'lucide-react'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -33,6 +34,7 @@ function AdminLayout() {
   const location = useLocation()
   const [isLogoutOpen, setIsLogoutOpen] = useState(false)
   const [isCheckingRole, setIsCheckingRole] = useState(true)
+  const [userMe, setUserMe] = useState<{ role?: string; phone_number?: string } | null>(null)
 
   useEffect(() => {
     if (!token) {
@@ -44,7 +46,7 @@ function AdminLayout() {
     let isMounted = true
 
     api.get('users/me/')
-      .json<{ role?: string }>()
+      .json<{ role?: string; phone_number?: string }>()
       .then((me) => {
         if (!isMounted) return
 
@@ -53,6 +55,7 @@ function AdminLayout() {
           return
         }
 
+        setUserMe(me)
         setIsCheckingRole(false)
       })
       .catch(() => {
@@ -92,6 +95,9 @@ function AdminLayout() {
 
   const headerInfo = getPageHeader()
   const HeaderIcon = headerInfo.Icon
+
+  const userLetter = userMe?.phone_number ? userMe.phone_number[0].toUpperCase() : 'A'
+  const displayName = userMe?.phone_number || 'Super Admin'
 
   return (
     <SidebarProvider>
@@ -152,6 +158,34 @@ function AdminLayout() {
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
+
+          <SidebarFooter className="border-t border-slate-200 dark:border-slate-800 p-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group outline-none">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white font-semibold text-sm shadow-sm">
+                    {userLetter}
+                  </div>
+                  <div className="flex flex-1 flex-col overflow-hidden text-sm">
+                    <span className="font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate">Administrator</span>
+                  </div>
+                  <ChevronsUpDown className="h-4 w-4 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" className="w-56 mb-1">
+                <DropdownMenuItem disabled className="flex items-center opacity-70">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Admin Account</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-600" onClick={() => setIsLogoutOpen(true)}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarFooter>
         </Sidebar>
         <main className="flex flex-1 flex-col overflow-hidden">
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900">
@@ -162,20 +196,6 @@ function AdminLayout() {
                 {headerInfo.title}
               </h1>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 !text-white hover:bg-emerald-700 hover:!text-white">
-                  A
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem disabled>Admin account</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-600" onClick={() => setIsLogoutOpen(true)}>
-                  <LogOut className="mr-2 h-4 w-4" /> Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </header>
           <div className="flex-1 overflow-auto p-4 sm:p-4.5">
             <Outlet />

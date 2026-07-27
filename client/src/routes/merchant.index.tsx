@@ -14,7 +14,6 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { useMemo } from 'react'
 import dayjs from 'dayjs'
 
 export const Route = createFileRoute('/merchant/')({
@@ -22,69 +21,43 @@ export const Route = createFileRoute('/merchant/')({
   component: MerchantDashboard,
 })
 
+interface DashboardStats {
+  totalCustomers: number
+  totalCampaigns: number
+  completedCampaigns: number
+  scheduledCampaigns: number
+  chartData: Array<{
+    name: string
+    customers: number
+    messages: number
+  }>
+  recentCampaigns: Array<any>
+}
+
 function MerchantDashboard() {
-  const { data: customersData, isLoading: isLoadingCustomers } = useQuery({
-    queryKey: ['customers'],
-    queryFn: () => api.get('customers/').json<any>(),
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['merchant-dashboard-stats'],
+    queryFn: () => api.get('merchant/dashboard-stats').json<DashboardStats>(),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
-  const { data: campaignsData, isLoading: isLoadingCampaigns } = useQuery({
-    queryKey: ['campaigns'],
-    queryFn: () => api.get('blast-campaigns/').json<any>(),
-  })
-
-  const customers = useMemo(() => {
-    if (!customersData) return []
-    return Array.isArray(customersData) ? customersData : customersData.results || []
-  }, [customersData])
-
-  const campaigns = useMemo(() => {
-    if (!campaignsData) return []
-    return Array.isArray(campaignsData) ? campaignsData : campaignsData.results || []
-  }, [campaignsData])
-
-  const totalCustomers = customers.length
-  const totalCampaigns = campaigns.length
-  const completedCampaigns = campaigns.filter((c: any) => (c.status || '').toLowerCase() === 'completed').length
-  const scheduledCampaigns = campaigns.filter((c: any) => ['scheduled', 'running'].includes((c.status || '').toLowerCase())).length
-
-  const chartData = useMemo(() => {
-    const data = []
-    for (let i = 6; i >= 0; i--) {
-      const date = dayjs().subtract(i, 'day').format('MMM DD')
-      
-      const dayCustomers = customers.filter((c: any) => 
-        dayjs(c.created_at || c.createdAt).format('MMM DD') === date
-      ).length
-      
-      const dayCampaigns = campaigns.filter((c: any) => 
-        dayjs(c.created_at || c.createdAt).format('MMM DD') === date
-      )
-
-      const dayMessages = dayCampaigns.reduce((sum: number, c: any) => {
-        const stats = c.stats || {}
-        const totalRecipients = stats.total || c.recipient_phones?.length || c.contacts?.length || c.recipients?.length || 0
-        const sentCount = stats.sent !== undefined ? stats.sent : (c.current_index || 0)
-        const actualSent = (c.status || '').toLowerCase() === 'completed' && sentCount === 0 ? totalRecipients : sentCount
-        return sum + actualSent
-      }, 0)
-
-      data.push({
-        name: date,
-        customers: dayCustomers,
-        messages: dayMessages,
-      })
-    }
-    return data
-  }, [customers, campaigns])
-
-  if (isLoadingCustomers || isLoadingCampaigns) {
+  if (isLoading || !stats) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
       </div>
     )
   }
+
+  const {
+    totalCustomers = 0,
+    totalCampaigns = 0,
+    completedCampaigns = 0,
+    scheduledCampaigns = 0,
+    chartData = [],
+    recentCampaigns = [],
+  } = stats
 
   return (
     <div className="space-y-3">
@@ -201,7 +174,7 @@ function MerchantDashboard() {
           </CardHeader>
           <CardContent className="px-4">
             <div className="space-y-3">
-              {campaigns.slice(0, 5).map((campaign: any) => {
+              {recentCampaigns.map((campaign: any) => {
                 const cStatus = (campaign.status || 'draft').toLowerCase()
                 const stats = campaign.stats || {}
                 const totalRecipients = stats.total || campaign.recipient_phones?.length || campaign.contacts?.length || campaign.recipients?.length || 0
@@ -239,7 +212,7 @@ function MerchantDashboard() {
                   </div>
                 )
               })}
-              {campaigns.length === 0 && (
+              {recentCampaigns.length === 0 && (
                 <p className="text-sm text-slate-500 text-center py-4">No campaigns yet. Go create one!</p>
               )}
             </div>

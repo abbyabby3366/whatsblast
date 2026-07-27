@@ -6,7 +6,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Plus, Trash2, Search, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Search, Loader2, FileSpreadsheet, Upload, Download } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
@@ -230,6 +230,7 @@ function CustomersPage() {
             checked={allVisibleSelected}
             onChange={(e) => toggleAllVisible(e.target.checked)}
             aria-label="Select all visible customers"
+            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
           />
         ),
         cell: (info) => (
@@ -238,6 +239,7 @@ function CustomersPage() {
             checked={selectedIds.includes(info.row.original.id)}
             onChange={(e) => toggleSelected(info.row.original.id, e.target.checked)}
             aria-label={`Select ${info.row.original.name}`}
+            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
           />
         ),
       }),
@@ -305,12 +307,12 @@ function CustomersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <p className="text-xs text-slate-500">Manage your contact list for WhatsApp blasting.</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <input 
             type="file" 
             accept=".csv, .xlsx" 
@@ -318,30 +320,50 @@ function CustomersPage() {
             ref={fileInputRef}
             onChange={handleImportCSV} 
           />
-          <Button variant="outline" onClick={handleExportTemplate}>
-            Template CSV
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="flex-1 sm:flex-initial text-xs sm:text-sm px-2.5 sm:px-3"
+            onClick={handleExportTemplate}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+            <span>Template</span>
           </Button>
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-            Import CSV
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="flex-1 sm:flex-initial text-xs sm:text-sm px-2.5 sm:px-3"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+            <span>Import</span>
           </Button>
-          <Button variant="outline" onClick={handleExportCustomers}>
-            Export CSV
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="flex-1 sm:flex-initial text-xs sm:text-sm px-2.5 sm:px-3"
+            onClick={handleExportCustomers}
+          >
+            <Download className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+            <span>Export</span>
           </Button>
           {selectedIds.length > 0 && (
             <Button
               variant="destructive"
+              size="sm"
+              className="w-full sm:w-auto text-xs sm:text-sm"
               onClick={() => setBulkDeleteOpen(true)}
               disabled={bulkDeleteMutation.isPending}
             >
-              <Trash2 className="w-4 h-4 mr-2" />
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
               Delete selected ({selectedIds.length})
             </Button>
           )}
           
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                <Plus className="w-4 h-4 mr-2" />
+              <Button size="sm" className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm px-3 sm:px-4">
+                <Plus className="w-4 h-4 mr-1.5" />
                 Add Customer
               </Button>
             </DialogTrigger>
@@ -352,9 +374,9 @@ function CustomersPage() {
                   Add a new customer to your contact list. Ensure the phone number includes the country code.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="name" className="text-right">
+              <div className="grid gap-3 py-2 sm:py-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
+                  <Label htmlFor="name" className="sm:text-right text-xs sm:text-sm">
                     Name
                   </Label>
                   <Input
@@ -362,11 +384,11 @@ function CustomersPage() {
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder="John Doe"
-                    className="col-span-3"
+                    className="sm:col-span-3 text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="phone" className="text-right">
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
+                  <Label htmlFor="phone" className="sm:text-right text-xs sm:text-sm">
                     Phone
                   </Label>
                   <Input
@@ -374,11 +396,11 @@ function CustomersPage() {
                     value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
                     placeholder="60123456789"
-                    className="col-span-3"
+                    className="sm:col-span-3 text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="label" className="text-right">
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
+                  <Label htmlFor="label" className="sm:text-right text-xs sm:text-sm">
                     Label
                   </Label>
                   <Input
@@ -386,7 +408,7 @@ function CustomersPage() {
                     value={newLabel}
                     onChange={(e) => setNewLabel(e.target.value)}
                     placeholder="VIP, Retail, etc."
-                    className="col-span-3"
+                    className="sm:col-span-3 text-sm"
                   />
                 </div>
               </div>
@@ -402,19 +424,19 @@ function CustomersPage() {
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-3 max-w-lg w-full">
+        <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-2.5 max-w-lg w-full">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
               <Input
                 placeholder="Search customers..."
-                className="pl-9 bg-slate-50 dark:bg-slate-950 w-full"
+                className="pl-9 bg-slate-50 dark:bg-slate-950 w-full text-sm"
                 value={globalFilter}
                 onChange={(e) => setGlobalFilter(e.target.value)}
               />
             </div>
             <Select value={selectedLabel} onValueChange={setSelectedLabel}>
-              <SelectTrigger className="w-full sm:w-44 bg-slate-50 dark:bg-slate-950">
+              <SelectTrigger className="w-full sm:w-44 bg-slate-50 dark:bg-slate-950 text-sm">
                 <SelectValue placeholder="All Labels" />
               </SelectTrigger>
               <SelectContent>
@@ -427,12 +449,85 @@ function CustomersPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="text-sm font-medium text-slate-500">
-            Total Records: {totalCount}
-            {selectedIds.length > 0 ? ` • Selected: ${selectedIds.length}` : ''}
+          <div className="text-xs sm:text-sm font-medium text-slate-500 flex items-center justify-between sm:justify-end gap-2">
+            <span>Total Records: {totalCount}</span>
+            {selectedIds.length > 0 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">• {selectedIds.length} selected</span>}
           </div>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile View Header / Select All */}
+        <div className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-400">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={(e) => toggleAllVisible(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            <span>Select all visible ({customers.length})</span>
+          </label>
+        </div>
+
+        {/* Mobile Card List View */}
+        <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
+          {isLoading ? (
+            <div className="p-8 text-center">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600" />
+            </div>
+          ) : customers.length ? (
+            customers.map((customer) => {
+              const isSelected = selectedIds.includes(customer.id)
+              return (
+                <div
+                  key={customer.id}
+                  className={`p-3.5 space-y-2.5 transition-colors ${
+                    isSelected ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'hover:bg-slate-50/50 dark:hover:bg-slate-900/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => toggleSelected(customer.id, e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                        aria-label={`Select ${customer.name}`}
+                      />
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm truncate">
+                        {customer.name}
+                      </span>
+                      {customer.label && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80 shrink-0">
+                          {customer.label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <EditCustomerButton customer={customer} updateCustomerMutation={updateCustomerMutation} />
+                      <DeleteCustomerButton id={customer.id} removeCustomerMutation={removeCustomerMutation} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pl-6">
+                    <span className="font-mono text-slate-700 dark:text-slate-300">
+                      {customer.phone_number}
+                    </span>
+                    <span>
+                      {dayjs(customer.created_at).format('DD/MM/YY h:mm A')}
+                    </span>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <div className="p-8 text-center text-sm text-slate-500">
+              No customers found. Try adding one!
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
               {table.getHeaderGroups().map((headerGroup) => (
@@ -480,11 +575,13 @@ function CustomersPage() {
             </TableBody>
           </Table>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-slate-200 dark:border-slate-800">
-          <div className="text-sm text-slate-500">
-            Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1} • {totalCount} total • {table.getState().pagination.pageSize} / page
+
+        {/* Pagination */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 sm:p-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="text-xs sm:text-sm text-slate-500 text-center sm:text-left">
+            Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1} • {totalCount} total
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-2 w-full sm:w-auto">
             <Select
               value={String(table.getState().pagination.pageSize)}
               onValueChange={(v) => {
@@ -492,7 +589,7 @@ function CustomersPage() {
                 table.setPageSize(Number(v))
               }}
             >
-              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-24 text-xs sm:text-sm sm:w-28"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="10">10 / page</SelectItem>
                 <SelectItem value="20">20 / page</SelectItem>
@@ -503,6 +600,7 @@ function CustomersPage() {
             <Button
               variant="outline"
               size="sm"
+              className="text-xs sm:text-sm"
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
             >
@@ -511,6 +609,7 @@ function CustomersPage() {
             <Button
               variant="outline"
               size="sm"
+              className="text-xs sm:text-sm"
               onClick={() => table.nextPage()}
               disabled={!table.getCanNextPage()}
             >

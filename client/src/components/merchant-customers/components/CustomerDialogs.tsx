@@ -101,31 +101,31 @@ export const EditCustomerButton = ({ customer, updateCustomerMutation }: { custo
             Update customer name, phone number, or tag label.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="edit-name" className="text-right">
+        <div className="grid gap-3 py-2 sm:py-4">
+          <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
+            <Label htmlFor="edit-name" className="sm:text-right text-xs sm:text-sm">
               Name
             </Label>
             <Input
               id="edit-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="col-span-3"
+              className="sm:col-span-3 text-sm"
             />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="edit-phone" className="text-right">
+          <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
+            <Label htmlFor="edit-phone" className="sm:text-right text-xs sm:text-sm">
               Phone
             </Label>
             <Input
               id="edit-phone"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="col-span-3"
+              className="sm:col-span-3 text-sm"
             />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="edit-label" className="text-right">
+          <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
+            <Label htmlFor="edit-label" className="sm:text-right text-xs sm:text-sm">
               Tag / Label
             </Label>
             <Input
@@ -133,7 +133,7 @@ export const EditCustomerButton = ({ customer, updateCustomerMutation }: { custo
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. VIP, Wholesaler"
-              className="col-span-3"
+              className="sm:col-span-3 text-sm"
             />
           </div>
         </div>
