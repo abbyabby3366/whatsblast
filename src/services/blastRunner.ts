@@ -37,7 +37,7 @@ function normalizeMediaUrl(rawUrl: string): string {
   return rawUrl;
 }
 
-async function getFileUrl(fileIdOrObj: any): Promise<{ url: string; type: string; filename?: string; mimetype?: string } | null> {
+export async function getFileUrl(fileIdOrObj: any): Promise<{ url: string; type: string; filename?: string; mimetype?: string } | null> {
   if (!fileIdOrObj) return null;
 
   if (typeof fileIdOrObj === 'object') {

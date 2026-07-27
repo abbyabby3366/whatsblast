@@ -6,7 +6,7 @@ import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { FileModel } from '../models/File.js';
 import { pickUserSession, getActiveSession, initWhatsAppSession } from '../services/baileysManager.js';
-import { sendBaileysTemplateMessage } from '../services/blastRunner.js';
+import { sendBaileysTemplateMessage, getFileUrl } from '../services/blastRunner.js';
 
 const router = Router();
 
