@@ -170,6 +170,8 @@ const reconnectSession = async (req: AuthRequest, res: Response) => {
     return res.status(403).json({ error: 'Unauthorized to reconnect this session' });
   }
 
+  removeActiveSession(session.session_id);
+
   session.status = SessionStatus.STARTING;
   await session.save();
 

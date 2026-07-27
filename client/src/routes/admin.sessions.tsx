@@ -330,7 +330,7 @@ function AdminSessionsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Phone</TableHead>
-                    <TableHead>Session / Redis Key</TableHead>
+                    <TableHead>Session ID</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Active</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -342,7 +342,6 @@ function AdminSessionsPage() {
                       <TableCell className="font-medium">{m.phone_number || '-'}</TableCell>
                       <TableCell>
                         <div className="font-medium font-mono text-xs">{m.session_id || m.session}</div>
-                        <div className="text-[11px] font-mono text-emerald-600">wa_session:{m.session_id || m.session}</div>
                       </TableCell>
                       <TableCell>{getStatusBadge(m.session_status)}</TableCell>
                       <TableCell>
@@ -431,7 +430,7 @@ function AdminSessionsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Session ID / Redis Key</TableHead>
+                    <TableHead>Session ID</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Merchant / Owner</TableHead>
                     <TableHead>Status</TableHead>
@@ -456,20 +455,6 @@ function AdminSessionsPage() {
                             <Copy className="h-3 w-3 text-slate-400 hover:text-slate-600" />
                           </button>
                         </div>
-                        <div className="text-[11px] font-mono text-emerald-600 flex items-center gap-1">
-                          wa_session:{s.session_id || s.id}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(`wa_session:${s.session_id || s.id}`)
-                              toast.success('Redis auth prefix copied!')
-                            }}
-                            title="Copy Redis Key Prefix"
-                          >
-                            <Copy className="h-3 w-3 text-emerald-600/70 hover:text-emerald-700" />
-                          </button>
-                        </div>
-                        <div className="text-[10px] text-slate-400">DB ID: {s.id}</div>
                       </TableCell>
                       <TableCell className="font-mono text-sm">{s.phone_number || '-'}</TableCell>
                       <TableCell>
@@ -483,60 +468,15 @@ function AdminSessionsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleScan(s.id)}
-                            title="Scan QR Code"
-                          >
-                            <QrCode className="h-4 w-4 md:mr-1" />
-                            <span className="hidden md:inline">Scan</span>
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenManage(s)}
-                            title="Manage Session Settings"
-                          >
-                            <Settings className="h-4 w-4 md:mr-1" />
-                            <span className="hidden md:inline">Manage</span>
-                          </Button>
-
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                            onClick={() => reconnectSession.mutate(s.id)}
-                            disabled={reconnectSession.isPending}
-                            title="Reconnect Session"
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
-
-                          {(s.status || '').toLowerCase() === 'connected' && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                              onClick={() => setDisconnectConfirmId(s.id)}
-                              title="Disconnect Session"
-                            >
-                              <LogOut className="h-4 w-4" />
-                            </Button>
-                          )}
-
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => setDeleteConfirmId(s.id)}
-                            title="Delete Session"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenManage(s)}
+                          title="Manage Session"
+                        >
+                          <Settings className="h-4 w-4 md:mr-1" />
+                          <span className="hidden md:inline">Manage</span>
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -674,6 +614,11 @@ function AdminSessionsPage() {
           session={manageSession}
           users={users}
           onUpdated={refreshSessions}
+          onScan={() => handleScan(manageSession.id)}
+          onReconnect={() => reconnectSession.mutate(manageSession.id)}
+          onDisconnect={() => setDisconnectConfirmId(manageSession.id)}
+          onDelete={() => setDeleteConfirmId(manageSession.id)}
+          isReconnecting={reconnectSession.isPending}
         />
       )}
     </div>
@@ -686,12 +631,22 @@ function ManageAdminSessionDialog({
   session,
   users,
   onUpdated,
+  onScan,
+  onReconnect,
+  onDisconnect,
+  onDelete,
+  isReconnecting,
 }: {
   isOpen: boolean
   onClose: () => void
   session: Session
   users: User[]
   onUpdated: () => void
+  onScan: () => void
+  onReconnect: () => void
+  onDisconnect: () => void
+  onDelete: () => void
+  isReconnecting: boolean
 }) {
   const queryClient = useQueryClient()
   const [selectedUser, setSelectedUser] = useState(ownerId(session.user))
@@ -836,19 +791,75 @@ function ManageAdminSessionDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Key Info Banner */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border space-y-2 text-xs">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500 font-medium">Session ID:</span>
-              <span className="font-mono font-semibold">{session.session_id || session.id}</span>
+          {/* Key Info & Quick Actions Banner */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border space-y-3">
+            <div className="flex justify-between items-center text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium">Session ID:</span>
+                  <span className="font-mono font-semibold">{session.session_id || session.id}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium">Phone Number:</span>
+                  <span className="font-mono">{session.phone_number || 'Not connected yet'}</span>
+                </div>
+              </div>
+              <div>{getStatusBadge(session.status)}</div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500 font-medium">Redis Auth Key:</span>
-              <span className="font-mono text-emerald-600 font-semibold">wa_session:{session.session_id || session.id}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500 font-medium">Phone Number:</span>
-              <span className="font-mono">{session.phone_number || 'Not connected yet'}</span>
+
+            {/* Quick Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t text-xs">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onClose()
+                  onScan()
+                }}
+                className="h-7 text-xs gap-1.5"
+              >
+                <QrCode className="h-3.5 w-3.5" />
+                Scan QR
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onReconnect()}
+                disabled={isReconnecting}
+                className="h-7 text-xs gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 dark:border-blue-800"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
+                Reconnect
+              </Button>
+
+              {(session.status || '').toLowerCase() === 'connected' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onClose()
+                    onDisconnect()
+                  }}
+                  className="h-7 text-xs gap-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 border-amber-200 dark:border-amber-800"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Logout
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onClose()
+                  onDelete()
+                }}
+                className="h-7 text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 dark:border-red-800 ml-auto"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete Session
+              </Button>
             </div>
           </div>
 
