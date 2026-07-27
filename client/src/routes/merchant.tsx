@@ -88,7 +88,7 @@ function MerchantLayout() {
           <SidebarHeader className="h-14 flex flex-row items-center px-4 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2.5 font-bold text-lg text-emerald-600 dark:text-emerald-400">
               <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-7 h-7 object-contain rounded-lg shadow-sm" />
-              <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlast v1.0</span>
+              <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlast v1.1</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
@@ -158,7 +158,7 @@ function MerchantLayout() {
                   </DialogHeader>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setIsLogoutOpen(false)}>Cancel</Button>
-                    <Button 
+                    <Button
                       className="bg-red-600 hover:bg-red-700 text-white"
                       onClick={() => {
                         setIsLogoutOpen(false)
@@ -186,7 +186,7 @@ function MerchantLayout() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     className="text-red-600 focus:bg-red-50 focus:text-red-600 cursor-pointer"
                     onClick={() => setIsLogoutOpen(true)}
                   >
