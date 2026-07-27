@@ -3,9 +3,9 @@
   "name": "WhatsBlast",
   "icons": [
     {
-      "src": "whatsblasting-logo.svg",
+      "src": "futuristic-whatsapp-logo.png",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/png"
     }
   ],
   "start_url": ".",

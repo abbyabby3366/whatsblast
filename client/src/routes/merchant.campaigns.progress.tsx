@@ -36,6 +36,7 @@ function CampaignProgressPage() {
   const {
     data: campaign,
     isLoading: isLoadingCampaign,
+    isFetching: isFetchingCampaign,
     isError,
     refetch: refetchCampaign,
   } = useQuery({
@@ -234,10 +235,10 @@ function CampaignProgressPage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
+            onClick={() => { refetchCampaign(); refetchLogs(); }}
             className="h-8 text-xs text-slate-600 hover:text-slate-900"
           >
-            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isFetchingCampaign ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
 

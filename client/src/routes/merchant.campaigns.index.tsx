@@ -24,6 +24,8 @@ import {
   Search,
   Users,
   X,
+  Edit3,
+  ChevronDown,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
@@ -42,6 +44,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Card,
   CardContent,
@@ -301,7 +309,7 @@ function CampaignsPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Recipients</TableHead>
                   <TableHead>Templates</TableHead>
-                  <TableHead className="w-[180px]">Progress</TableHead>
+                  <TableHead className="w-[120px]">Progress</TableHead>
                   <TableHead>Created / Completed Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -374,7 +382,7 @@ function CampaignsPage() {
                         {cStatus === 'draft' ? (
                           <span className="text-xs text-slate-400">Not Launched</span>
                         ) : (
-                          <div className="space-y-1">
+                          <div className="w-24 space-y-1">
                             <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
                               <span>{sent}/{total}</span>
                               <span className="text-emerald-600 font-bold">{percent}%</span>
@@ -465,50 +473,62 @@ function CampaignsPage() {
                               Retry ({campaign.stats.failed})
                             </Button>
                           )}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2.5 text-xs"
-                            onClick={() => handleEdit(campaign)}
-                          >
-                            {cStatus === 'draft' ? 'Edit Draft' : 'Edit'}
-                          </Button>
-                          <Dialog>
-                            <DialogTrigger asChild>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
                               <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
-                                disabled={deleteCampaignMutation.isPending}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2.5 text-xs font-medium"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                {cStatus === 'draft' ? 'Edit Draft' : 'Edit'}
+                                <ChevronDown className="ml-1 h-3 w-3 opacity-60" />
                               </Button>
-                            </DialogTrigger>
-                            <DialogContent onClick={(e) => e.stopPropagation()}>
-                              <DialogHeader>
-                                <DialogTitle>Delete Campaign?</DialogTitle>
-                                <DialogDescription>
-                                  Are you sure you want to delete this campaign? This action cannot be undone.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <DialogClose asChild>
-                                  <Button type="button" variant="outline">Cancel</Button>
-                                </DialogClose>
-                                <DialogClose asChild>
-                                  <Button
-                                    type="button"
-                                    variant="destructive"
-                                    onClick={() => deleteCampaignMutation.mutate(campaign.id)}
-                                    className="bg-red-600 text-white hover:bg-red-700"
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-36">
+                              <DropdownMenuItem
+                                onClick={() => handleEdit(campaign)}
+                                className="cursor-pointer"
+                              >
+                                <Edit3 className="mr-2 h-3.5 w-3.5 text-slate-500" />
+                                {cStatus === 'draft' ? 'Edit Draft' : 'Edit Campaign'}
+                              </DropdownMenuItem>
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <DropdownMenuItem
+                                    onSelect={(e) => e.preventDefault()}
+                                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40"
                                   >
+                                    <Trash2 className="mr-2 h-3.5 w-3.5 text-red-500" />
                                     Delete
-                                  </Button>
-                                </DialogClose>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
+                                  </DropdownMenuItem>
+                                </DialogTrigger>
+                                <DialogContent onClick={(e) => e.stopPropagation()}>
+                                  <DialogHeader>
+                                    <DialogTitle>Delete Campaign?</DialogTitle>
+                                    <DialogDescription>
+                                      Are you sure you want to delete this campaign? This action cannot be undone.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <DialogFooter>
+                                    <DialogClose asChild>
+                                      <Button type="button" variant="outline">Cancel</Button>
+                                    </DialogClose>
+                                    <DialogClose asChild>
+                                      <Button
+                                        type="button"
+                                        variant="destructive"
+                                        onClick={() => deleteCampaignMutation.mutate(campaign.id)}
+                                        className="bg-red-600 text-white hover:bg-red-700"
+                                      >
+                                        Delete
+                                      </Button>
+                                    </DialogClose>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -594,46 +614,6 @@ function CampaignsPage() {
                         </span>
                       )
                     })()}
-
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
-                          disabled={deleteCampaignMutation.isPending}
-                        >
-                          {deleteCampaignMutation.isPending && deleteCampaignMutation.variables === campaign.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent onClick={(e) => e.stopPropagation()}>
-                        <DialogHeader>
-                          <DialogTitle>Delete Campaign?</DialogTitle>
-                          <DialogDescription>
-                            Are you sure you want to delete this campaign? This action cannot be undone.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <DialogFooter>
-                          <DialogClose asChild>
-                            <Button type="button" variant="outline">Cancel</Button>
-                          </DialogClose>
-                          <DialogClose asChild>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              onClick={() => deleteCampaignMutation.mutate(campaign.id)}
-                              className="bg-red-600 text-white hover:bg-red-700"
-                            >
-                              Delete
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
                   </div>
                 </div>
               </CardHeader>
@@ -1043,6 +1023,7 @@ function CampaignsPage() {
                     time: matchedLog.created_at || matchedLog.wa_timestamp || matchedLog.createdAt,
                     error: matchedLog.error || null,
                     message: matchedLog.content?.text || 'Template message sent',
+                    retryCount: matchedLog.retry_count || matchedLog.retryCount || 0,
                   }
                 }
 
@@ -1053,6 +1034,7 @@ function CampaignsPage() {
                     time: null,
                     error: 'Send failed during execution',
                     message: 'Template message failed',
+                    retryCount: 0,
                   }
                 }
 
@@ -1062,6 +1044,7 @@ function CampaignsPage() {
                   time: null,
                   error: null,
                   message: 'Scheduled in queue',
+                  retryCount: 0,
                 }
               })
             : logs.map((l) => ({
@@ -1070,6 +1053,7 @@ function CampaignsPage() {
                 time: l.created_at || l.wa_timestamp,
                 error: l.error || null,
                 message: l.content?.text || 'Message',
+                retryCount: l.retry_count || l.retryCount || 0,
               }))
 
         const sentCount = customerRows.filter(
@@ -1247,7 +1231,7 @@ function CampaignsPage() {
                         <TableHead>Status</TableHead>
                         <TableHead>Time</TableHead>
                         <TableHead>Info / Details</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
+                        <TableHead className="text-center">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1257,26 +1241,26 @@ function CampaignsPage() {
                           row.status === 'sent' || row.status === 'delivered' || row.status === 'read'
 
                         return (
-                          <TableRow key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50 text-xs">
-                            <TableCell className="text-slate-400 font-medium">{idx + 1}</TableCell>
-                            <TableCell className="font-semibold text-emerald-600 dark:text-emerald-400">
+                          <TableRow key={`${row.phone}-${idx}`} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 text-xs">
+                            <TableCell className="font-mono text-slate-400">{idx + 1}</TableCell>
+                            <TableCell className="font-medium text-emerald-600 dark:text-emerald-400">
                               {row.phone}
                             </TableCell>
                             <TableCell>
                               <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
                                   isSent
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                                     : isFailed
-                                    ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                                    : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                                 }`}
                               >
-                                {row.status.toUpperCase()}
+                                {row.status}
                               </span>
                             </TableCell>
                             <TableCell className="text-slate-500 whitespace-nowrap">
-                              {row.time ? dayjs(row.time).format('MMM D, YYYY h:mm:ss A') : '-'}
+                              {row.time ? dayjs(row.time).format('MMM D, YYYY h:mm A') : '-'}
                             </TableCell>
                             <TableCell className="text-slate-600 dark:text-slate-400 max-w-[200px] truncate" title={row.error || row.message}>
                               {row.error ? (
@@ -1285,34 +1269,46 @@ function CampaignsPage() {
                                 <span>{row.message}</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                type="button"
-                                variant={isFailed ? "destructive" : "outline"}
-                                size="sm"
-                                className={`h-7 px-2.5 text-xs font-medium ${
-                                  isFailed
-                                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900 border-slate-200'
-                                }`}
-                                disabled={retryRecipientMutation.isPending}
-                                onClick={() =>
-                                  selectedCustomerListCampaign &&
-                                  retryRecipientMutation.mutate({
-                                    cId: selectedCustomerListCampaign.id,
-                                    phone: row.phone,
-                                  })
-                                }
-                                title="Retry message for this customer"
-                              >
-                                {retryRecipientMutation.isPending &&
-                                retryRecipientMutation.variables?.phone === row.phone ? (
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="mr-1 h-3 w-3" />
+                            <TableCell className="text-center">
+                              <div className="flex flex-col items-center justify-center text-center w-full min-w-[90px] mx-auto">
+                                {!isSent && (
+                                  <Button
+                                    type="button"
+                                    variant={isFailed ? "destructive" : "outline"}
+                                    size="sm"
+                                    className={`h-7 px-2.5 text-xs font-medium ${
+                                      isFailed
+                                        ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                                        : 'text-slate-600 hover:text-slate-900 border-slate-200'
+                                    }`}
+                                    disabled={retryRecipientMutation.isPending}
+                                    onClick={() =>
+                                      selectedCustomerListCampaign &&
+                                      retryRecipientMutation.mutate({
+                                        cId: selectedCustomerListCampaign.id,
+                                        phone: row.phone,
+                                      })
+                                    }
+                                    title="Retry message for this customer"
+                                  >
+                                    {retryRecipientMutation.isPending &&
+                                    retryRecipientMutation.variables?.phone === row.phone ? (
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="mr-1 h-3 w-3" />
+                                    )}
+                                    Retry
+                                  </Button>
                                 )}
-                                Retry
-                              </Button>
+                                {Boolean(row.retryCount) && (
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5 block whitespace-nowrap text-center">
+                                    Retried {row.retryCount} time{row.retryCount > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                                {isSent && !row.retryCount && (
+                                  <span className="text-xs text-slate-400 font-normal block text-center">-</span>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         )

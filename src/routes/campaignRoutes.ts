@@ -344,6 +344,7 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
         status: MessageStatus.PENDING,
         $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
         scheduled_at: scheduledTime,
+        $inc: { retry_count: 1 },
       }
     );
 
@@ -357,6 +358,7 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
         to_jid: `${clean}@s.whatsapp.net`,
         template: campaign.template || null,
         scheduled_at: scheduledTime,
+        retry_count: 1,
       });
     }
   }
@@ -437,6 +439,22 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
         await sessionDoc.save();
       }
 
+      const fileId = tplItem.file_id || tplItem.fileId || tplItem.file;
+      const buttonMediaId = tplItem.button_image_id || tplItem.buttonImageId || tplItem.button_image;
+      const mainMedia = await getFileUrl(fileId);
+      const buttonMedia = await getFileUrl(buttonMediaId);
+      const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
+
+      const fullContent = {
+        text: tplItem.text || tplItem.template || '',
+        buttons: tplItem.buttons || [],
+        footer: tplItem.footer || '',
+        file: activeMedia?.url || mainMedia?.url || (typeof tplItem.file === 'string' ? tplItem.file : null),
+        file_type: activeMedia?.type || tplItem.messageType || tplItem.type || 'text',
+        file_name: activeMedia?.filename || null,
+        button_image: buttonMedia?.url || (typeof tplItem.button_image === 'string' ? tplItem.button_image : null),
+      };
+
       const now = new Date();
       const updatedMsg = await Message.findOneAndUpdate(
         { campaign: campaign._id, recipient_phone: cleanPhone },
@@ -447,11 +465,12 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
           status: MessageStatus.SENT,
           to_jid: targetJid,
           template: campaign.template || null,
-          content: { text: tplItem.text || tplItem.template, buttons: tplItem.buttons },
+          content: fullContent,
           message_id: result?.key?.id || '',
           sent_at: now,
           wa_timestamp: now,
           $unset: { error: 1 },
+          $inc: { retry_count: 1 },
         },
         { new: true }
       );
@@ -466,10 +485,11 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
           recipient_phone: cleanPhone,
           to_jid: targetJid,
           template: campaign.template || null,
-          content: { text: tplItem.text || tplItem.template, buttons: tplItem.buttons },
+          content: fullContent,
           message_id: result?.key?.id || '',
           sent_at: now,
           wa_timestamp: now,
+          retry_count: 1,
         });
       }
     }

@@ -26,6 +26,7 @@ function formatMessage(m: any) {
     session_phone: sessionPhone || obj.sender_phone || 'System',
     sender_phone: sessionPhone || obj.sender_phone || 'System',
     campaign_name: campaignName || obj.campaign_name || 'Direct / Quick Send',
+    retry_count: obj.retry_count || 0,
     ...rest,
   };
 }
@@ -283,6 +284,7 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
     msg.wa_timestamp = new Date();
     msg.message_id = result?.key?.id || msg.message_id;
     msg.error = undefined;
+    msg.retry_count = (msg.retry_count || 0) + 1;
     await msg.save();
 
     return res.json({ success: true, message: `Successfully retried message to ${cleanPhone}` });

@@ -30,6 +30,7 @@ export interface IMessage extends Document {
   template?: mongoose.Types.ObjectId;
   content?: Record<string, any>;
   error?: string;
+  retry_count?: number;
   scheduled_at?: Date;
   sent_at?: Date;
   wa_timestamp?: Date;
@@ -53,6 +54,7 @@ const MessageSchema = new Schema<IMessage>(
     template: { type: Schema.Types.ObjectId, ref: 'MessageTemplate' },
     content: { type: Schema.Types.Mixed, default: {} },
     error: { type: String },
+    retry_count: { type: Number, default: 0 },
     scheduled_at: { type: Date, index: true },
     sent_at: { type: Date },
     wa_timestamp: { type: Date },

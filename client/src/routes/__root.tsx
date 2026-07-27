@@ -38,16 +38,16 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
       {
         rel: 'icon',
-        type: 'image/svg+xml',
-        href: '/whatsblasting-logo.svg?v=2',
+        type: 'image/png',
+        href: '/futuristic-whatsapp-logo.png',
       },
       {
         rel: 'shortcut icon',
-        href: '/whatsblasting-logo.svg?v=2',
+        href: '/futuristic-whatsapp-logo.png',
       },
       {
         rel: 'apple-touch-icon',
-        href: '/whatsblasting-logo.svg?v=2',
+        href: '/futuristic-whatsapp-logo.png',
       },
       {
         rel: 'manifest',

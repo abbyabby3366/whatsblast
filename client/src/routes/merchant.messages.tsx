@@ -6,7 +6,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Search, Loader2, User, MoreVertical, CheckCheck, Mic, ArrowLeft, Filter, X, Trash2, AlertTriangle, RotateCcw } from 'lucide-react'
+import { Search, Loader2, User, MoreVertical, CheckCheck, Mic, ArrowLeft, Filter, X, Trash2, AlertTriangle, RotateCcw, Eye } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -139,7 +139,7 @@ function MessagesPage() {
   const totalCount = response?.count || 0
   const pageCount = Math.ceil(totalCount / pageSize)
 
-  const handleRowClick = (msg: Message) => {
+  const handleOpenPreview = (msg: Message) => {
     setSelectedMessage(msg)
     setIsModalOpen(true)
   }
@@ -243,35 +243,56 @@ function MessagesPage() {
       }),
       columnHelper.display({
         id: 'actions',
-        header: 'Actions',
+        header: () => <div className="text-center font-medium">Actions</div>,
         cell: (info) => {
           const msg = info.row.original
-          const isFailed = (msg.status || '').toLowerCase() === 'failed' || (msg.status || '').toLowerCase() === 'error'
+          const status = (msg.status || '').toLowerCase()
+          const isSuccess = status === 'sent' || status === 'delivered' || status === 'read'
+          const isFailed = status === 'failed' || status === 'error'
 
           return (
-            <Button
-              type="button"
-              variant={isFailed ? "destructive" : "outline"}
-              size="sm"
-              className={`h-7 px-2 text-xs font-medium ${
-                isFailed
-                  ? 'bg-rose-600 hover:bg-rose-700 text-white'
-                  : 'text-slate-600 hover:text-slate-900 border-slate-200'
-              }`}
-              disabled={retryMessageMutation.isPending}
-              onClick={(e) => {
-                e.stopPropagation()
-                retryMessageMutation.mutate(msg.id)
-              }}
-              title="Retry sending this message"
-            >
-              {retryMessageMutation.isPending && retryMessageMutation.variables === msg.id ? (
-                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-              ) : (
-                <RotateCcw className="mr-1 h-3 w-3" />
+            <div className="flex flex-col items-center justify-center text-center w-full min-w-[130px] mx-auto gap-1">
+              <div className="flex items-center justify-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs font-medium text-slate-700 hover:text-slate-900 border-slate-200 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800"
+                  onClick={() => handleOpenPreview(msg)}
+                  title="Preview message"
+                >
+                  <Eye className="mr-1 h-3.5 w-3.5 text-slate-500" />
+                  Preview
+                </Button>
+                {!isSuccess && (
+                  <Button
+                    type="button"
+                    variant={isFailed ? "destructive" : "outline"}
+                    size="sm"
+                    className={`h-7 px-2.5 text-xs font-medium ${
+                      isFailed
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                        : 'text-slate-600 hover:text-slate-900 border-slate-200'
+                    }`}
+                    disabled={retryMessageMutation.isPending}
+                    onClick={() => retryMessageMutation.mutate(msg.id)}
+                    title="Retry sending this message"
+                  >
+                    {retryMessageMutation.isPending && retryMessageMutation.variables === msg.id ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <RotateCcw className="mr-1 h-3 w-3" />
+                    )}
+                    Retry
+                  </Button>
+                )}
+              </div>
+              {Boolean(msg.retry_count) && (
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium whitespace-nowrap text-center">
+                  Retried {msg.retry_count} time{msg.retry_count > 1 ? 's' : ''}
+                </span>
               )}
-              Retry
-            </Button>
+            </div>
           )
         },
       }),
@@ -426,8 +447,7 @@ function MessagesPage() {
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
-                    onClick={() => handleRowClick(row.original)}
-                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>
@@ -533,21 +553,34 @@ function MessagesPage() {
                     }`}>
                       {selectedMessage?.status || 'PENDING'}
                     </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-6 px-2 text-[10px] font-semibold border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300"
-                      disabled={retryMessageMutation.isPending}
-                      onClick={() => selectedMessage && retryMessageMutation.mutate(selectedMessage.id)}
-                    >
-                      {retryMessageMutation.isPending ? (
-                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                      ) : (
-                        <RotateCcw className="h-3 w-3 mr-1" />
+                    <div className="flex flex-col items-end">
+                      {(() => {
+                        const mStatus = (selectedMessage?.status || '').toLowerCase()
+                        const mSuccess = mStatus === 'sent' || mStatus === 'delivered' || mStatus === 'read'
+                        return !mSuccess ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] font-semibold border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300"
+                            disabled={retryMessageMutation.isPending}
+                            onClick={() => selectedMessage && retryMessageMutation.mutate(selectedMessage.id)}
+                          >
+                            {retryMessageMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <RotateCcw className="h-3 w-3 mr-1" />
+                            )}
+                            Retry
+                          </Button>
+                        ) : null
+                      })()}
+                      {Boolean(selectedMessage?.retry_count) && (
+                        <span className="text-[9px] text-slate-400 font-normal block mt-0.5">
+                          Retried {selectedMessage?.retry_count} time{selectedMessage?.retry_count > 1 ? 's' : ''}
+                        </span>
                       )}
-                      Retry
-                    </Button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-between text-slate-600 dark:text-slate-300">
@@ -566,96 +599,147 @@ function MessagesPage() {
                   {selectedMessage?.created_at ? dayjs(selectedMessage.created_at).format('MMMM D, YYYY') : 'Today'}
                 </span>
               </div>
-
+              
               {/* Message Bubble (Outbound) */}
               {(() => {
-                const msgContent: any = selectedMessage?.content || {};
-                const msgTemplate: any = selectedMessage?.template || {};
+                const msgContent: any = typeof selectedMessage?.content === 'object' && selectedMessage?.content ? selectedMessage?.content : {};
+                const msgTemplate: any = typeof selectedMessage?.template === 'object' && selectedMessage?.template ? selectedMessage?.template : {};
+                const cmpObj: any = typeof selectedMessage?.campaign === 'object' && selectedMessage?.campaign ? selectedMessage?.campaign : {};
+                const cmpTemplate: any = (Array.isArray(cmpObj?.templates) && cmpObj.templates[0]) || (typeof cmpObj?.template === 'object' ? cmpObj.template : {});
 
-                const text = selectedMessage?.text || msgContent.text || msgTemplate.text || (typeof selectedMessage?.content === 'string' ? selectedMessage.content : '') || '';
-                const buttons = msgContent.buttons || msgTemplate.buttons || selectedMessage?.buttons || [];
-                const footer = msgContent.footer || msgTemplate.footer || selectedMessage?.footer || '';
+                const template = {
+                  ...cmpTemplate,
+                  ...msgTemplate,
+                  ...msgContent,
+                  file: msgContent.file || msgTemplate.file || cmpTemplate.file,
+                  button_image: msgContent.button_image || msgTemplate.button_image || cmpTemplate.button_image,
+                  file_url: msgContent.file_url || msgTemplate.file_url || cmpTemplate.file_url || cmpTemplate.previewUrl,
+                  button_image_url: msgContent.button_image_url || msgTemplate.button_image_url || cmpTemplate.button_image_url,
+                  files: cmpTemplate.files || msgTemplate.files || msgContent.files,
+                  attachedFiles: cmpTemplate.attachedFiles || msgTemplate.attachedFiles || msgContent.attachedFiles,
+                  text: selectedMessage?.text || msgContent.text || msgTemplate.text || cmpTemplate.text || cmpTemplate.template || (typeof selectedMessage?.content === 'string' ? selectedMessage.content : '') || '',
+                  footer: msgContent.footer || msgTemplate.footer || cmpTemplate.footer || selectedMessage?.footer || '',
+                  buttons: (msgContent.buttons?.length ? msgContent.buttons : null) || (msgTemplate.buttons?.length ? msgTemplate.buttons : null) || (cmpTemplate.buttons?.length ? cmpTemplate.buttons : null) || selectedMessage?.buttons || [],
+                };
 
-                const buttonImageRaw = msgContent.button_image || msgTemplate.button_image;
-                const buttonImageUrl = typeof buttonImageRaw === 'string' 
-                  ? buttonImageRaw 
-                  : (buttonImageRaw?.file_url || buttonImageRaw?.url || buttonImageRaw?.file || buttonImageRaw?.image);
+                const mediaList: Array<{ url: string; type: string; name?: string }> = [];
 
-                const fileRaw = msgContent.file || msgTemplate.file;
-                const fileUrl = typeof fileRaw === 'string' 
-                  ? fileRaw 
-                  : (fileRaw?.file_url || fileRaw?.url || fileRaw?.file || fileRaw?.image || fileRaw?.video || fileRaw?.audio || fileRaw?.document || fileRaw?.sticker);
+                if (Array.isArray(template.files) && template.files.length > 0) {
+                  template.files.forEach((f: any) => {
+                    const url = typeof f === 'string' ? f : f?.file_url || f?.file_path || f?.url || f?.file || null;
+                    const type = typeof f === 'object' ? f?.file_type || 'image' : 'image';
+                    const name = typeof f === 'object' ? f?.file_name : undefined;
+                    if (url) mediaList.push({ url, type: String(type).toLowerCase(), name });
+                  });
+                }
 
-                const rawType = msgContent.file_type || selectedMessage?.type || selectedMessage?.message_type || msgTemplate.type || fileRaw?.file_type || fileRaw?.type || 'image';
-                const fileType = String(rawType).toLowerCase();
-                const fileName = msgContent.file_name || fileRaw?.file_name || fileRaw?.fileName || 'Attachment';
+                if (mediaList.length === 0 && Array.isArray(template.attachedFiles) && template.attachedFiles.length > 0) {
+                  template.attachedFiles.forEach((f: any) => {
+                    const url = f?.url || f?.file_url || f?.file_path || null;
+                    const type = f?.type || 'image';
+                    const name = f?.name;
+                    if (url) mediaList.push({ url, type: String(type).toLowerCase(), name });
+                  });
+                }
+
+                if (mediaList.length === 0) {
+                  const fileObj = typeof template.file === 'object' ? template.file : {};
+                  const buttonImgObj = typeof template.button_image === 'object' ? template.button_image : {};
+                  const mediaUrl =
+                    fileObj.file_url ||
+                    fileObj.file_path ||
+                    fileObj.url ||
+                    buttonImgObj.file_url ||
+                    buttonImgObj.file_path ||
+                    buttonImgObj.url ||
+                    (typeof template.file === 'string' && (template.file.startsWith('http') || template.file.startsWith('/') || template.file.includes('.')) ? template.file : '') ||
+                    (typeof template.button_image === 'string' && (template.button_image.startsWith('http') || template.button_image.startsWith('/') || template.button_image.includes('.')) ? template.button_image : '') ||
+                    template.file_url ||
+                    template.button_image_url ||
+                    template.previewUrl ||
+                    template.url;
+                  const rawType = fileObj.file_type || template.type || template.messageType || (mediaUrl ? 'image' : 'text');
+                  const fileType = String(rawType).toLowerCase();
+                  if (mediaUrl) {
+                    mediaList.push({ url: mediaUrl, type: fileType, name: fileObj.file_name });
+                  }
+                }
+
+                const hasMedia = mediaList.length > 0;
 
                 return (
-                  <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2.5 max-w-[85%] self-end relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">
-                    {/* Button Image Header */}
-                    {buttonImageUrl && (
-                      <div className="mb-2 rounded-md overflow-hidden bg-black/5 dark:bg-white/5">
-                        <img src={buttonImageUrl} alt="Button media" className="w-full h-auto max-h-64 object-cover" />
-                      </div>
-                    )}
-
-                    {/* Main Media File */}
-                    {fileUrl && (
-                      <div className="mb-2 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 flex flex-col">
-                        {(fileType === 'image' || fileType === 'img') && (
-                          <img src={fileUrl} alt="Media" className="w-full h-auto max-h-64 object-cover" />
-                        )}
-                        {(fileType === 'video' || fileType === 'vid') && (
-                          <video src={fileUrl} controls className="w-full h-auto max-h-64 bg-black" />
-                        )}
-                        {fileType === 'audio' && (
-                          <audio src={fileUrl} controls className="w-full max-w-full h-10 mt-1 mb-1" />
-                        )}
-                        {fileType === 'document' && (
-                          <div className="flex items-center gap-2 p-3 bg-black/5 dark:bg-white/5">
-                            <div className="w-10 h-10 rounded bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-xs shadow-sm">FILE</div>
-                            <span className="text-sm truncate font-medium flex-1">{fileName}</span>
-                          </div>
-                        )}
-                        {fileType === 'sticker' && (
-                          <img src={fileUrl} alt="Sticker" className="w-24 h-24 object-contain bg-transparent m-2" />
-                        )}
+                  <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2 max-w-[85%] self-end relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">
+                    {hasMedia && (
+                      <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 p-1 flex flex-wrap gap-1">
+                        {mediaList.map((item, mIdx) => {
+                          if (item.type === 'video') {
+                            return <video key={mIdx} src={item.url} controls className="w-full h-auto max-h-48 bg-black rounded" />
+                          }
+                          if (item.type === 'audio') {
+                            return <audio key={mIdx} src={item.url} controls className="w-full max-w-full h-10 my-1" />
+                          }
+                          if (item.type === 'document') {
+                            return (
+                              <div key={mIdx} className="flex items-center gap-2 p-2 bg-black/5 dark:bg-white/5 rounded w-full">
+                                <div className="w-8 h-8 rounded bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-[10px] shadow-sm">FILE</div>
+                                <span className="text-xs truncate font-medium flex-1">{item.name || 'Document Attachment'}</span>
+                              </div>
+                            )
+                          }
+                          if (mediaList.length === 1) {
+                            return (
+                              <img
+                                key={mIdx}
+                                src={item.url}
+                                alt="Media attachment"
+                                className="w-full h-auto max-h-48 object-cover rounded"
+                              />
+                            )
+                          }
+                          return (
+                            <img
+                              key={mIdx}
+                              src={item.url}
+                              alt={`Media ${mIdx + 1}`}
+                              className="h-16 w-16 object-cover rounded border border-black/10 dark:border-white/10"
+                            />
+                          )
+                        })}
                       </div>
                     )}
                     
-                    {/* Text Body */}
                     <div className="mb-2 font-normal">
-                      {text || `[${fileType || 'Generic'} message]`}
+                      {template.text || template.template || (hasMedia ? '' : `[message]`)}
                     </div>
 
                     {/* Footer */}
-                    {footer ? (
+                    {template.footer ? (
                       <div className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-1 italic border-t border-black/5 dark:border-white/5 pt-1">
-                        {footer}
+                        {template.footer}
                       </div>
                     ) : null}
 
                     {/* Interactive Buttons */}
-                    {buttons && buttons.length > 0 ? (
-                      <div className="clear-both mt-2 space-y-1.5 border-t border-black/10 pt-1.5 dark:border-white/10">
-                        {buttons.map((button: any, index: number) => {
-                          const label = button.displayText || button.display_text || button.text || button.title || button.value || `Button ${index + 1}`;
-                          const val = button.value || button.url || button.phone_number || button.copy_code || '';
+                    {template.buttons?.length ? (
+                      <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
+                        {template.buttons.map((button: any, bIdx: number) => {
+                          const label = button.displayText || button.display_text || button.text || button.title || button.value || `Button ${bIdx + 1}`
+                          const val = button.value || button.url || button.phone_number || button.copy_code || ''
                           return (
                             <div
-                              key={button.id || index}
-                              className="rounded-md bg-white/80 px-3 py-2 text-center text-sm font-semibold text-[#027eb5] shadow-xs dark:bg-[#111b21]/60 dark:text-[#53bdeb] flex flex-col items-center justify-center"
+                              key={button.id || bIdx}
+                              className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-sm dark:bg-[#111b21]/50 dark:text-[#53bdeb] flex flex-col items-center justify-center"
                             >
                               <span>{label}</span>
                               {val && val !== label && (
                                 <span className="text-[10px] opacity-75 truncate max-w-full font-normal">{val}</span>
                               )}
                             </div>
-                          );
+                          )
                         })}
                       </div>
                     ) : null}
-                    
+
                     {/* Meta row: Time and Ticks */}
                     <div className="flex justify-end items-center gap-1 float-right mt-1 ml-2">
                       <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
@@ -663,13 +747,13 @@ function MessagesPage() {
                       </span>
                       <CheckCheck className={`w-[15px] h-[15px] ${(selectedMessage?.status || '').toLowerCase() === 'read' ? 'text-[#53bdeb]' : 'text-[#8696a0]'}`} />
                     </div>
-                    
+
                     {/* Bubble Tail SVG */}
                     <svg viewBox="0 0 8 13" className="absolute top-0 -right-2 w-2 h-3 text-[#d9fdd3] dark:text-[#005c4b] fill-current">
                       <path d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z"></path>
                     </svg>
                   </div>
-                );
+                )
               })()}
             </div>
 
