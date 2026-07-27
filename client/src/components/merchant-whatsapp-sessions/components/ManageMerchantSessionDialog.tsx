@@ -354,7 +354,7 @@ export function ManageMerchantSessionDialog({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Min Interval (seconds)</Label>
+                  <Label>Min Interval (minutes)</Label>
                   <Input 
                     type="number" 
                     min={1} 
@@ -363,7 +363,7 @@ export function ManageMerchantSessionDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Max Interval (seconds)</Label>
+                  <Label>Max Interval (minutes)</Label>
                   <Input 
                     type="number" 
                     min={1} 

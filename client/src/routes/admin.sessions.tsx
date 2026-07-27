@@ -447,7 +447,7 @@ function AdminSessionsPage() {
                           <Clock className="w-3 h-3 text-slate-400" /> Interval:
                         </span>
                         <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
-                          {s.min_interval_seconds ?? 10}s - {s.max_interval_seconds ?? 15}s
+                          {s.min_interval_seconds ?? 10}m - {s.max_interval_seconds ?? 15}m
                         </span>
                       </div>
 
@@ -574,7 +574,7 @@ function AdminSessionsPage() {
                       </TableCell>
                       <TableCell>{getStatusBadge(s.status)}</TableCell>
                       <TableCell className="font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        {s.min_interval_seconds ?? 10}s - {s.max_interval_seconds ?? 15}s
+                        {s.min_interval_seconds ?? 10}m - {s.max_interval_seconds ?? 15}m
                       </TableCell>
                       <TableCell className="font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         {s.active_start_time || '00:00'} - {s.active_end_time || '23:59'}

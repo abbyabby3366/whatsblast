@@ -10,6 +10,7 @@ export type AttachedFile = {
   url: string | null
   name?: string
   type?: string
+  size?: number
 }
 
 export type TemplateDraft = {
@@ -22,6 +23,59 @@ export type TemplateDraft = {
   buttons: ButtonDraft[]
   buttonMediaType: string
   previewUrl: string | null
+}
+
+export const formatFileSize = (bytes?: number | string | null): string => {
+  if (bytes === undefined || bytes === null || bytes === '') return ''
+  const num = typeof bytes === 'string' ? parseFloat(bytes) : bytes
+  if (isNaN(num) || num <= 0) return ''
+  if (num < 1024) return `${num} B`
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`
+  return `${(num / (1024 * 1024)).toFixed(2)} MB`
+}
+
+export type MediaReq = {
+  type: 'image' | 'video' | 'document'
+  title: string
+  preferredSizeText: string
+  preferredMaxBytes: number
+  hardMaxBytes: number
+  formats: string
+  recommendation: string
+  notes: string
+}
+
+export const MEDIA_REQUIREMENTS: Record<string, MediaReq> = {
+  image: {
+    type: 'image',
+    title: 'Image Requirements',
+    preferredSizeText: '< 5 MB (Recommended: 1 MB - 3 MB)',
+    preferredMaxBytes: 5 * 1024 * 1024,
+    hardMaxBytes: 16 * 1024 * 1024,
+    formats: 'JPG, JPEG, PNG, WEBP',
+    recommendation: 'Aspect Ratio: 1:1 (1080x1080px) or 16:9 (1920x1080px)',
+    notes: 'Keep image size under 5 MB for optimal sending speed & data efficiency on mobile.',
+  },
+  video: {
+    type: 'video',
+    title: 'Video Requirements',
+    preferredSizeText: '< 16 MB (WhatsApp Max Limit)',
+    preferredMaxBytes: 16 * 1024 * 1024,
+    hardMaxBytes: 16 * 1024 * 1024,
+    formats: 'MP4 (H.264 codec), 3GP, MOV',
+    recommendation: 'Resolution: 720p or 1080p | Duration: < 90 seconds',
+    notes: 'WhatsApp enforces a strict 16 MB maximum file size limit for video attachments.',
+  },
+  document: {
+    type: 'document',
+    title: 'Document Requirements',
+    preferredSizeText: '< 10 MB (Recommended: < 5 MB)',
+    preferredMaxBytes: 10 * 1024 * 1024,
+    hardMaxBytes: 100 * 1024 * 1024,
+    formats: 'PDF, DOC, DOCX, XLS, XLSX, TXT',
+    recommendation: 'Standard Document Files',
+    notes: 'PDF format recommended for consistent rendering across mobile devices.',
+  },
 }
 
 export const DRAFT_STORAGE_KEY = 'whatsblast_campaign_draft'
@@ -76,7 +130,7 @@ export const normalizeButtonType = (type?: string): ButtonDraft['type'] => {
 }
 
 export const resolveDraftMediaList = (tmpl: TemplateDraft, userFiles?: any[]) => {
-  const list: Array<{ id?: string; url: string; type: string; name?: string }> = []
+  const list: Array<{ id?: string; url: string; type: string; name?: string; size?: number }> = []
   const currentMediaType = tmpl.messageType === 'buttons' ? tmpl.buttonMediaType : tmpl.messageType
 
   if (tmpl.attachedFiles && tmpl.attachedFiles.length > 0) {
@@ -85,14 +139,16 @@ export const resolveDraftMediaList = (tmpl: TemplateDraft, userFiles?: any[]) =>
       const url = f.url || matched?.file_path || matched?.url || matched?.file_url || matched?.file || null
       const type = f.type || currentMediaType || matched?.file_type || 'image'
       const name = f.name || matched?.file_name || 'Attachment'
-      if (url) list.push({ id: f.id, url, type: String(type).toLowerCase(), name })
+      const size = f.size ?? matched?.file_size ?? matched?.size
+      if (url) list.push({ id: f.id, url, type: String(type).toLowerCase(), name, size })
     })
   } else if (tmpl.fileId || tmpl.previewUrl) {
     const matched = userFiles?.find((uf: any) => uf.id === tmpl.fileId || uf._id === tmpl.fileId)
     const url = tmpl.previewUrl || matched?.file_path || matched?.url || matched?.file_url || matched?.file || null
     const type = currentMediaType || matched?.file_type || 'image'
     const name = matched?.file_name || 'Attachment'
-    if (url) list.push({ id: tmpl.fileId, url, type: String(type).toLowerCase(), name })
+    const size = matched?.file_size ?? matched?.size
+    if (url) list.push({ id: tmpl.fileId, url, type: String(type).toLowerCase(), name, size })
   }
 
   return list

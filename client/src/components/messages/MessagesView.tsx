@@ -496,11 +496,56 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           onClose={() => setSelectedMessage(null)}
           title={selectedMessage.recipient_phone || 'Preview'}
           templates={[
-            typeof selectedMessage.template === 'object' && selectedMessage.template !== null
-              ? selectedMessage.template
-              : typeof selectedMessage.content === 'object' && selectedMessage.content !== null
-              ? selectedMessage.content
-              : { text: safeText(selectedMessage.content || selectedMessage.body || '') }
+            (() => {
+              const msg = selectedMessage
+              const tmplObj = typeof msg.template === 'object' && msg.template !== null ? msg.template : {}
+              const contentObj = typeof msg.content === 'object' && msg.content !== null ? msg.content : {}
+
+              const text =
+                contentObj.text ||
+                tmplObj.text ||
+                (typeof msg.content === 'string' ? msg.content : '') ||
+                msg.body ||
+                ''
+              const footer =
+                contentObj.footer ||
+                contentObj.footer_text ||
+                tmplObj.footer ||
+                tmplObj.footer_text ||
+                tmplObj.payload?.footer ||
+                msg.footer ||
+                msg.footer_text ||
+                ''
+              const buttons =
+                contentObj.buttons ||
+                tmplObj.buttons ||
+                tmplObj.payload?.buttons ||
+                msg.buttons ||
+                []
+              const file =
+                contentObj.file ||
+                tmplObj.file ||
+                tmplObj.payload?.file ||
+                msg.file ||
+                msg.file_url ||
+                null
+              const button_image =
+                contentObj.button_image ||
+                tmplObj.button_image ||
+                tmplObj.payload?.button_image ||
+                msg.button_image ||
+                null
+
+              return {
+                ...tmplObj,
+                ...contentObj,
+                text,
+                footer,
+                buttons,
+                file,
+                button_image,
+              }
+            })()
           ]}
         />
       )}

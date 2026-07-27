@@ -10,6 +10,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, Store } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -86,11 +87,12 @@ function MerchantLayout() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
-          <SidebarHeader className="h-14 flex flex-row items-center px-4 border-b border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2.5 font-bold text-lg text-emerald-600 dark:text-emerald-400">
+          <SidebarHeader className="h-14 flex flex-row items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
+            <Link to="/merchant" className="flex items-center gap-2.5 font-bold text-lg text-emerald-600 dark:text-emerald-400 hover:opacity-80 transition-opacity">
               <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-7 h-7 object-contain rounded-lg shadow-sm" />
               <span className="tracking-tight text-slate-900 dark:text-white">WhatsBlast {APP_VERSION}</span>
-            </div>
+            </Link>
+            <SidebarTrigger className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-200" />
           </SidebarHeader>
           <SidebarContent>
             <SidebarGroup className="px-3 py-2">
@@ -145,6 +147,7 @@ function MerchantLayout() {
         <main className="flex-1 flex flex-col overflow-hidden">
           <header className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 sm:px-6 justify-between shrink-0">
             <div className="flex items-center gap-2.5">
+              <SidebarTrigger className="mr-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" />
               <Store className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Merchant Portal</h1>
             </div>

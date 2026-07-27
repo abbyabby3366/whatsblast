@@ -164,8 +164,31 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
               return displayTemplates.map((template: any, idx: number) => {
                 const mediaList = resolveTemplateMediaList(template)
                 const hasMedia = mediaList.length > 0
-                const mainText = safeText(template.text || template.template, hasMedia ? '' : '[message]')
-                const footerText = safeText(template.footer || template.footer_text, '')
+                const rawText =
+                  template.text ||
+                  template.template ||
+                  template.body ||
+                  (typeof template.content === 'object'
+                    ? template.content?.text || template.content?.template || template.content?.body
+                    : typeof template.content === 'string'
+                    ? template.content
+                    : '')
+                const mainText = safeText(rawText, hasMedia ? '' : '[message]')
+
+                const rawFooter =
+                  template.footer ||
+                  template.footer_text ||
+                  template.footerText ||
+                  (typeof template.content === 'object'
+                    ? template.content?.footer || template.content?.footer_text || template.content?.footerText
+                    : '')
+                const footerText = safeText(rawFooter, '')
+
+                const rawButtons =
+                  template.buttons ||
+                  (typeof template.content === 'object' ? template.content?.buttons : null) ||
+                  []
+                const buttons = Array.isArray(rawButtons) ? rawButtons : []
 
                 return (
                   <div key={idx} className="space-y-1">
@@ -223,15 +246,15 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
                         </div>
                       ) : null}
 
-                      {template.buttons?.length ? (
+                      {buttons?.length ? (
                         <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
-                          {template.buttons.map((button: any, bIdx: number) => {
-                            const label = safeText(button.displayText || button.display_text || button.text || button.title || button.value, `Button ${bIdx + 1}`)
-                            const val = safeText(button.value || button.url || button.phone_number || button.copy_code, '')
+                          {buttons.map((button: any, bIdx: number) => {
+                            const label = typeof button === 'string' ? button : safeText(button?.displayText || button?.display_text || button?.text || button?.title || button?.label || button?.value, `Button ${bIdx + 1}`)
+                            const val = typeof button === 'object' && button !== null ? safeText(button.value || button.url || button.phone_number || button.copy_code, '') : ''
                             return (
                               <div
-                                key={button.id || bIdx}
-                                className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-xs dark:bg-[#111b21]/50 dark:text-[#53bdeb] flex flex-col items-center justify-center"
+                                key={button?.id || bIdx}
+                                className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-xs dark:bg-[#111b21]/50 dark:text-[#53bdeb] flex flex-col items-center justify-center cursor-pointer hover:bg-white/90 dark:hover:bg-[#111b21]/70 transition-colors"
                               >
                                 <span>{label}</span>
                                 {val && val !== label && (

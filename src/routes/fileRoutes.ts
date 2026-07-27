@@ -45,6 +45,7 @@ const createFile = async (req: AuthRequest, res: Response) => {
       file_type: fileType,
       file_path: s3Url,
       file_name: req.file.originalname,
+      file_size: req.file.size,
       mimetype: mime,
       caption: req.body.caption || '',
     });

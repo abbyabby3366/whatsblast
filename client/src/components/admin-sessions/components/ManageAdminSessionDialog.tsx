@@ -330,11 +330,11 @@ export function ManageAdminSessionDialog({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Min Interval (s)</Label>
+                  <Label>Min Interval (mins)</Label>
                   <Input type="number" min={1} value={minInterval} onChange={(e) => setMinInterval(parseInt(e.target.value, 10) || 1)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Max Interval (s)</Label>
+                  <Label>Max Interval (mins)</Label>
                   <Input type="number" min={1} value={maxInterval} onChange={(e) => setMaxInterval(parseInt(e.target.value, 10) || 1)} />
                 </div>
               </div>

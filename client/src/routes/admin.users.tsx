@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Edit, HelpCircle, Loader2, Plus, Shield, Store, Trash2, UserRound, Smartphone } from 'lucide-react'
+import { Edit, HelpCircle, Loader2, Plus, Shield, Store, Trash2, UserRound, Smartphone, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -39,6 +39,7 @@ function roleIcon(role: string) { return role === 'admin' ? <Shield className="h
 function AdminUsersPage() {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [filters, setFilters] = useState({ search: '', role: 'all', is_active: 'all', ordering: 'phone_number' })
   const [selected, setSelected] = useState<string[]>([])
@@ -109,7 +110,23 @@ function AdminUsersPage() {
           </div>
           <div className="space-y-2">
             <Label>Password {form.id ? '(leave blank to keep)' : ''}</Label>
-            <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <div className="relative">
+              <Input 
+                type={showPassword ? 'text' : 'password'} 
+                value={form.password} 
+                onChange={(e) => setForm({ ...form, password: e.target.value })} 
+                className="pr-10"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 focus:outline-none select-none"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Role</Label>

@@ -401,13 +401,12 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
         console.log(`❌ Campaign "${campaign.name}": Failed to send to ${rawPhone} (Not on WhatsApp) (${campaign.current_index}/${campaign.contacts.length})`);
 
-        const minIntervalSec = Math.max(1, Number(campaign.min_interval_seconds ?? sessionDoc?.min_interval_seconds ?? 10));
-        const maxIntervalSec = Math.max(minIntervalSec, Number(campaign.max_interval_seconds ?? sessionDoc?.max_interval_seconds ?? 15));
-        const minDelay = minIntervalSec * 1000;
-        const maxDelay = maxIntervalSec * 1000;
-        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-        console.log(`⏱️ Waiting ${Math.round(randomDelay / 1000)}s interval before next contact...`);
-        await new Promise((res) => setTimeout(res, randomDelay));
+        const minIntervalMins = Math.max(0.1, Number(campaign.min_interval_seconds ?? sessionDoc?.min_interval_seconds ?? 10));
+        const maxIntervalMins = Math.max(minIntervalMins, Number(campaign.max_interval_seconds ?? sessionDoc?.max_interval_seconds ?? 15));
+        const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
+        const randomDelayMs = Math.floor(randomMinutes * 60 * 1000);
+        console.log(`⏱️ Waiting ${randomMinutes.toFixed(2)} minutes (${Math.round(randomDelayMs / 1000)}s) interval before next contact...`);
+        await new Promise((res) => setTimeout(res, randomDelayMs));
         continue;
       }
 

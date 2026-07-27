@@ -13,6 +13,7 @@ export interface IFile extends Document {
   file_type: FileType;
   file_path: string;
   file_name?: string;
+  file_size?: number;
   mimetype?: string;
   caption?: string;
   ptt?: boolean;
@@ -27,6 +28,7 @@ const FileSchema = new Schema<IFile>(
     file_type: { type: String, enum: Object.values(FileType), required: true },
     file_path: { type: String, required: true },
     file_name: { type: String },
+    file_size: { type: Number },
     mimetype: { type: String },
     caption: { type: String },
     ptt: { type: Boolean, default: false },

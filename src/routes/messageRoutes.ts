@@ -147,7 +147,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
         select: 'phone_number session_id user',
         populate: { path: 'user', select: 'phone_number role' },
       })
-      .populate('template', 'text name')
+      .populate('template')
       .populate({
         path: 'campaign',
         select: 'name user',

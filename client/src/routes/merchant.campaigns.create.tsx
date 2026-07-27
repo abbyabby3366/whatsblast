@@ -72,7 +72,7 @@ function CreateCampaignPage() {
 
   // Recipient search state
   const [searchTerm, setSearchTerm] = useState('')
-  const [customerPage, setCustomerPage] = useState(1)
+  const [customerPage] = useState(1)
   const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false)
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
@@ -290,11 +290,13 @@ function CreateCampaignPage() {
                   url: f.file_url || f.file_path || f.url || null,
                   name: f.file_name || 'Attached File',
                   type: f.file_type || t.type || 'image',
+                  size: f.file_size || f.size || undefined,
                 }))
               : rawFileIds.map((id: string) => ({
                   id,
                   url: id === (t.file_id || t.file?.id) ? filePreviewUrl(t.file, t.button_image) : null,
                   type: t.type || 'image',
+                  size: t.file?.file_size || t.file?.size || undefined,
                 }))
 
             return {
@@ -358,6 +360,7 @@ function CreateCampaignPage() {
           url: preview,
           name: res.file_name || file.name,
           type: uploadType,
+          size: file.size || res.file_size || res.size || undefined,
         })
       } catch (err) {
         console.error('Failed uploading media file', err)
@@ -801,6 +804,8 @@ function CreateCampaignPage() {
           enableWarmup={enableWarmup}
           setEnableWarmup={setEnableWarmup}
           onNext={handleNextStep1}
+          onSaveDraft={handleSaveDraft}
+          isSavingDraft={saveDraftMutation.isPending}
         />
       )}
 
@@ -815,7 +820,8 @@ function CreateCampaignPage() {
           uploadFileMutation={uploadFileMutation}
           deleteFileMutation={deleteFileMutation}
           handleTemplateFilesUpload={handleTemplateFilesUpload}
-          handleSaveDraft={handleSaveDraft}
+          onPreview={() => setIsPhonePreviewOpen(true)}
+          onSaveDraft={handleSaveDraft}
           isSavingDraft={saveDraftMutation.isPending}
           onBack={() => setStep(1)}
           onNext={handleNextStep2}
@@ -833,7 +839,7 @@ function CreateCampaignPage() {
           isLoadingSessions={isLoadingSessions}
           retryOnFailure={retryOnFailure}
           setRetryOnFailure={setRetryOnFailure}
-          handleSaveDraft={handleSaveDraft}
+          onSaveDraft={handleSaveDraft}
           isSavingDraft={saveDraftMutation.isPending}
           onBack={() => setStep(2)}
           onNext={handleNextStep3}
@@ -845,7 +851,6 @@ function CreateCampaignPage() {
         <Step4Recipients
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
-          setCustomerPage={setCustomerPage}
           setIsCsvModalOpen={setIsCsvModalOpen}
           isSelectingAllCustomers={isSelectingAllCustomers}
           handleSelectAllMatching={handleSelectAllMatching}
@@ -854,7 +859,7 @@ function CreateCampaignPage() {
           currentCustomers={currentCustomers}
           recipients={recipients}
           setRecipients={setRecipients}
-          handleSaveDraft={handleSaveDraft}
+          onSaveDraft={handleSaveDraft}
           isSavingDraft={saveDraftMutation.isPending}
           onBack={() => setStep(3)}
           onNext={handleNextStep4}
@@ -876,9 +881,10 @@ function CreateCampaignPage() {
           setIsPhonePreviewOpen={setIsPhonePreviewOpen}
           setStep={setStep}
           deleteCampaignMutation={deleteCampaignMutation}
-          handleSaveDraft={handleSaveDraft}
+          onSaveDraft={handleSaveDraft}
           isSavingDraft={saveDraftMutation.isPending}
           handleFinalSubmit={handleFinalSubmit}
+          onBack={() => setStep(4)}
           isLaunching={launchCampaignMutation.isPending}
         />
       )}
@@ -887,7 +893,7 @@ function CreateCampaignPage() {
       <CsvImportModal
         isOpen={isCsvModalOpen}
         onClose={() => setIsCsvModalOpen(false)}
-        setRecipients={setRecipients}
+        onImport={(imported) => setRecipients((prev) => Array.from(new Set([...prev, ...imported])))}
       />
 
       <PhonePreviewModal

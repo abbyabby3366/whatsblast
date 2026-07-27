@@ -217,9 +217,13 @@ function MerchantDashboard() {
                         {actualSent}/{totalRecipients} sent • {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY')}
                       </p>
                       {campaign.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                        <p className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px]" title={safeText(campaign.error_message)}>
-                          ⚠️ {safeText(campaign.error_message)}
-                        </p>
+                        <Link
+                          to="/merchant/whatsapp-sessions"
+                          className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px] hover:underline cursor-pointer flex items-center gap-1 mt-0.5"
+                          title="Failed to connect. Click to redirect to Connect WhatsApp page"
+                        >
+                          ⚠️ <span className="truncate">{safeText(campaign.error_message)}</span>
+                        </Link>
                       )}
                     </div>
                     <div className="ml-auto font-medium">

@@ -333,10 +333,15 @@ function SessionsPage() {
                         Connected
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200/60 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800/60">
+                      <button
+                        type="button"
+                        onClick={() => handleScan(session.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200/60 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800/60 dark:hover:bg-amber-900/60 cursor-pointer transition-colors"
+                        title="Disconnected. Click to scan QR code and connect WhatsApp"
+                      >
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                        Disconnected
-                      </span>
+                        Disconnected (Connect)
+                      </button>
                     )}
                   </div>
                 </div>
@@ -466,7 +471,12 @@ function SessionsPage() {
                       {isConnected ? (
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" title="Connected" />
                       ) : (
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" title="Disconnected" />
+                        <button
+                          type="button"
+                          onClick={() => handleScan(session.id)}
+                          className="inline-block w-3 h-3 rounded-full bg-amber-500 hover:scale-125 transition-transform cursor-pointer"
+                          title="Disconnected. Click to scan QR code and connect WhatsApp"
+                        />
                       )}
                     </TableCell>
                     <TableCell className="py-2.5">
@@ -578,10 +588,15 @@ function SessionsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="text-center text-red-500 space-y-3">
-                <p className="text-xs font-medium">Could not generate QR Code.</p>
-                <Button variant="outline" size="sm" className="text-xs h-8" onClick={() => selectedSessionId && fetchQrMutation.mutate(selectedSessionId)}>
-                  Retry
+              <div 
+                onClick={() => selectedSessionId && fetchQrMutation.mutate(selectedSessionId)}
+                className="text-center text-red-500 space-y-3 cursor-pointer p-4 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                title="Failed to connect. Click error message to retry connecting WhatsApp"
+              >
+                <p className="text-xs font-semibold">Could not generate QR Code / Connection failed.</p>
+                <p className="text-[11px] text-red-400">Click here or button below to retry connecting WhatsApp</p>
+                <Button variant="outline" size="sm" className="text-xs h-8">
+                  Retry Connect
                 </Button>
               </div>
             )}

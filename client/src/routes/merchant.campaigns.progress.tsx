@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  ExternalLink,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -306,11 +307,21 @@ function CampaignProgressPage() {
 
         {/* Error message notice if any */}
         {campaign.error_message && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold">Campaign Execution Notice:</span> {safeText(campaign.error_message)}
+          <div
+            onClick={() => navigate({ to: '/merchant/whatsapp-sessions' })}
+            className="flex items-center justify-between gap-2.5 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200 cursor-pointer hover:bg-rose-100/80 dark:hover:bg-rose-900/60 transition-all shadow-xs group"
+            title="Click to redirect to Connect WhatsApp Sessions page"
+          >
+            <div className="flex items-start gap-2.5 min-w-0">
+              <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-rose-700 dark:text-rose-300">Campaign Execution Notice:</span>{' '}
+                <span>{safeText(campaign.error_message)}</span>
+              </div>
             </div>
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300 underline shrink-0 group-hover:text-rose-800 dark:group-hover:text-rose-200">
+              Connect WhatsApp <ExternalLink className="w-3 h-3" />
+            </span>
           </div>
         )}
 

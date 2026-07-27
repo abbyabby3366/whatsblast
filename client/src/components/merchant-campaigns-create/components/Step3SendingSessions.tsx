@@ -1,5 +1,5 @@
 import React from 'react'
-import { Check, Smartphone } from 'lucide-react'
+import { Check, Smartphone, AlertCircle, ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 
@@ -91,7 +91,23 @@ export function Step3SendingSessions({
               {sessionMode === 'SPECIFIC' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-3">
                   {connectedSessions.length === 0 ? (
-                    <p className="text-xs text-amber-600 col-span-2">No connected WhatsApp sessions found.</p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.location.href = '/merchant/whatsapp-sessions'
+                      }}
+                      className="p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-xs col-span-2 flex items-center justify-between cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all text-left group"
+                      title="Failed to find connected session. Click to redirect to Connect WhatsApp page"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>No connected WhatsApp sessions found. Failed to connect session.</span>
+                      </div>
+                      <span className="font-semibold underline text-amber-700 dark:text-amber-300 shrink-0 flex items-center gap-1 group-hover:text-amber-800">
+                        Connect WhatsApp <ExternalLink className="w-3 h-3" />
+                      </span>
+                    </button>
                   ) : (
                     connectedSessions.map((s: any) => {
                       const sId = s.id || s.session_id
