@@ -14,6 +14,7 @@ export type Session = {
   max_interval_seconds?: number
   active_start_time?: string
   active_end_time?: string
+  last_phone_activity_at?: string
   created_at?: string
 }
 

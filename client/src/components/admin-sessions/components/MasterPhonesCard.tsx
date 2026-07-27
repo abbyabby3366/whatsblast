@@ -3,7 +3,6 @@ import { Plus, Trash2, Key, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -16,37 +15,87 @@ import {
 import type { Session, MasterPhone } from '../types'
 
 interface MasterPhonesCardProps {
-  masterPhones: MasterPhone[]
-  isLoading: boolean
-  sessions: Session[]
-  onAddMasterPhone: (phone: string, sessionId: string) => void
-  isAdding: boolean
-  onToggleMasterPhone: (id: string, isActive: boolean) => void
-  onDeleteMasterPhone: (id: string) => void
+  // Props passed from admin.sessions.tsx
+  masters?: MasterPhone[]
+  mastersLoading?: boolean
+  connectedSessions?: Session[]
+  selectedMasterSession?: string
+  setSelectedMasterSession?: (val: string) => void
+  createMaster?: { mutate: (session: string) => void; isPending: boolean }
+  toggleMaster?: { mutate: (args: { id: string; is_active: boolean }) => void }
+  deleteMaster?: { mutate: (id: string) => void }
+  getStatusBadge?: (status?: string) => React.ReactNode
+
+  // Alternative/legacy prop names fallback
+  masterPhones?: MasterPhone[]
+  isLoading?: boolean
+  sessions?: Session[]
+  onAddMasterPhone?: (phone: string, sessionId: string) => void
+  isAdding?: boolean
+  onToggleMasterPhone?: (id: string, isActive: boolean) => void
+  onDeleteMasterPhone?: (id: string) => void
 }
 
 export function MasterPhonesCard({
-  masterPhones,
-  isLoading,
-  sessions,
+  masters,
+  mastersLoading,
+  connectedSessions,
+  selectedMasterSession: propSelectedMasterSession,
+  setSelectedMasterSession: propSetSelectedMasterSession,
+  createMaster,
+  toggleMaster,
+  deleteMaster,
+  getStatusBadge,
+
+  masterPhones: propMasterPhones,
+  isLoading: propIsLoading,
+  sessions: propSessions,
   onAddMasterPhone,
-  isAdding,
+  isAdding: propIsAdding,
   onToggleMasterPhone,
   onDeleteMasterPhone,
 }: MasterPhonesCardProps) {
-  const [phoneInput, setPhoneInput] = useState('')
-  const [selectedSessionId, setSelectedSessionId] = useState('')
+  // Resolve actual prop values with defensive fallback arrays
+  const masterList = masters ?? propMasterPhones ?? []
+  const loading = mastersLoading ?? propIsLoading ?? false
+  const availableSessions = connectedSessions ?? propSessions ?? []
+  const isPendingAdd = createMaster?.isPending ?? propIsAdding ?? false
+
+  const [localSelectedSession, setLocalSelectedSession] = useState('')
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+
+  const selectedSessionId = propSelectedMasterSession !== undefined ? propSelectedMasterSession : localSelectedSession
+  const setSelectedSessionId = propSetSelectedMasterSession || setLocalSelectedSession
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phoneInput.trim() || !selectedSessionId) {
-      toast.error('Please enter a phone number and select a WhatsApp session.')
+    if (!selectedSessionId) {
+      toast.error('Please select a WhatsApp session to assign as a Master OTP phone.')
       return
     }
-    onAddMasterPhone(phoneInput.trim(), selectedSessionId)
-    setPhoneInput('')
-    setSelectedSessionId('')
+
+    if (createMaster) {
+      createMaster.mutate(selectedSessionId)
+    } else if (onAddMasterPhone) {
+      const selectedSess = availableSessions.find((s) => s.id === selectedSessionId)
+      onAddMasterPhone(selectedSess?.phone_number || '', selectedSessionId)
+    }
+  }
+
+  const handleToggle = (id: string, currentActive: boolean) => {
+    if (toggleMaster) {
+      toggleMaster.mutate({ id, is_active: !currentActive })
+    } else if (onToggleMasterPhone) {
+      onToggleMasterPhone(id, !currentActive)
+    }
+  }
+
+  const handleDelete = (id: string) => {
+    if (deleteMaster) {
+      deleteMaster.mutate(id)
+    } else if (onDeleteMasterPhone) {
+      onDeleteMasterPhone(id)
+    }
   }
 
   return (
@@ -67,36 +116,33 @@ export function MasterPhonesCard({
       <CardContent className="space-y-4">
         {/* Add Form */}
         <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2.5 items-end">
-          <div className="flex-1 space-y-1 w-full sm:w-auto">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Phone Number</label>
-            <Input
-              placeholder="e.g. 60123456789"
-              value={phoneInput}
-              onChange={(e) => setPhoneInput(e.target.value)}
-              className="h-9 text-xs font-mono"
-            />
-          </div>
-          <div className="flex-1 space-y-1 w-full sm:w-auto">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Target Session</label>
+          <div className="flex-1 space-y-1 w-full">
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Target Connected Session</label>
             <Select value={selectedSessionId} onValueChange={setSelectedSessionId}>
               <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="Select session..." />
+                <SelectValue placeholder="Select connected WhatsApp session..." />
               </SelectTrigger>
               <SelectContent>
-                {sessions.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.phone_number || s.alias || s.session_id || s.id}
+                {availableSessions.length === 0 ? (
+                  <SelectItem value="_none" disabled>
+                    No available connected sessions
                   </SelectItem>
-                ))}
+                ) : (
+                  availableSessions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.phone_number ? `${s.phone_number} (${s.alias || s.session_id || s.id})` : (s.alias || s.session_id || s.id)}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
           <Button
             type="submit"
-            disabled={isAdding || !phoneInput.trim() || !selectedSessionId}
-            className="h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1.5 px-4"
+            disabled={isPendingAdd || !selectedSessionId || selectedSessionId === '_none'}
+            className="h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1.5 px-4 shrink-0"
           >
-            {isAdding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            {isPendingAdd ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
             Add Master Phone
           </Button>
         </form>
@@ -107,45 +153,48 @@ export function MasterPhonesCard({
             <TableHeader>
               <TableRow className="bg-slate-50/80 dark:bg-slate-900/60">
                 <TableHead className="text-xs">Phone Number</TableHead>
-                <TableHead className="text-xs">Session</TableHead>
+                <TableHead className="text-xs">Session ID</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
                 <TableHead className="text-xs text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {loading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="h-20 text-center">
                     <Loader2 className="w-5 h-5 animate-spin text-emerald-600 mx-auto" />
                   </TableCell>
                 </TableRow>
-              ) : masterPhones.length === 0 ? (
+              ) : masterList.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="h-20 text-center text-xs text-slate-500">
                     No master OTP phone numbers configured yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                masterPhones.map((mp) => (
+                masterList.map((mp) => (
                   <TableRow key={mp.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50">
                     <TableCell className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
-                      {mp.phone_number}
+                      {mp.phone_number || 'Pending connection'}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
                       {mp.session_id || mp.session}
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => onToggleMasterPhone(mp.id, !mp.is_active)}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
-                          mp.is_active
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        {mp.is_active ? 'Active' : 'Disabled'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge && getStatusBadge(mp.session_status)}
+                        <button
+                          type="button"
+                          onClick={() => handleToggle(mp.id, mp.is_active)}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+                            mp.is_active
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                          }`}
+                        >
+                          {mp.is_active ? 'Active' : 'Disabled'}
+                        </button>
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
@@ -175,12 +224,14 @@ export function MasterPhonesCard({
             Are you sure you want to remove this master OTP phone number? OTP messages will no longer be intercepted automatically.
           </p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteTargetId(null)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => setDeleteTargetId(null)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               size="sm"
               onClick={() => {
-                if (deleteTargetId) onDeleteMasterPhone(deleteTargetId)
+                if (deleteTargetId) handleDelete(deleteTargetId)
                 setDeleteTargetId(null)
               }}
             >
@@ -192,3 +243,4 @@ export function MasterPhonesCard({
     </Card>
   )
 }
+

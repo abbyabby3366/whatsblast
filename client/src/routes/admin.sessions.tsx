@@ -403,7 +403,7 @@ function AdminSessionsPage() {
                             {s.phone_number || 'Unconnected Session'}
                           </div>
                           <div className="text-xs text-slate-400">
-                            {s.created_at ? dayjs(s.created_at).format('MMM D, YYYY · h:mm A') : '-'}
+                            {s.created_at ? dayjs(s.created_at).format('DD/MM/YY · h:mm A') : '-'}
                           </div>
                         </div>
                       </div>
@@ -455,6 +455,17 @@ function AdminSessionsPage() {
                         </span>
                         <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
                           {s.active_start_time || '00:00'} - {s.active_end_time || '23:59'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                        <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
+                          <Smartphone className="w-3 h-3 text-slate-400" /> Phone Active:
+                        </span>
+                        <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
+                          {s.last_phone_activity_at
+                            ? dayjs(s.last_phone_activity_at).format('DD/MM/YY · h:mm A')
+                            : 'No activity'}
                         </span>
                       </div>
 

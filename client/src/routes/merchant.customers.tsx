@@ -264,7 +264,7 @@ function CustomersPage() {
       }),
       columnHelper.accessor('created_at', {
         header: 'Date Added',
-        cell: (info) => dayjs(info.getValue()).format('MMM D, YYYY h:mm A'),
+        cell: (info) => dayjs(info.getValue()).format('DD/MM/YY h:mm A'),
       }),
       columnHelper.display({
         id: 'actions',

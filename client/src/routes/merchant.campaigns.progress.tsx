@@ -399,7 +399,7 @@ function CampaignProgressPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-slate-500 whitespace-nowrap">
-                        {row.time ? dayjs(row.time).format('MMM D, YYYY h:mm:ss A') : '-'}
+                        {row.time ? dayjs(row.time).format('DD/MM/YY h:mm:ss A') : '-'}
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400 max-w-xs truncate">
                         {row.message}

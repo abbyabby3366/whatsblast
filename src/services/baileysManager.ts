@@ -38,8 +38,19 @@ export function removeActiveSession(sessionId: string): void {
   if (active) {
     try {
       active.socket.end(undefined);
-    } catch (_) {}
+    } catch (_) { }
     activeSessions.delete(sessionId);
+  }
+}
+
+export async function updateLastPhoneActivity(sessionId: string, timestamp?: Date): Promise<void> {
+  try {
+    await WhatsAppSession.updateOne(
+      { session_id: sessionId },
+      { $set: { last_phone_activity_at: timestamp || new Date() } }
+    );
+  } catch (err) {
+    console.error(`Failed to update last_phone_activity_at for ${sessionId}:`, err);
   }
 }
 
@@ -141,6 +152,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
               qr_code: '',
               phone_number: phoneNumber,
               push_name: pushName,
+              last_phone_activity_at: new Date(),
             },
           }
         );
@@ -173,7 +185,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
           const sessionFolder = path.join(SESSIONS_DIR, sessionId);
           try {
             fs.rmSync(sessionFolder, { recursive: true, force: true });
-          } catch (_) {}
+          } catch (_) { }
         }
       } else {
         console.log(`🔄 Reconnecting session ${sessionId} (reason: ${statusCode || 'unknown'})...`);
@@ -192,7 +204,18 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     if (type !== 'notify') return;
 
     for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+      const msgTime = msg.messageTimestamp ? new Date((msg.messageTimestamp as number) * 1000) : new Date();
+
+      if (msg.key.fromMe) {
+        // Activity detected on primary phone or linked app
+        updateLastPhoneActivity(sessionId, msgTime).catch(console.error);
+        continue;
+      }
+
+      if (!msg.message) continue;
+
+      // Inbound activity also implies network/sync activity on WhatsApp primary account
+      updateLastPhoneActivity(sessionId, msgTime).catch(console.error);
 
       const fromJid = msg.key.remoteJid || '';
       const senderPhone = fromJid.split('@')[0];
@@ -218,7 +241,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
         sender_phone: senderPhone,
         push_name: pushName,
         content: { text: textContent, raw: msg.message },
-        wa_timestamp: new Date((msg.messageTimestamp as number) * 1000),
+        wa_timestamp: msgTime,
       });
 
       if (waSession.agent_phone_numbers && waSession.agent_phone_numbers.length > 0) {
@@ -235,6 +258,10 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
   });
 
   sock.ev.on('messages.update', async (updates) => {
+    if (updates.length > 0) {
+      updateLastPhoneActivity(sessionId).catch(console.error);
+    }
+
     for (const update of updates) {
       if (!update.key?.id) continue;
 

@@ -195,7 +195,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         header: 'Sent / Created At',
         cell: (info) => {
           const sent = info.row.original.sent_at || info.getValue()
-          return sent ? dayjs(sent).format('MMM D, YYYY h:mm A') : '-'
+          return sent ? dayjs(sent).format('DD/MM/YY h:mm A') : '-'
         },
       }),
     ]

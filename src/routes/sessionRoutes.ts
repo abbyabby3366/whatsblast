@@ -17,6 +17,7 @@ function formatSession(s: any) {
   const { _id, __v, ...rest } = obj;
   return {
     id: _id ? _id.toString() : obj.id,
+    last_phone_activity_at: obj.last_phone_activity_at || null,
     ...rest,
   };
 }

@@ -5,31 +5,26 @@ import {
   RefreshCw,
   LogOut,
   Trash2,
-  HelpCircle,
   Plus,
-  Shuffle,
   Send,
   Loader2,
   Copy,
   ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import dayjs from 'dayjs'
 import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -45,24 +40,28 @@ interface ManageAdminSessionDialogProps {
   isOpen: boolean
   onClose: () => void
   session: Session
-  users: User[]
+  users?: User[]
   onScan: () => void
   onReconnect: () => void
   onDisconnect: () => void
   onDelete: () => void
   isReconnecting: boolean
+  onUpdated?: () => void
+  getStatusBadge?: (status?: string) => React.ReactNode
 }
 
 export function ManageAdminSessionDialog({
   isOpen,
   onClose,
   session,
-  users,
+  users = [],
   onScan,
   onReconnect,
   onDisconnect,
   onDelete,
   isReconnecting,
+  onUpdated,
+  getStatusBadge,
 }: ManageAdminSessionDialogProps) {
   const queryClient = useQueryClient()
   const [alias, setAlias] = useState(session.alias || '')
@@ -111,6 +110,8 @@ export function ManageAdminSessionDialog({
     mutationFn: (data: any) => api.patch(`whatsapp-sessions/${session.id}/`, { json: data }).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'whatsapp-sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sessions'] })
+      if (onUpdated) onUpdated()
       toast.success('Session updated successfully')
     },
     onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to update session'))
@@ -219,6 +220,12 @@ export function ManageAdminSessionDialog({
               <div className="flex items-center gap-2">
                 <span className="text-slate-500 font-medium">Phone:</span>
                 <span className="font-mono">{session.phone_number || 'Not connected'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-medium">Phone Active:</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">
+                  {session.last_phone_activity_at ? dayjs(session.last_phone_activity_at).format('DD/MM/YY · h:mm A') : 'No activity recorded'}
+                </span>
               </div>
             </div>
 
