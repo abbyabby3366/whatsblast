@@ -143,6 +143,7 @@ function CreateCampaignPage() {
       toast.success('Draft saved successfully!')
 
       if (savedCampaign?.id && !editingCampaignId) {
+        setIsDraftRestored(false)
         navigate({
           to: '/merchant/campaigns/create',
           search: { edit: savedCampaign.id, step: String(step) },
@@ -172,6 +173,7 @@ function CreateCampaignPage() {
   useEffect(() => {
     if (editingCampaignId) {
       setHasAttemptedRestore(true)
+      setIsDraftRestored(false)
       return
     }
     if (!accountId) return
@@ -211,6 +213,7 @@ function CreateCampaignPage() {
         }
       } catch (err) {
         console.error('Failed to parse campaign draft', err)
+        setIsDraftRestored(false)
       }
     } else {
       setIsDraftRestored(false)
@@ -227,7 +230,12 @@ function CreateCampaignPage() {
       templateDrafts.some((t) => t.template.trim()) ||
       selectedSessions.length > 0
     )
-    if (!hasContent) return
+    if (!hasContent) {
+      if (draftKey) localStorage.removeItem(draftKey)
+      localStorage.removeItem(DRAFT_STORAGE_KEY)
+      setIsDraftRestored(false)
+      return
+    }
 
     const draftData = {
       accountId,
@@ -243,6 +251,7 @@ function CreateCampaignPage() {
       updatedAt: new Date().toISOString(),
     }
     localStorage.setItem(draftKey, JSON.stringify(draftData))
+    setIsDraftRestored(true)
   }, [name, minInterval, maxInterval, enableWarmup, sessionMode, selectedSessions, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
 
   const clearDraft = () => {
@@ -411,6 +420,7 @@ function CreateCampaignPage() {
     onSuccess: () => {
       if (draftKey) localStorage.removeItem(draftKey)
       localStorage.removeItem(DRAFT_STORAGE_KEY)
+      setIsDraftRestored(false)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
       toast.success('Campaign launched! Blast execution started.')
@@ -801,8 +811,6 @@ function CreateCampaignPage() {
         <Step1CampaignDetails
           name={name}
           setName={setName}
-          enableWarmup={enableWarmup}
-          setEnableWarmup={setEnableWarmup}
           onNext={handleNextStep1}
           onSaveDraft={handleSaveDraft}
           isSavingDraft={saveDraftMutation.isPending}
@@ -839,6 +847,8 @@ function CreateCampaignPage() {
           isLoadingSessions={isLoadingSessions}
           retryOnFailure={retryOnFailure}
           setRetryOnFailure={setRetryOnFailure}
+          enableWarmup={enableWarmup}
+          setEnableWarmup={setEnableWarmup}
           onSaveDraft={handleSaveDraft}
           isSavingDraft={saveDraftMutation.isPending}
           onBack={() => setStep(2)}

@@ -138,10 +138,7 @@ function AdminCampaignsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight">Campaign Monitor</h2>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
 
         <div className="flex items-center gap-3">
           <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
@@ -385,11 +382,11 @@ function AdminCampaignsPage() {
                             <div className="w-24 space-y-1">
                               <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
                                 <span>{sent}/{total}</span>
-                                <span className={cStatus === 'completed' ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-emerald-600 font-bold'}>{percent}%</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}%</span>
                               </div>
                               <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                                 <div
-                                  className={`h-full ${cStatus === 'completed' ? 'bg-slate-500' : 'bg-emerald-500'} transition-all duration-300`}
+                                  className="h-full bg-emerald-500 transition-all duration-300"
                                   style={{ width: `${percent}%` }}
                                 />
                               </div>

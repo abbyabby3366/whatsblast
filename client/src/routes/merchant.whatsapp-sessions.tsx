@@ -207,11 +207,7 @@ function SessionsPage() {
       {/* Top Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Smartphone className="w-5 h-5 text-emerald-600" />
-            WhatsApp Sessions
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500">
             Connect and manage multiple WhatsApp accounts for multi-session blast distribution.
           </p>
         </div>

@@ -165,8 +165,39 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         header: 'Message Content',
         cell: (info) => {
           const tmpl = info.getValue()
-          const rawText = tmpl?.text || info.row.original.content || info.row.original.body
-          const text = safeText(rawText, '-')
+          const row = info.row.original
+
+          const parseContent = (val: any): string => {
+            if (!val) return ''
+            let obj = val
+            if (typeof val === 'string') {
+              const trimmed = val.trim()
+              if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                try {
+                  obj = JSON.parse(trimmed)
+                } catch {
+                  return val
+                }
+              } else {
+                return val
+              }
+            }
+            if (obj && typeof obj === 'object') {
+              const bodyText = obj.text || obj.template || obj.body || obj.caption || obj.title || obj.subtitle
+              if (bodyText && typeof bodyText === 'string') return bodyText
+              if (obj.file || obj.file_url || obj.media_url || obj.image_url) {
+                return '📷 [Media / Image]'
+              }
+            }
+            return typeof obj === 'string' ? obj : ''
+          }
+
+          const rawText = tmpl?.text || row.content || row.body || tmpl
+          let text = parseContent(rawText)
+          if (!text) {
+            text = safeText(rawText, '-')
+          }
+
           return (
             <div className="max-w-[280px] sm:max-w-[360px] truncate text-slate-700 dark:text-slate-300 font-sans text-xs" title={text}>
               {text}
@@ -181,7 +212,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           return (
             <span
               className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium uppercase ${
-                st === 'delivered' || st === 'sent'
+                st === 'delivered' || st === 'sent' || st === 'read'
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
                   : st === 'pending' || st === 'queued'
                   ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
@@ -304,11 +335,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-emerald-600" />
-            Messages History
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500">
             View all sent and scheduled WhatsApp campaign messages.
           </p>
         </div>
@@ -344,7 +371,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Statuses</SelectItem>
-              <SelectItem value="SENT">Sent / Delivered</SelectItem>
+              <SelectItem value="SENT">Sent / Delivered / Read</SelectItem>
               <SelectItem value="PENDING">Pending / Queued</SelectItem>
               <SelectItem value="FAILED">Failed</SelectItem>
             </SelectContent>
@@ -498,13 +525,20 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           templates={[
             (() => {
               const msg = selectedMessage
-              const tmplObj = typeof msg.template === 'object' && msg.template !== null ? msg.template : {}
-              const contentObj = typeof msg.content === 'object' && msg.content !== null ? msg.content : {}
+              const tmplObj: any = typeof msg.template === 'object' && msg.template !== null ? msg.template : {}
+              let contentObj: any = typeof msg.content === 'object' && msg.content !== null ? msg.content : {}
+              if (typeof msg.content === 'string' && msg.content.trim().startsWith('{')) {
+                try {
+                  contentObj = JSON.parse(msg.content.trim())
+                } catch {
+                  // ignore JSON parse error
+                }
+              }
 
               const text =
                 contentObj.text ||
                 tmplObj.text ||
-                (typeof msg.content === 'string' ? msg.content : '') ||
+                (typeof msg.content === 'string' && !msg.content.trim().startsWith('{') ? msg.content : '') ||
                 msg.body ||
                 ''
               const footer =

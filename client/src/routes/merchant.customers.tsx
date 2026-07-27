@@ -307,7 +307,6 @@ function CustomersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">Customers</h2>
           <p className="text-xs text-slate-500">Manage your contact list for WhatsApp blasting.</p>
         </div>
 

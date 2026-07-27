@@ -98,14 +98,13 @@ export function MerchantCampaignViews({
                     <TableRow key={c.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50">
                       <TableCell>
                         <div className="font-bold text-slate-900 dark:text-slate-100">{c.name || 'Untitled campaign'}</div>
-                        <div className="text-xs text-slate-500 font-mono">{c.id}</div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <span
                             className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                               cStatus === 'completed'
-                                ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                                 : cStatus === 'scheduled'
                                 ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                                 : cStatus === 'running'
@@ -160,11 +159,11 @@ export function MerchantCampaignViews({
                           <div className="w-24 space-y-1">
                             <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
                               <span>{sent}/{total}</span>
-                              <span className={cStatus === 'completed' ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-emerald-600 font-bold'}>{percent}%</span>
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}%</span>
                             </div>
                             <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                               <div
-                                className={`h-full ${cStatus === 'completed' ? 'bg-slate-500' : 'bg-emerald-500'} transition-all duration-300`}
+                                className="h-full bg-emerald-500 transition-all duration-300"
                                 style={{ width: `${percent}%` }}
                               />
                             </div>
@@ -300,7 +299,7 @@ export function MerchantCampaignViews({
                   <span
                     className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
                       cStatus === 'completed'
-                        ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                         : cStatus === 'scheduled'
                         ? 'bg-amber-100 text-amber-800 border border-amber-300'
                         : cStatus === 'running'
@@ -314,7 +313,7 @@ export function MerchantCampaignViews({
                   >
                     {cStatus === 'draft' && <Clock className="mr-1 h-3 w-3" />}
                     {cStatus === 'running' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                    {cStatus === 'completed' && <CheckCircle2 className="mr-1 h-3 w-3 text-slate-600" />}
+                    {cStatus === 'completed' && <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
                     {cStatus === 'paused' && <Pause className="mr-1 h-3 w-3" />}
                     {cStatus.toUpperCase()}
                   </span>
@@ -359,16 +358,16 @@ export function MerchantCampaignViews({
 
               {cStatus !== 'draft' && (
                 <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
-                    <span>Progress ({sent}/{total})</span>
-                    <span className={cStatus === 'completed' ? 'text-slate-700 font-bold' : 'text-emerald-600 font-bold'}>{percent}%</span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div
-                      className={`h-full ${cStatus === 'completed' ? 'bg-slate-500' : 'bg-emerald-500'} transition-all duration-300`}
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
+                    <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
+                      <span>Progress ({sent}/{total})</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}%</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-300"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
                 </div>
               )}
 

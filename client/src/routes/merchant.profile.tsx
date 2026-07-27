@@ -88,7 +88,6 @@ function ProfilePage() {
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
       <div>
-        <h2 className="text-xl font-bold tracking-tight">Profile Settings</h2>
         <p className="text-xs text-slate-500">
           Manage your personal information and preferences.
         </p>

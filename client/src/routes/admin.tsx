@@ -97,12 +97,11 @@ function AdminLayout() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
-          <SidebarHeader className="h-14 flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4">
+          <SidebarHeader className="h-14 flex items-center border-b border-slate-200 dark:border-slate-800 px-4">
             <Link to="/admin" className="flex items-center gap-2.5 text-lg font-bold hover:opacity-80 transition-opacity">
               <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-7 h-7 object-contain rounded-lg shadow-sm" />
               <span className="tracking-tight text-slate-900 dark:text-white"><span className="text-emerald-600 dark:text-emerald-400">Super</span>Admin {APP_VERSION}</span>
             </Link>
-            <SidebarTrigger className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-200" />
           </SidebarHeader>
           <SidebarContent>
             <SidebarGroup className="px-3 py-2">

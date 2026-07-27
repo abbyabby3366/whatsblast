@@ -87,99 +87,98 @@ function MerchantDashboard() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
-        <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Overview</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">Here's what's happening with your WhatsBlast campaigns today.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-            <div className="flex items-center gap-1">
-              <Users className="h-4 w-4 text-emerald-600" />
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-sm py-2 px-3.5 gap-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0 px-0">
+            <CardTitle className="text-xs font-medium text-slate-700 dark:text-slate-300">Total Customers</CardTitle>
+            <div className="flex items-center gap-0.5">
+              <Users className="h-3.5 w-3.5 text-emerald-600" />
               <Link 
                 to="/merchant/customers" 
-                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-0.5 rounded text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 title="Go to Customers"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCustomers}</div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Total imported contacts</p>
+          <CardContent className="px-0">
+            <div className="text-xl font-bold tracking-tight">{totalCustomers}</div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Total imported contacts</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Campaigns</CardTitle>
-            <div className="flex items-center gap-1">
-              <Megaphone className="h-4 w-4 text-emerald-600" />
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-sm py-2 px-3.5 gap-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0 px-0">
+            <CardTitle className="text-xs font-medium text-slate-700 dark:text-slate-300">Total Campaigns</CardTitle>
+            <div className="flex items-center gap-0.5">
+              <Megaphone className="h-3.5 w-3.5 text-emerald-600" />
               <Link 
                 to="/merchant/campaigns" 
-                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-0.5 rounded text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 title="Go to Campaigns"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCampaigns}</div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Lifetime campaigns created</p>
+          <CardContent className="px-0">
+            <div className="text-xl font-bold tracking-tight">{totalCampaigns}</div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Lifetime campaigns created</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed Campaigns</CardTitle>
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="h-4 w-4 text-teal-600" />
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-sm py-2 px-3.5 gap-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0 px-0">
+            <CardTitle className="text-xs font-medium text-slate-700 dark:text-slate-300">Completed Campaigns</CardTitle>
+            <div className="flex items-center gap-0.5">
+              <CheckCircle2 className="h-3.5 w-3.5 text-teal-600" />
               <Link 
                 to="/merchant/campaigns" 
-                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-0.5 rounded text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 title="Go to Campaigns"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{completedCampaigns}</div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Successfully sent campaigns</p>
+          <CardContent className="px-0">
+            <div className="text-xl font-bold tracking-tight">{completedCampaigns}</div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Successfully sent campaigns</p>
           </CardContent>
         </Card>
-        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-900/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Scheduled / Running Campaigns</CardTitle>
-            <div className="flex items-center gap-1">
-              <Clock className="h-4 w-4 text-amber-500" />
+        <Card className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 shadow-sm py-2 px-3.5 gap-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0 px-0">
+            <CardTitle className="text-xs font-medium text-slate-700 dark:text-slate-300">Scheduled / Running Campaigns</CardTitle>
+            <div className="flex items-center gap-0.5">
+              <Clock className="h-3.5 w-3.5 text-amber-500" />
               <Link 
                 to="/merchant/campaigns" 
-                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-0.5 rounded text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 title="Go to Campaigns"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{scheduledCampaigns}</div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Active in queue</p>
+          <CardContent className="px-0">
+            <div className="text-xl font-bold tracking-tight">{scheduledCampaigns}</div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Active in queue</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800">
-          <CardHeader>
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="col-span-4 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 py-3.5 gap-2.5">
+          <CardHeader className="px-4 pb-0">
             <CardTitle>Activity Overview</CardTitle>
             <CardDescription>Customer acquisition and message volume over the past 7 days.</CardDescription>
           </CardHeader>
-          <CardContent className="pl-2">
-            <div className="h-[300px] w-full">
+          <CardContent className="px-4 pl-2">
+            <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -195,13 +194,13 @@ function MerchantDashboard() {
           </CardContent>
         </Card>
         
-        <Card className="col-span-3 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800">
-          <CardHeader>
+        <Card className="col-span-3 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm border-slate-200/80 dark:border-slate-800 py-3.5 gap-2.5">
+          <CardHeader className="px-4 pb-0">
             <CardTitle>Recent Campaigns</CardTitle>
             <CardDescription>Your most recently created blasts.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3.5">
+          <CardContent className="px-4">
+            <div className="space-y-3">
               {campaigns.slice(0, 5).map((campaign: any) => {
                 const cStatus = (campaign.status || 'draft').toLowerCase()
                 const stats = campaign.stats || {}

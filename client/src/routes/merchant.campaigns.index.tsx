@@ -98,10 +98,7 @@ function CampaignsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight">Campaigns</h2>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
 
         <div className="flex items-center gap-3">
           <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
