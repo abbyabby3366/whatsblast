@@ -216,6 +216,7 @@ function CreateCampaignPage() {
   const [minInterval, setMinInterval] = useState(10)
   const [maxInterval, setMaxInterval] = useState(15)
   const [enableWarmup, setEnableWarmup] = useState(true)
+  const [retryOnFailure, setRetryOnFailure] = useState(true)
   const [sessionMode, setSessionMode] = useState<'ALL' | 'SPECIFIC'>('ALL')
   const [selectedSessions, setSelectedSessions] = useState<string[]>([])
   const [templateDrafts, setTemplateDrafts] = useState<TemplateDraft[]>([createEmptyTemplateDraft()])
@@ -355,6 +356,7 @@ function CreateCampaignPage() {
         min_interval_seconds: minInterval,
         max_interval_seconds: maxInterval,
         enable_warmup: enableWarmup,
+        retry_on_failure: retryOnFailure,
         session_mode: sessionMode,
         selected_sessions: selectedSessions,
         recipient_phones: recipients,
@@ -426,10 +428,10 @@ function CreateCampaignPage() {
           )
 
           if (hasContent) {
-            if (parsed.name) setName(parsed.name)
             if (typeof parsed.minInterval === 'number') setMinInterval(parsed.minInterval)
             if (typeof parsed.maxInterval === 'number') setMaxInterval(parsed.maxInterval)
             if (typeof parsed.enableWarmup === 'boolean') setEnableWarmup(parsed.enableWarmup)
+            if (typeof parsed.retryOnFailure === 'boolean') setRetryOnFailure(parsed.retryOnFailure)
             if (parsed.sessionMode === 'ALL' || parsed.sessionMode === 'SPECIFIC') setSessionMode(parsed.sessionMode)
             if (Array.isArray(parsed.selectedSessions)) setSelectedSessions(parsed.selectedSessions)
             if (Array.isArray(parsed.templateDrafts) && parsed.templateDrafts.length > 0) {
@@ -467,6 +469,7 @@ function CreateCampaignPage() {
       minInterval,
       maxInterval,
       enableWarmup,
+      retryOnFailure,
       sessionMode,
       selectedSessions,
       templateDrafts,
@@ -483,6 +486,7 @@ function CreateCampaignPage() {
     setMinInterval(10)
     setMaxInterval(15)
     setEnableWarmup(true)
+    setRetryOnFailure(true)
     setSessionMode('ALL')
     setSelectedSessions([])
     setTemplateDrafts([createEmptyTemplateDraft()])
@@ -517,6 +521,7 @@ function CreateCampaignPage() {
       setMinInterval(campaign.min_interval_seconds || 10)
       setMaxInterval(campaign.max_interval_seconds || 15)
       setEnableWarmup(Boolean(campaign.enable_warmup))
+      setRetryOnFailure(campaign.retry_on_failure !== undefined ? Boolean(campaign.retry_on_failure) : true)
       setSessionMode(campaign.session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL')
       setSelectedSessions(campaign.selected_sessions || [])
       setRecipients(campaign.recipient_phones || [])
@@ -746,6 +751,7 @@ function CreateCampaignPage() {
       min_interval_seconds: minInterval,
       max_interval_seconds: maxInterval,
       enable_warmup: enableWarmup,
+      retry_on_failure: retryOnFailure,
       session_mode: sessionMode,
       selected_sessions: selectedSessions,
       recipient_phones: recipients,
@@ -1033,7 +1039,7 @@ function CreateCampaignPage() {
           <CardHeader>
             <CardTitle className="text-base font-semibold">Step 1: Campaign Details</CardTitle>
             <CardDescription className="text-xs">
-              Give your campaign a title and set the sending interval and warmup settings.
+              Give your campaign a title and set the warmup settings.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1048,32 +1054,6 @@ function CreateCampaignPage() {
                 onChange={(e) => setName(e.target.value)}
                 className="bg-white dark:bg-slate-950"
               />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="min-interval" className="text-xs font-medium">Min Interval (minutes)</Label>
-                <Input
-                  id="min-interval"
-                  type="number"
-                  min={1}
-                  value={minInterval}
-                  onChange={(e) => setMinInterval(parseInt(e.target.value, 10) || 1)}
-                  className="bg-white dark:bg-slate-950"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="max-interval" className="text-xs font-medium">Max Interval (minutes)</Label>
-                <Input
-                  id="max-interval"
-                  type="number"
-                  min={1}
-                  value={maxInterval}
-                  onChange={(e) => setMaxInterval(parseInt(e.target.value, 10) || 1)}
-                  className="bg-white dark:bg-slate-950"
-                />
-              </div>
             </div>
 
             <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
@@ -1333,6 +1313,8 @@ function CreateCampaignPage() {
                                             <img
                                               src={resolvedUrl}
                                               alt={resolvedName}
+                                              loading="eager"
+                                              decoding="async"
                                               className="h-full w-full object-cover"
                                               onError={(e) => {
                                                 e.currentTarget.style.display = 'none'
@@ -1767,6 +1749,24 @@ function CreateCampaignPage() {
               </div>
             )}
 
+            <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/50">
+              <input
+                id="retry-on-failure"
+                type="checkbox"
+                checked={retryOnFailure}
+                onChange={(e) => setRetryOnFailure(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <div>
+                <Label htmlFor="retry-on-failure" className="cursor-pointer text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  If message fails to send, retry with other session
+                </Label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Automatically fallback to another active WhatsApp session if a message delivery fails on the current session.
+                </p>
+              </div>
+            </div>
+
             {/* Step 3 Actions */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <Button type="button" variant="outline" onClick={() => setStep(2)}>
@@ -1952,9 +1952,9 @@ function CreateCampaignPage() {
                 <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">{name || 'Untitled'}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Sending Interval</span>
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Session Retry & Warmup</span>
                 <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
-                  {minInterval} - {maxInterval} mins
+                  {retryOnFailure ? 'Retry Enabled' : 'No Retry'}
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Warmup: {enableWarmup ? 'Enabled' : 'Disabled'}
@@ -2062,6 +2062,8 @@ function CreateCampaignPage() {
                                     <img
                                       src={item.url}
                                       alt={item.name || `Image ${mIdx + 1}`}
+                                      loading="eager"
+                                      decoding="async"
                                       className="max-h-48 w-auto object-contain rounded-md"
                                       onError={(e) => {
                                         e.currentTarget.style.display = 'none'
@@ -2396,6 +2398,8 @@ function CreateCampaignPage() {
                                   key={mIdx}
                                   src={item.url}
                                   alt="Media attachment"
+                                  loading="eager"
+                                  decoding="async"
                                   className="w-full h-auto max-h-48 object-cover rounded"
                                 />
                               )
@@ -2405,6 +2409,8 @@ function CreateCampaignPage() {
                                 key={mIdx}
                                 src={item.url}
                                 alt={`Media ${mIdx + 1}`}
+                                loading="eager"
+                                decoding="async"
                                 className="h-16 w-16 object-cover rounded border border-black/10 dark:border-white/10"
                               />
                             )

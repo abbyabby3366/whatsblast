@@ -29,6 +29,7 @@ export async function uploadToS3(
     Body: fileBuffer,
     ContentType: mimeType,
     ACL: 'public-read',
+    CacheControl: 'public, max-age=31536000, immutable',
   });
 
   await s3Client.send(command);

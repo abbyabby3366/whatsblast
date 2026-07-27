@@ -8,50 +8,27 @@ import {
   Pause,
   Play,
   Plus,
-  Trash2,
   FileText,
   Activity,
   LayoutGrid,
   List,
   AlertCircle,
-  ArrowLeft,
-  User,
-  MoreVertical,
-  CheckCheck,
-  Mic,
   RotateCcw,
   Video as VideoIcon,
-  Search,
-  Users,
-  X,
   Edit3,
-  ChevronDown,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { api, getErrorMessage } from '@/lib/api'
-import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
+import {
+  WhatsAppPhonePreviewModal,
+  resolveTemplateMediaList,
+} from '@/components/campaigns/WhatsAppPhonePreviewModal'
 import { CustomerListModal } from '@/components/campaigns/CustomerListModal'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+
 import {
   Card,
   CardContent,
@@ -77,89 +54,9 @@ function CampaignsPage() {
   const queryClient = useQueryClient()
   const [selectedPreviewCampaign, setSelectedPreviewCampaign] = useState<any>(null)
   const [selectedCustomerListCampaign, setSelectedCustomerListCampaign] = useState<any>(null)
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerStatusFilter, setCustomerStatusFilter] = useState<'ALL' | 'SENT' | 'FAILED' | 'PENDING'>('ALL')
 
-  const retryRecipientMutation = useMutation({
-    mutationFn: ({ cId, phone }: { cId: string | number; phone: string }) =>
-      api.post(`blast-campaigns/${cId}/retry-recipient/`, { json: { phone } }).json<any>(),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      queryClient.invalidateQueries({ queryKey: ['customer-list-logs', selectedCustomerListCampaign?.id] })
-      toast.success(data?.message || 'Message retried successfully!')
-    },
-    onError: async (err: any) => {
-      toast.error(await getErrorMessage(err, 'Failed to retry message.'))
-    },
-  })
 
-  const { data: customerLogsData, isLoading: isLoadingCustomerLogs } = useQuery({
-    queryKey: ['customer-list-logs', selectedCustomerListCampaign?.id],
-    queryFn: () =>
-      api
-        .get('messages/', {
-          searchParams: { campaign_id: selectedCustomerListCampaign.id, page_size: '200' },
-        })
-        .json<any>(),
-    enabled: Boolean(selectedCustomerListCampaign?.id),
-  })
 
-  const getCampaignTemplates = (campaign: any) => {
-    if (Array.isArray(campaign?.templates) && campaign.templates.length > 0) {
-      return campaign.templates
-    }
-    if (campaign?.template) {
-      return [campaign.template]
-    }
-    return []
-  }
-
-  const resolveTemplateMediaList = (template: any) => {
-    const list: Array<{ url: string; type: string; name?: string }> = []
-
-    if (Array.isArray(template.files) && template.files.length > 0) {
-      template.files.forEach((f: any) => {
-        const url = typeof f === 'string' ? f : f?.file_url || f?.file_path || f?.url || f?.file || null
-        const type = typeof f === 'object' ? f?.file_type || 'image' : 'image'
-        const name = typeof f === 'object' ? f?.file_name : undefined
-        if (url) list.push({ url, type: String(type).toLowerCase(), name })
-      })
-    }
-
-    if (list.length === 0 && Array.isArray(template.attachedFiles) && template.attachedFiles.length > 0) {
-      template.attachedFiles.forEach((f: any) => {
-        const url = f?.url || f?.file_url || f?.file_path || null
-        const type = f?.type || 'image'
-        const name = f?.name
-        if (url) list.push({ url, type: String(type).toLowerCase(), name })
-      })
-    }
-
-    if (list.length === 0) {
-      const fileObj = typeof template.file === 'object' ? template.file : {}
-      const buttonImgObj = typeof template.button_image === 'object' ? template.button_image : {}
-      const mediaUrl =
-        fileObj.file_url ||
-        fileObj.file_path ||
-        fileObj.url ||
-        buttonImgObj.file_url ||
-        buttonImgObj.file_path ||
-        buttonImgObj.url ||
-        template.file_url ||
-        template.button_image_url ||
-        template.previewUrl ||
-        (typeof template.file === 'string' && (template.file.startsWith('http') || template.file.startsWith('/'))
-          ? template.file
-          : '')
-      const rawType = fileObj.file_type || template.type || template.messageType || (mediaUrl ? 'image' : 'text')
-      const fileType = String(rawType).toLowerCase()
-      if (mediaUrl) {
-        list.push({ url: mediaUrl, type: fileType, name: fileObj.file_name })
-      }
-    }
-
-    return list
-  }
 
   // Fetch campaigns
   const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
@@ -193,16 +90,7 @@ function CampaignsPage() {
     },
   })
 
-  const deleteCampaignMutation = useMutation({
-    mutationFn: (id: string | number) => api.delete(`blast-campaigns/${id}/`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      toast.success('Campaign deleted successfully!')
-    },
-    onError: async (err: any) => {
-      toast.error(await getErrorMessage(err, 'Failed to delete campaign.'))
-    },
-  })
+
 
   const retryFailedMutation = useMutation({
     mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/retry-failed/`).json<any>(),
@@ -335,7 +223,7 @@ function CampaignsPage() {
                           <span
                             className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                               cStatus === 'completed'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                                 : cStatus === 'scheduled'
                                 ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                                 : cStatus === 'running'
@@ -387,11 +275,11 @@ function CampaignsPage() {
                           <div className="w-24 space-y-1">
                             <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
                               <span>{sent}/{total}</span>
-                              <span className="text-emerald-600 font-bold">{percent}%</span>
+                              <span className="text-slate-700 dark:text-slate-300 font-bold">{percent}%</span>
                             </div>
                             <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                               <div
-                                className="h-full bg-emerald-500 transition-all duration-300"
+                                className="h-full bg-slate-500 transition-all duration-300"
                                 style={{ width: `${percent}%` }}
                               />
                             </div>
@@ -404,8 +292,8 @@ function CampaignsPage() {
                           {dayjs(campaign.created_at || campaign.createdAt).format('DD/MM/YY h:mm A')}
                         </div>
                         {(campaign.completed_at || campaign.completedAt || (cStatus === 'completed' && campaign.updatedAt)) && (
-                          <div className="mt-0.5 font-medium text-emerald-600 dark:text-emerald-400">
-                            <span className="text-emerald-600/80 dark:text-emerald-400/80">Completed:</span>{' '}
+                          <div className="mt-0.5 font-medium text-slate-600 dark:text-slate-400">
+                            <span className="text-slate-500 dark:text-slate-400">Completed:</span>{' '}
                             {dayjs(campaign.completed_at || campaign.completedAt || campaign.updatedAt).format('DD/MM/YY h:mm A')}
                           </div>
                         )}
@@ -475,62 +363,16 @@ function CampaignsPage() {
                               Retry ({campaign.stats.failed})
                             </Button>
                           )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 px-2.5 text-xs font-medium"
-                              >
-                                {cStatus === 'draft' ? 'Edit Draft' : 'Edit'}
-                                <ChevronDown className="ml-1 h-3 w-3 opacity-60" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-36">
-                              <DropdownMenuItem
-                                onClick={() => handleEdit(campaign)}
-                                className="cursor-pointer"
-                              >
-                                <Edit3 className="mr-2 h-3.5 w-3.5 text-slate-500" />
-                                {cStatus === 'draft' ? 'Edit Draft' : 'Edit Campaign'}
-                              </DropdownMenuItem>
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <DropdownMenuItem
-                                    onSelect={(e) => e.preventDefault()}
-                                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40"
-                                  >
-                                    <Trash2 className="mr-2 h-3.5 w-3.5 text-red-500" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DialogTrigger>
-                                <DialogContent onClick={(e) => e.stopPropagation()}>
-                                  <DialogHeader>
-                                    <DialogTitle>Delete Campaign?</DialogTitle>
-                                    <DialogDescription>
-                                      Are you sure you want to delete this campaign? This action cannot be undone.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <DialogFooter>
-                                    <DialogClose asChild>
-                                      <Button type="button" variant="outline">Cancel</Button>
-                                    </DialogClose>
-                                    <DialogClose asChild>
-                                      <Button
-                                        type="button"
-                                        variant="destructive"
-                                        onClick={() => deleteCampaignMutation.mutate(campaign.id)}
-                                        className="bg-red-600 text-white hover:bg-red-700"
-                                      >
-                                        Delete
-                                      </Button>
-                                    </DialogClose>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs font-medium"
+                            onClick={() => handleEdit(campaign)}
+                          >
+                            <Edit3 className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+                            {cStatus === 'draft' ? 'Edit Draft' : 'Edit'}
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -583,7 +425,7 @@ function CampaignsPage() {
                         <span
                           className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
                             cStatus === 'completed'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                               : cStatus === 'scheduled'
                               ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                               : cStatus === 'running'
@@ -607,7 +449,7 @@ function CampaignsPage() {
                             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                           )}
                           {cStatus === 'completed' && (
-                            <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                            <CheckCircle2 className="mr-1 h-3 w-3 text-slate-500 dark:text-slate-400" />
                           )}
                           {cStatus === 'paused' && (
                             <Pause className="mr-1 h-3 w-3" />
@@ -707,6 +549,8 @@ function CampaignsPage() {
                                           <img
                                             src={item.url}
                                             alt={item.name || `Media ${mIdx + 1}`}
+                                            loading="eager"
+                                            decoding="async"
                                             className="h-full w-full object-cover transition-transform group-hover:scale-105"
                                           />
                                         )}

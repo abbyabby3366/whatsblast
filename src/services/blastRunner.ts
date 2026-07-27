@@ -502,43 +502,116 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         console.log(`💬 Campaign "${campaign.name}": Sent to ${cleanPhone} (${campaign.current_index}/${campaign.contacts.length})`);
       } catch (err: any) {
         console.error(`❌ Error sending message for campaign ${campaign.name}:`, err.message || err);
-        try {
-          const now = new Date();
-          const updatedMsg = await Message.findOneAndUpdate(
-            { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
-            {
-              session: sessionDoc?._id,
-              status: MessageStatus.FAILED,
-              to_jid: targetJid,
-              error: err.message || String(err),
-              content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
-              sent_at: now,
-              wa_timestamp: now,
-            },
-            { new: true }
-          );
 
-          if (!updatedMsg) {
-            await Message.create({
-              session: sessionDoc?._id,
-              campaign: campaign._id,
-              direction: MessageDirection.OUTBOUND,
-              type: 'text',
-              status: MessageStatus.FAILED,
-              recipient_phone: cleanPhone,
-              to_jid: targetJid,
-              error: err.message || String(err),
-              content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
-              sent_at: now,
-              wa_timestamp: now,
-            });
+        let retrySuccess = false;
+        if (campaign.retry_on_failure !== false) {
+          try {
+            const allowedSessions = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
+            const retrySessionId = await pickUserSession(campaign.user.toString(), allowedSessions, [sessionId]);
+            if (retrySessionId) {
+              console.log(`🔄 Retrying send to ${cleanPhone} using fallback session ${retrySessionId}...`);
+              let retrySession = getActiveSession(retrySessionId);
+              if (!retrySession) {
+                retrySession = await initWhatsAppSession(retrySessionId);
+              }
+              const retrySessionDoc = await WhatsAppSession.findOne({ session_id: retrySessionId });
+
+              for (let i = 0; i < templatesToSend.length; i++) {
+                const tplItem = templatesToSend[i];
+                const result = await sendBaileysTemplateMessage(retrySession.socket, targetJid, tplItem, cleanPhone);
+
+                if (retrySessionDoc) {
+                  retrySessionDoc.current_message_count += 1;
+                  await retrySessionDoc.save();
+                }
+
+                const fileId = tplItem.file_id || tplItem.fileId || tplItem.file;
+                const buttonMediaId = tplItem.button_image_id || tplItem.buttonImageId || tplItem.button_image;
+                const mainMedia = await getFileUrl(fileId);
+                const buttonMedia = await getFileUrl(buttonMediaId);
+                const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
+
+                const fullContent = {
+                  text: tplItem.text || tplItem.template || '',
+                  buttons: tplItem.buttons || [],
+                  footer: tplItem.footer || '',
+                  title: tplItem.title || '',
+                  subtitle: tplItem.subtitle || '',
+                  file: activeMedia?.url || mainMedia?.url || null,
+                  file_type: activeMedia?.type || tplItem.messageType || tplItem.type || 'text',
+                  file_name: activeMedia?.filename || null,
+                  button_image: buttonMedia?.url || null,
+                };
+
+                const now = new Date();
+                await Message.findOneAndUpdate(
+                  { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+                  {
+                    session: retrySessionDoc?._id,
+                    type: tplItem.messageType || tplItem.type || 'text',
+                    status: MessageStatus.SENT,
+                    to_jid: targetJid,
+                    template: campaign.template || null,
+                    content: fullContent,
+                    message_id: result?.key?.id || '',
+                    sent_at: now,
+                    wa_timestamp: now,
+                  },
+                  { new: true, upsert: true }
+                );
+              }
+
+              campaign.current_index += 1;
+              campaign.stats.sent += 1;
+              await campaign.save();
+
+              console.log(`💬 Campaign "${campaign.name}": Sent to ${cleanPhone} via fallback session (${campaign.current_index}/${campaign.contacts.length})`);
+              retrySuccess = true;
+            }
+          } catch (retryErr: any) {
+            console.warn(`⚠️ Retry session fallback failed for ${cleanPhone}:`, retryErr.message || retryErr);
           }
-        } catch (mErr) {
-          console.error('Failed to log failed message:', mErr);
         }
-        campaign.stats.failed += 1;
-        campaign.current_index += 1;
-        await campaign.save();
+
+        if (!retrySuccess) {
+          try {
+            const now = new Date();
+            const updatedMsg = await Message.findOneAndUpdate(
+              { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+              {
+                session: sessionDoc?._id,
+                status: MessageStatus.FAILED,
+                to_jid: targetJid,
+                error: err.message || String(err),
+                content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
+                sent_at: now,
+                wa_timestamp: now,
+              },
+              { new: true }
+            );
+
+            if (!updatedMsg) {
+              await Message.create({
+                session: sessionDoc?._id,
+                campaign: campaign._id,
+                direction: MessageDirection.OUTBOUND,
+                type: 'text',
+                status: MessageStatus.FAILED,
+                recipient_phone: cleanPhone,
+                to_jid: targetJid,
+                error: err.message || String(err),
+                content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
+                sent_at: now,
+                wa_timestamp: now,
+              });
+            }
+          } catch (mErr) {
+            console.error('Failed to log failed message:', mErr);
+          }
+          campaign.stats.failed += 1;
+          campaign.current_index += 1;
+          await campaign.save();
+        }
       }
 
       // Random delay between contacts (binded to session, inherits default 10s - 15s or campaign settings)

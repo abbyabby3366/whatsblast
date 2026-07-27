@@ -128,7 +128,7 @@ const getCampaigns = async (req: AuthRequest, res: Response) => {
 router.get('/blast-campaigns', getCampaigns);
 
 const createCampaign = async (req: AuthRequest, res: Response) => {
-  const { name, template, contacts, recipient_phones, templates, user: targetUserId, min_interval_seconds, max_interval_seconds, enable_warmup, session_mode, selected_sessions, scheduled_at } = req.body;
+  const { name, template, contacts, recipient_phones, templates, user: targetUserId, min_interval_seconds, max_interval_seconds, enable_warmup, retry_on_failure, session_mode, selected_sessions, scheduled_at } = req.body;
   const targetUser = (req.user?.role === 'admin' && targetUserId) ? targetUserId : req.user?._id;
 
   const phoneList = Array.isArray(contacts) ? contacts : Array.isArray(recipient_phones) ? recipient_phones : [];
@@ -150,6 +150,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
   const maxInterval = max_interval_seconds || 15;
   const sessionModeVal = session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
   const selectedSessionsList = Array.isArray(selected_sessions) ? selected_sessions : [];
+  const retryOnFailureVal = retry_on_failure !== undefined ? Boolean(retry_on_failure) : true;
 
   const campaign = await BlastCampaign.create({
     user: targetUser,
@@ -161,6 +162,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     min_interval_seconds: minInterval,
     max_interval_seconds: maxInterval,
     enable_warmup: Boolean(enable_warmup),
+    retry_on_failure: retryOnFailureVal,
     session_mode: sessionModeVal,
     selected_sessions: selectedSessionsList,
     scheduled_at: scheduled_at ? new Date(scheduled_at) : undefined,
@@ -234,7 +236,7 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
-  const { name, status, recipient_phones, contacts, templates, min_interval_seconds, max_interval_seconds, enable_warmup, session_mode, selected_sessions } = req.body;
+  const { name, status, recipient_phones, contacts, templates, min_interval_seconds, max_interval_seconds, enable_warmup, retry_on_failure, session_mode, selected_sessions } = req.body;
   if (name !== undefined) campaign.name = name;
   if (status !== undefined) {
     campaign.status = status;
@@ -252,6 +254,7 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
   if (min_interval_seconds !== undefined) campaign.min_interval_seconds = min_interval_seconds;
   if (max_interval_seconds !== undefined) campaign.max_interval_seconds = max_interval_seconds;
   if (enable_warmup !== undefined) campaign.enable_warmup = Boolean(enable_warmup);
+  if (retry_on_failure !== undefined) campaign.retry_on_failure = Boolean(retry_on_failure);
   if (session_mode !== undefined) campaign.session_mode = session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
   if (selected_sessions !== undefined) campaign.selected_sessions = Array.isArray(selected_sessions) ? selected_sessions : [];
 

@@ -470,7 +470,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               </div>
             )}
 
-            <div className="w-36">
+            <div className="w-40">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="h-9 text-xs">
                   <Filter className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
@@ -478,7 +478,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Statuses</SelectItem>
-                  <SelectItem value="SENT">Sent / Delivered</SelectItem>
+                  <SelectItem value="SENT">Sent / Delivered / Read</SelectItem>
                   <SelectItem value="PENDING">Pending / Queued</SelectItem>
                   <SelectItem value="FAILED">Failed / Error</SelectItem>
                 </SelectContent>
@@ -612,13 +612,37 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
             name: selectedMessage.campaign?.name || selectedMessage.campaign_name || 'Message Preview',
             recipient_phones: [selectedMessage.recipient_phone || selectedMessage.to_jid || 'Recipient'],
             created_at: selectedMessage.created_at,
-            templates: selectedMessage.template
-              ? [selectedMessage.template]
-              : [
-                  {
-                    text: selectedMessage.content?.text || selectedMessage.text || selectedMessage.message_type || 'Message preview',
-                  },
-                ],
+            templates: (() => {
+              const msgContent: any = selectedMessage.content || {}
+              const msgTemplate: any = typeof selectedMessage.template === 'object' && selectedMessage.template ? selectedMessage.template : {}
+
+              const text = msgContent.text || selectedMessage.text || msgTemplate.text || msgTemplate.template || ''
+              const file = msgContent.file || selectedMessage.file || msgTemplate.file || msgTemplate.file_url
+              const file_url = msgContent.file_url || selectedMessage.file_url || selectedMessage.media_url || selectedMessage.image_url || selectedMessage.url || msgTemplate.file_url || msgTemplate.url
+              const button_image = msgContent.button_image || selectedMessage.button_image || msgTemplate.button_image || msgTemplate.button_image_url
+              const buttons = msgContent.buttons || selectedMessage.buttons || msgTemplate.buttons || []
+              const footer = msgContent.footer || selectedMessage.footer || msgTemplate.footer || ''
+              const files = msgContent.files || selectedMessage.files || msgTemplate.files || []
+              const attachedFiles = msgContent.attachedFiles || selectedMessage.attachedFiles || msgTemplate.attachedFiles || []
+              const messageType = msgContent.file_type || selectedMessage.message_type || selectedMessage.type || msgTemplate.type || msgTemplate.messageType
+
+              return [
+                {
+                  ...msgTemplate,
+                  ...msgContent,
+                  text,
+                  file: file || file_url,
+                  file_url: file_url || (typeof file === 'string' ? file : undefined),
+                  button_image,
+                  buttons,
+                  footer,
+                  files,
+                  attachedFiles,
+                  type: messageType,
+                  messageType,
+                },
+              ]
+            })(),
           }}
           onClose={() => setSelectedMessage(null)}
         />

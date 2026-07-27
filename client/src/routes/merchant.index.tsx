@@ -48,7 +48,6 @@ function MerchantDashboard() {
   const scheduledCampaigns = campaigns.filter((c: any) => ['scheduled', 'running'].includes((c.status || '').toLowerCase())).length
 
   const chartData = useMemo(() => {
-    // Generate simple chart data based on loaded items
     const data = []
     for (let i = 6; i >= 0; i--) {
       const date = dayjs().subtract(i, 'day').format('MMM DD')
@@ -59,13 +58,20 @@ function MerchantDashboard() {
       
       const dayCampaigns = campaigns.filter((c: any) => 
         dayjs(c.created_at || c.createdAt).format('MMM DD') === date
-      ).length
+      )
+
+      const dayMessages = dayCampaigns.reduce((sum: number, c: any) => {
+        const stats = c.stats || {}
+        const totalRecipients = stats.total || c.recipient_phones?.length || c.contacts?.length || c.recipients?.length || 0
+        const sentCount = stats.sent !== undefined ? stats.sent : (c.current_index || 0)
+        const actualSent = (c.status || '').toLowerCase() === 'completed' && sentCount === 0 ? totalRecipients : sentCount
+        return sum + actualSent
+      }, 0)
 
       data.push({
         name: date,
         customers: dayCustomers,
-        // Approximate messages sent if we don't have exact metrics per day
-        messages: dayCampaigns > 0 ? dayCampaigns * 50 : 0, 
+        messages: dayMessages,
       })
     }
     return data
@@ -197,12 +203,17 @@ function MerchantDashboard() {
             <div className="space-y-3.5">
               {campaigns.slice(0, 5).map((campaign: any) => {
                 const cStatus = (campaign.status || 'draft').toLowerCase()
+                const stats = campaign.stats || {}
+                const totalRecipients = stats.total || campaign.recipient_phones?.length || campaign.contacts?.length || campaign.recipients?.length || 0
+                const sentCount = stats.sent !== undefined ? stats.sent : (campaign.current_index || 0)
+                const actualSent = cStatus === 'completed' && sentCount === 0 ? totalRecipients : sentCount
+
                 return (
                   <div key={campaign.id} className="flex items-center">
                     <div className="ml-4 space-y-1">
                       <p className="text-sm font-medium leading-none">{campaign.name}</p>
                       <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {campaign.recipients?.length || campaign.recipient_phones?.length || 0} recipients • {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY')}
+                        {actualSent}/{totalRecipients} sent • {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY')}
                       </p>
                       {campaign.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
                         <p className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px]" title={campaign.error_message}>

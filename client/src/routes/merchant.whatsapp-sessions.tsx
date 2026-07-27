@@ -20,6 +20,9 @@ import {
   Tag,
   RefreshCw,
   LogOut,
+  ChevronDown,
+  Clock,
+  Calendar,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -41,6 +44,13 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Table,
   TableBody,
@@ -357,51 +367,78 @@ function SessionsPage() {
             return (
               <div 
                 key={session.id} 
-                className="group relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 flex flex-col justify-between space-y-3 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-md"
+                className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4 flex flex-col justify-between space-y-3.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-md"
               >
-                {/* Header */}
+                {/* Top Row: Logo + Phone & Date (Left) | Status Badge (Upper Right Corner) */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={`p-2 rounded-lg shrink-0 ${isConnected ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                      <Smartphone className="w-4 h-4" />
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isConnected ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                      <img src="/futuristic-whatsapp-logo.png" alt="WhatsApp" className="w-6 h-6 object-contain" />
                     </div>
                     <div className="min-w-0 space-y-0.5">
-                      {session.alias && (
-                        <div className="font-semibold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate">
-                          <Tag className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span className="truncate">{session.alias}</span>
-                        </div>
-                      )}
-                      <div className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                      <div className="font-bold text-base text-slate-900 dark:text-slate-100 font-mono truncate">
                         {session.phone_number || 'Unconnected Session'}
                       </div>
-                      <div className="text-[11px] text-slate-400">
+                      <div className="text-xs text-slate-400">
                         {dayjs(session.created_at).format('MMM D, YYYY · h:mm A')}
                       </div>
                     </div>
                   </div>
+
+                  {/* Upper Right Corner Status Badge */}
+                  <div className="shrink-0">
+                    {getStatusBadge(session.status)}
+                  </div>
                 </div>
 
-                {/* Body info: Session ID tag & Labels */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-md border border-slate-100 dark:border-slate-800/80 text-[11px]">
-                    <span className="text-slate-400 font-medium shrink-0 mr-1.5">ID:</span>
+                {/* Body info: Alias (once!), Session ID, Interval, Active Window & Labels */}
+                <div className="space-y-1.5 text-xs">
+                  {session.alias && (
+                    <div className="flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-950/30 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium shrink-0 flex items-center gap-1">
+                        <Tag className="w-3 h-3 text-emerald-600" /> Alias:
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{session.alias}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                    <span className="text-slate-400 font-medium shrink-0 mr-2">ID:</span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(sid)}
-                      className="font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium truncate flex items-center gap-1 transition-colors"
+                      className="font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium truncate flex items-center gap-1.5 transition-colors"
                       title="Click to copy Session ID"
                     >
                       <span className="truncate">{sid}</span>
                       {copiedId === sid ? (
-                        <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       ) : (
-                        <Copy className="w-3 h-3 text-slate-400 group-hover:text-slate-500 shrink-0" />
+                        <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-500 shrink-0" />
                       )}
                     </button>
                   </div>
+
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                    <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" /> Interval:
+                    </span>
+                    <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
+                      {session.min_interval_seconds ?? 10}s - {session.max_interval_seconds ?? 15}s
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                    <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-400" /> Active Window:
+                    </span>
+                    <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
+                      {session.active_start_time || '00:00'} - {session.active_end_time || '23:59'}
+                    </span>
+                  </div>
+
                   {session.labels && session.labels.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1 pt-0.5">
                       {session.labels.map((lbl: string) => (
                         <Badge key={lbl} variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                           {lbl}
@@ -411,24 +448,18 @@ function SessionsPage() {
                   )}
                 </div>
 
-                {/* Status Pill & Action Buttons Footer */}
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                  <div>
-                    {getStatusBadge(session.status)}
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => handleManage(session.id)}
-                      className="h-7 px-2.5 text-[11px] font-medium gap-1"
-                      title="Manage session settings"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                      Manage
-                    </Button>
-                  </div>
+                {/* Footer: Manage Button (Right aligned) */}
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleManage(session.id)}
+                    className="h-8 px-3 rounded-lg text-xs font-medium gap-1.5"
+                    title="Manage session settings"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    Manage
+                  </Button>
                 </div>
               </div>
             )
@@ -441,6 +472,7 @@ function SessionsPage() {
             <TableHeader className="bg-slate-50/70 dark:bg-slate-800/40">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[140px] text-xs font-semibold text-slate-500">Status</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-500">Alias</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500">Phone Number</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500">Session ID</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500">Created</TableHead>
@@ -450,25 +482,24 @@ function SessionsPage() {
             <TableBody>
               {filteredSessions.map((session: any) => {
                 const sid = session.session_id || session.id
-                const isConnected = (session.status || '').toLowerCase() === 'connected'
 
                 return (
                   <TableRow key={session.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                     <TableCell className="py-2.5">
                       {getStatusBadge(session.status)}
                     </TableCell>
-                    <TableCell className="py-2.5 font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                    <TableCell className="py-2.5 font-semibold text-xs text-slate-900 dark:text-slate-100">
                       {session.alias ? (
-                        <div>
-                          <div className="font-semibold font-sans text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                            <Tag className="w-3 h-3 text-emerald-600 shrink-0" />
-                            {session.alias}
-                          </div>
-                          <div className="text-[11px] text-slate-500 font-mono">{session.phone_number || 'Unconnected'}</div>
+                        <div className="flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          {session.alias}
                         </div>
                       ) : (
-                        session.phone_number || <span className="text-slate-400 italic font-sans font-normal">Unconnected</span>
+                        <span className="text-slate-400 italic font-normal text-xs">-</span>
                       )}
+                    </TableCell>
+                    <TableCell className="py-2.5 font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      {session.phone_number || <span className="text-slate-400 italic font-sans font-normal">Unconnected</span>}
                     </TableCell>
                     <TableCell className="py-2.5">
                       <div className="space-y-1">
@@ -749,90 +780,86 @@ function ManageSessionDialog({
 
         <div className="space-y-4 py-2">
           {/* Key Info & Quick Actions Banner */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex justify-between items-center text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">Session ID:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(session.session_id || session.id)
-                      toast.success('Session ID copied!')
-                    }}
-                    className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1"
-                  >
-                    {session.session_id || session.id}
-                    <Copy className="w-3 h-3 text-slate-400" />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">Phone:</span>
-                  <span className="font-mono">{session.phone_number || 'Not connected yet'}</span>
-                </div>
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="space-y-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-medium">Session ID:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(session.session_id || session.id)
+                    toast.success('Session ID copied!')
+                  }}
+                  className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1"
+                >
+                  {session.session_id || session.id}
+                  <Copy className="w-3 h-3 text-slate-400" />
+                </button>
               </div>
-              <div className="flex items-center gap-1.5">
-                {(session.status || '').toLowerCase() === 'connected' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">Connected</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Disconnected</span>
-                )}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-medium">Phone:</span>
+                <span className="font-mono">{session.phone_number || 'Not connected yet'}</span>
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t text-xs">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  onClose()
-                  onScan()
-                }}
-                className="h-7 text-xs gap-1.5"
-              >
-                <QrCode className="h-3.5 w-3.5" />
-                Scan QR
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onReconnect()}
-                disabled={isReconnecting}
-                className="h-7 text-xs gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 dark:border-blue-800"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
-                Reconnect
-              </Button>
-
-              {(session.status || '').toLowerCase() === 'connected' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    onClose()
-                    onDisconnect()
-                  }}
-                  className="h-7 text-xs gap-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 border-amber-200 dark:border-amber-800"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  Logout
-                </Button>
+            <div className="flex items-center gap-2">
+              {(session.status || '').toLowerCase() === 'connected' ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">Connected</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Disconnected</span>
               )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  onClose()
-                  onDelete()
-                }}
-                className="h-7 text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 dark:border-red-800 ml-auto"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete Session
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 font-medium">
+                    Actions
+                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      onClose()
+                      onScan()
+                    }}
+                    className="cursor-pointer gap-2 text-xs"
+                  >
+                    <QrCode className="h-3.5 w-3.5 text-slate-600" />
+                    Scan QR
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onReconnect()}
+                    disabled={isReconnecting}
+                    className="cursor-pointer gap-2 text-xs text-blue-600 focus:text-blue-600"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
+                    Reconnect
+                  </DropdownMenuItem>
+                  {(session.status || '').toLowerCase() === 'connected' && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        onClose()
+                        onDisconnect()
+                      }}
+                      className="cursor-pointer gap-2 text-xs text-amber-600 focus:text-amber-600"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      Logout
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      onClose()
+                      onDelete()
+                    }}
+                    className="cursor-pointer gap-2 text-xs text-red-600 focus:text-red-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Session
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -907,7 +934,19 @@ function ManageSessionDialog({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Active Window Start</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>Active Window Start</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs">
+                          Daily start time for sending messages. Messages queued before this time will wait until the window opens.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Input 
                     type="time" 
                     value={activeStartTime} 
@@ -915,7 +954,19 @@ function ManageSessionDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Active Window End</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>Active Window End</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs">
+                          Daily end time for sending messages. Messages queued after this time will pause until the next day.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Input 
                     type="time" 
                     value={activeEndTime} 

@@ -80,7 +80,12 @@ const getMessages = async (req: AuthRequest, res: Response) => {
   }
 
   if (status && status !== 'all' && status !== 'ALL') {
-    filter.status = String(status).toLowerCase();
+    const s = String(status).toLowerCase();
+    if (s === 'sent') {
+      filter.status = { $in: ['sent', 'delivered', 'read'] };
+    } else {
+      filter.status = s;
+    }
   }
 
   if (session_id && session_id !== 'all') {

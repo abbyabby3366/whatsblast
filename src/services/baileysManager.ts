@@ -269,7 +269,7 @@ export async function restoreAllSessions(): Promise<void> {
   }
 }
 
-export async function pickUserSession(userId: string, allowedSessionIds?: string[]): Promise<string> {
+export async function pickUserSession(userId: string, allowedSessionIds?: string[], excludeSessionIds?: string[]): Promise<string> {
   const user = await User.findById(userId);
   if (!user) throw new Error('User not found');
 
@@ -280,6 +280,10 @@ export async function pickUserSession(userId: string, allowedSessionIds?: string
 
   if (allowedSessionIds && allowedSessionIds.length > 0) {
     connectedSessions = connectedSessions.filter((s) => allowedSessionIds.includes(s.session_id));
+  }
+
+  if (excludeSessionIds && excludeSessionIds.length > 0) {
+    connectedSessions = connectedSessions.filter((s) => !excludeSessionIds.includes(s.session_id));
   }
 
   if (connectedSessions.length === 0) {

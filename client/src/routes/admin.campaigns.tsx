@@ -3,56 +3,41 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertCircle,
-  ArrowLeft,
   CheckCircle2,
-  CheckCheck,
-  ChevronDown,
   Clock,
   Edit,
-  Edit3,
   FileText,
   LayoutGrid,
   List,
   Loader2,
   Megaphone,
-  Mic,
-  MoreVertical,
   Pause,
   Play,
   Plus,
   RotateCcw,
-  Search,
   Trash2,
-  User as UserIcon,
   Video as VideoIcon,
   X,
-  Users,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { api, getErrorMessage } from '@/lib/api'
-import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
+import {
+  WhatsAppPhonePreviewModal,
+  resolveTemplateMediaList,
+} from '@/components/campaigns/WhatsAppPhonePreviewModal'
 import { CustomerListModal } from '@/components/campaigns/CustomerListModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
-  DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -79,13 +64,14 @@ type Campaign = {
   min_interval_seconds?: number
   max_interval_seconds?: number
   enable_warmup?: boolean
+  retry_on_failure?: boolean
   error_message?: string
   current_index?: number
   stats?: { total?: number; sent?: number; failed?: number }
 }
 
-type FormState = { id?: string; name: string; user: string; recipient_phones: string; text: string; min_interval_minutes: number; max_interval_minutes: number; enable_warmup: boolean }
-const emptyForm: FormState = { name: '', user: '', recipient_phones: '', text: '', min_interval_minutes: 10, max_interval_minutes: 15, enable_warmup: true }
+type FormState = { id?: string; name: string; user: string; recipient_phones: string; text: string; enable_warmup: boolean; retry_on_failure: boolean }
+const emptyForm: FormState = { name: '', user: '', recipient_phones: '', text: '', enable_warmup: true, retry_on_failure: true }
 function rows<T>(data: unknown): T[] { if (Array.isArray(data)) return data as T[]; if (data && typeof data === 'object' && 'results' in data) return (data as { results?: T[] }).results ?? []; return [] }
 
 function owner(user: Campaign['user'], allUsers?: User[]) {
@@ -105,52 +91,6 @@ function ownerId(user: Campaign['user']) {
   return user.id || user._id || ''
 }
 
-const getCampaignTemplates = (campaign: any) => {
-  if (Array.isArray(campaign?.templates) && campaign.templates.length > 0) return campaign.templates
-  if (campaign?.template) return [campaign.template]
-  return []
-}
-
-const resolveTemplateMediaList = (template: any) => {
-  const list: Array<{ url: string; type: string; name?: string }> = []
-  if (Array.isArray(template.files) && template.files.length > 0) {
-    template.files.forEach((f: any) => {
-      const url = typeof f === 'string' ? f : f?.file_url || f?.file_path || f?.url || f?.file || null
-      const type = typeof f === 'object' ? f?.file_type || 'image' : 'image'
-      const name = typeof f === 'object' ? f?.file_name : undefined
-      if (url) list.push({ url, type: String(type).toLowerCase(), name })
-    })
-  }
-  if (list.length === 0 && Array.isArray(template.attachedFiles) && template.attachedFiles.length > 0) {
-    template.attachedFiles.forEach((f: any) => {
-      const url = f?.url || f?.file_url || f?.file_path || null
-      const type = f?.type || 'image'
-      const name = f?.name
-      if (url) list.push({ url, type: String(type).toLowerCase(), name })
-    })
-  }
-  if (list.length === 0) {
-    const fileObj = typeof template.file === 'object' ? template.file : {}
-    const buttonImgObj = typeof template.button_image === 'object' ? template.button_image : {}
-    const mediaUrl =
-      fileObj.file_url ||
-      fileObj.file_path ||
-      fileObj.url ||
-      buttonImgObj.file_url ||
-      buttonImgObj.file_path ||
-      buttonImgObj.url ||
-      template.file_url ||
-      template.button_image_url ||
-      template.previewUrl ||
-      (typeof template.file === 'string' && (template.file.startsWith('http') || template.file.startsWith('/'))
-        ? template.file
-        : '')
-    const rawType = fileObj.file_type || template.type || template.messageType || (mediaUrl ? 'image' : 'text')
-    const fileType = String(rawType).toLowerCase()
-    if (mediaUrl) list.push({ url: mediaUrl, type: fileType, name: fileObj.file_name })
-  }
-  return list
-}
 
 const defaultFilters = { search: '', status: 'all', user: 'all', ordering: '-created_at' }
 
@@ -167,8 +107,6 @@ function AdminCampaignsPage() {
 
   const [selectedPreviewCampaign, setSelectedPreviewCampaign] = useState<any>(null)
   const [selectedCustomerListCampaign, setSelectedCustomerListCampaign] = useState<any>(null)
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerStatusFilter, setCustomerStatusFilter] = useState<'ALL' | 'SENT' | 'FAILED' | 'PENDING'>('ALL')
 
   const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
     const saved = localStorage.getItem('admin_campaigns_view_mode')
@@ -192,16 +130,6 @@ function AdminCampaignsPage() {
   const { data: usersData } = useQuery({ queryKey: ['admin', 'users'], queryFn: () => api.get('users/').json<unknown>() })
   const { data: meData } = useQuery({ queryKey: ['admin', 'me'], queryFn: () => api.get('users/me/').json<User>() })
 
-  const { data: customerLogsData, isLoading: isLoadingCustomerLogs } = useQuery({
-    queryKey: ['customer-list-logs', selectedCustomerListCampaign?.id],
-    queryFn: () =>
-      api
-        .get('messages/', {
-          searchParams: { campaign_id: selectedCustomerListCampaign.id, page_size: '200' },
-        })
-        .json<any>(),
-    enabled: Boolean(selectedCustomerListCampaign?.id),
-  })
 
   const campaigns = rows<Campaign>(data)
   const totalCount = Array.isArray(data) ? campaigns.length : (data as { count?: number } | undefined)?.count || campaigns.length
@@ -228,16 +156,6 @@ function AdminCampaignsPage() {
     onError: async (err: any) => { toast.error(await getErrorMessage(err, 'Failed to retry campaign.')) },
   })
 
-  const retryRecipientMutation = useMutation({
-    mutationFn: ({ cId, phone }: { cId: string | number; phone: string }) =>
-      api.post(`blast-campaigns/${cId}/retry-recipient/`, { json: { phone } }).json<any>(),
-    onSuccess: (res: any) => {
-      refresh()
-      queryClient.invalidateQueries({ queryKey: ['customer-list-logs', selectedCustomerListCampaign?.id] })
-      toast.success(res?.message || 'Message retried successfully!')
-    },
-    onError: async (err: any) => { toast.error(await getErrorMessage(err, 'Failed to retry message.')) },
-  })
 
   const isFiltered = filters.search !== '' || filters.status !== 'all' || filters.user !== 'all' || filters.ordering !== '-created_at'
   const clearFilters = () => { setFilters(defaultFilters); setPage(1) }
@@ -248,9 +166,8 @@ function AdminCampaignsPage() {
     user: form.user,
     recipient_phones: form.recipient_phones.split(/[\n,]/).map((p) => p.trim()).filter(Boolean),
     templates: (templateTexts().length ? templateTexts() : ['Hello']).map((text) => ({ text })),
-    min_interval_seconds: form.min_interval_minutes,
-    max_interval_seconds: form.max_interval_minutes,
     enable_warmup: form.enable_warmup,
+    retry_on_failure: form.retry_on_failure,
   })
 
   const save = useMutation({ mutationFn: () => form.id ? api.patch(`blast-campaigns/${form.id}/`, { json: payload() }).json() : api.post('blast-campaigns/', { json: payload() }).json(), onSuccess: () => { refresh(); setOpen(false); setForm(emptyForm); toast.success('Campaign saved') }, onError: () => toast.error('Unable to save campaign') })
@@ -461,7 +378,7 @@ function AdminCampaignsPage() {
                             <span
                               className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                                 cStatus === 'completed'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold'
+                                  ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                                   : cStatus === 'scheduled'
                                   ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                                   : cStatus === 'running'
@@ -513,11 +430,11 @@ function AdminCampaignsPage() {
                             <div className="w-24 space-y-1">
                               <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
                                 <span>{sent}/{total}</span>
-                                <span className="text-emerald-600 font-bold">{percent}%</span>
+                                <span className={cStatus === 'completed' ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-emerald-600 font-bold'}>{percent}%</span>
                               </div>
                               <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                                 <div
-                                  className="h-full bg-emerald-500 transition-all duration-300"
+                                  className={`h-full ${cStatus === 'completed' ? 'bg-slate-500' : 'bg-emerald-500'} transition-all duration-300`}
                                   style={{ width: `${percent}%` }}
                                 />
                               </div>
@@ -530,8 +447,8 @@ function AdminCampaignsPage() {
                             {dayjs(c.created_at || c.createdAt).format('DD/MM/YY h:mm A')}
                           </div>
                           {(c.completed_at || c.completedAt || (cStatus === 'completed' && c.updatedAt)) && (
-                            <div className="mt-0.5 font-medium text-emerald-600 dark:text-emerald-400">
-                              <span className="text-emerald-600/80 dark:text-emerald-400/80">Completed:</span>{' '}
+                            <div className="mt-0.5 font-medium text-slate-600 dark:text-slate-400">
+                              <span className="text-slate-500 dark:text-slate-400">Completed:</span>{' '}
                               {dayjs(c.completed_at || c.completedAt || c.updatedAt).format('DD/MM/YY h:mm A')}
                             </div>
                           )}
@@ -611,9 +528,8 @@ function AdminCampaignsPage() {
                                   user: ownerId(c.user),
                                   recipient_phones: (c.recipient_phones || []).join('\n'),
                                   text: (c.templates || []).map((t) => t.text || '').join('\n---\n'),
-                                  min_interval_minutes: c.min_interval_seconds || 10,
-                                  max_interval_minutes: c.max_interval_seconds || 15,
                                   enable_warmup: c.enable_warmup !== false,
+                                  retry_on_failure: c.retry_on_failure !== false,
                                 })
                                 setOpen(true)
                               }}
@@ -774,6 +690,8 @@ function AdminCampaignsPage() {
                                                 <img
                                                   src={item.url}
                                                   alt={item.name || `Media ${mIdx + 1}`}
+                                                  loading="eager"
+                                                  decoding="async"
                                                   className="h-full w-full object-cover transition-transform group-hover:scale-105"
                                                 />
                                               )}
@@ -849,9 +767,8 @@ function AdminCampaignsPage() {
                                   user: ownerId(c.user),
                                   recipient_phones: (c.recipient_phones || []).join('\n'),
                                   text: (c.templates || []).map((t) => t.text || '').join('\n---\n'),
-                                  min_interval_minutes: c.min_interval_seconds || 10,
-                                  max_interval_minutes: c.max_interval_seconds || 15,
                                   enable_warmup: c.enable_warmup !== false,
+                                  retry_on_failure: c.retry_on_failure !== false,
                                 })
                                 setOpen(true)
                               }}
@@ -927,19 +844,15 @@ function AdminCampaignsPage() {
               </Select>
               <p className="text-xs text-slate-500">Your own admin account is excluded. Admins can create campaigns only for other users.</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Min Interval (minutes)</Label>
-                <Input type="number" min={1} value={form.min_interval_minutes} onChange={(e) => setForm({ ...form, min_interval_minutes: parseInt(e.target.value, 10) || 1 })} />
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="admin-enable-warmup" checked={form.enable_warmup} onChange={(e) => setForm({ ...form, enable_warmup: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
+                <Label htmlFor="admin-enable-warmup" className="cursor-pointer text-sm font-medium">Enable Account Warmup</Label>
               </div>
-              <div className="space-y-2">
-                <Label>Max Interval (minutes)</Label>
-                <Input type="number" min={1} value={form.max_interval_minutes} onChange={(e) => setForm({ ...form, max_interval_minutes: parseInt(e.target.value, 10) || 1 })} />
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="admin-retry-on-failure" checked={form.retry_on_failure} onChange={(e) => setForm({ ...form, retry_on_failure: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
+                <Label htmlFor="admin-retry-on-failure" className="cursor-pointer text-sm font-medium">Retry with other session if message fails</Label>
               </div>
-            </div>
-            <div className="flex items-center gap-2 pt-1">
-              <input type="checkbox" id="admin-enable-warmup" checked={form.enable_warmup} onChange={(e) => setForm({ ...form, enable_warmup: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
-              <Label htmlFor="admin-enable-warmup" className="cursor-pointer text-sm font-medium">Enable Account Warmup</Label>
             </div>
             <div className="space-y-2">
               <Label>Recipient phones</Label>

@@ -1,5 +1,5 @@
 import React from 'react'
-import { ArrowLeft, CheckCheck, FileText, Mic, MoreVertical, User as UserIcon, Video as VideoIcon } from 'lucide-react'
+import { ArrowLeft, CheckCheck, Mic, MoreVertical, User as UserIcon } from 'lucide-react'
 import dayjs from 'dayjs'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 
@@ -14,44 +14,117 @@ export const getCampaignTemplates = (campaign: any) => {
   return []
 }
 
+const formatMediaUrl = (u: any): string => {
+  if (!u || typeof u !== 'string') return ''
+  const trimmed = u.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed
+  }
+  if (trimmed.startsWith('/')) return trimmed
+  return `/${trimmed}`
+}
+
 export const resolveTemplateMediaList = (template: any) => {
   const list: Array<{ url: string; type: string; name?: string }> = []
-  if (Array.isArray(template?.files) && template.files.length > 0) {
+  if (!template) return list
+
+  const seenUrls = new Set<string>()
+
+  const addMedia = (rawUrl: any, rawType?: any, name?: string) => {
+    if (!rawUrl) return
+    const url = formatMediaUrl(rawUrl)
+    if (url && !seenUrls.has(url)) {
+      seenUrls.add(url)
+      const type = String(rawType || 'image').toLowerCase()
+      list.push({ url, type, name })
+    }
+  }
+
+  // 1. Array properties: files, attachedFiles, media, attachments
+  if (Array.isArray(template.files)) {
     template.files.forEach((f: any) => {
-      const url = typeof f === 'string' ? f : f?.file_url || f?.file_path || f?.url || f?.file || null
-      const type = typeof f === 'object' ? f?.file_type || 'image' : 'image'
-      const name = typeof f === 'object' ? f?.file_name : undefined
-      if (url) list.push({ url, type: String(type).toLowerCase(), name })
+      if (typeof f === 'string') addMedia(f, 'image')
+      else if (f && typeof f === 'object') {
+        addMedia(f.file_url || f.file_path || f.url || f.file, f.file_type || f.type || 'image', f.file_name || f.name)
+      }
     })
   }
-  if (list.length === 0 && Array.isArray(template?.attachedFiles) && template.attachedFiles.length > 0) {
+
+  if (Array.isArray(template.attachedFiles)) {
     template.attachedFiles.forEach((f: any) => {
-      const url = f?.url || f?.file_url || f?.file_path || null
-      const type = f?.type || 'image'
-      const name = f?.name
-      if (url) list.push({ url, type: String(type).toLowerCase(), name })
+      if (typeof f === 'string') addMedia(f, 'image')
+      else if (f && typeof f === 'object') {
+        addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
+      }
     })
   }
-  if (list.length === 0 && template) {
-    const fileObj = typeof template.file === 'object' ? template.file : {}
-    const buttonImgObj = typeof template.button_image === 'object' ? template.button_image : {}
-    const mediaUrl =
-      fileObj.file_url ||
-      fileObj.file_path ||
-      fileObj.url ||
-      buttonImgObj.file_url ||
-      buttonImgObj.file_path ||
-      buttonImgObj.url ||
-      template.file_url ||
-      template.button_image_url ||
-      template.previewUrl ||
-      (typeof template.file === 'string' && (template.file.startsWith('http') || template.file.startsWith('/'))
-        ? template.file
-        : '')
-    const rawType = fileObj.file_type || template.type || template.messageType || (mediaUrl ? 'image' : 'text')
-    const fileType = String(rawType).toLowerCase()
-    if (mediaUrl) list.push({ url: mediaUrl, type: fileType, name: fileObj.file_name })
+
+  if (Array.isArray(template.media)) {
+    template.media.forEach((f: any) => {
+      if (typeof f === 'string') addMedia(f, 'image')
+      else if (f && typeof f === 'object') {
+        addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
+      }
+    })
   }
+
+  // 2. Nested content object if present
+  if (template.content && typeof template.content === 'object') {
+    const c = template.content
+    if (c.file) {
+      if (typeof c.file === 'string') addMedia(c.file, c.file_type || c.type || template.type)
+      else if (typeof c.file === 'object') {
+        addMedia(c.file.file_url || c.file.file_path || c.file.url || c.file.file, c.file.file_type || c.file.type || c.type, c.file.file_name)
+      }
+    }
+    if (c.button_image) {
+      if (typeof c.button_image === 'string') addMedia(c.button_image, 'image')
+      else if (typeof c.button_image === 'object') addMedia(c.button_image.file_url || c.button_image.file_path || c.button_image.url, 'image', c.button_image.file_name)
+    }
+    if (Array.isArray(c.files)) {
+      c.files.forEach((f: any) => {
+        if (typeof f === 'string') addMedia(f, 'image')
+        else if (f && typeof f === 'object') addMedia(f.file_url || f.file_path || f.url || f.file, f.file_type || f.type || 'image', f.file_name || f.name)
+      })
+    }
+    if (Array.isArray(c.attachedFiles)) {
+      c.attachedFiles.forEach((f: any) => {
+        if (typeof f === 'string') addMedia(f, 'image')
+        else if (f && typeof f === 'object') addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
+      })
+    }
+    addMedia(c.file_url, c.file_type || c.type || template.type)
+    addMedia(c.media_url, c.file_type || c.type || template.type)
+    addMedia(c.image_url, c.file_type || c.type || template.type)
+    addMedia(c.url, c.file_type || c.type || template.type)
+  }
+
+  // 3. Single objects or strings on template
+  if (template.file) {
+    if (typeof template.file === 'string') addMedia(template.file, template.type || template.messageType)
+    else if (typeof template.file === 'object') {
+      addMedia(template.file.file_url || template.file.file_path || template.file.url || template.file.file, template.file.file_type || template.file.type || template.type, template.file.file_name)
+    }
+  }
+
+  if (template.button_image) {
+    if (typeof template.button_image === 'string') addMedia(template.button_image, 'image')
+    else if (typeof template.button_image === 'object') {
+      addMedia(template.button_image.file_url || template.button_image.file_path || template.button_image.url, 'image', template.button_image.file_name)
+    }
+  }
+
+  // 4. Direct properties on template
+  addMedia(template.file_url, template.type || template.messageType)
+  addMedia(template.media_url, template.type || template.messageType)
+  addMedia(template.image_url, template.type || template.messageType)
+  addMedia(template.previewUrl, template.type || template.messageType)
+  addMedia(template.button_image_url, 'image')
+  if (typeof template.url === 'string' && !template.url.startsWith('http') && (template.url.includes('/') || template.url.includes('.'))) {
+    addMedia(template.url, template.type)
+  }
+
   return list
 }
 
@@ -113,26 +186,46 @@ export function WhatsAppPhonePreviewModal({ campaign, onClose }: WhatsAppPhonePr
                     )}
                     <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2 max-w-[85%] ml-auto relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">
                       {hasMedia && (
-                        <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 p-1 flex flex-wrap gap-1">
-                          {mediaList.map((item, mIdx) => {
-                            if (item.type === 'video') {
-                              return <video key={mIdx} src={item.url} controls className="w-full h-auto max-h-48 bg-black rounded" />
-                            }
-                            return (
+                        <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 p-1">
+                          {mediaList.length === 1 ? (
+                            mediaList[0].type === 'video' ? (
+                              <video src={mediaList[0].url} controls className="w-full h-auto max-h-48 bg-black rounded" />
+                            ) : (
                               <img
-                                key={mIdx}
-                                src={item.url}
-                                alt={`Media ${mIdx + 1}`}
-                                className="h-16 w-16 object-cover rounded border border-black/10 dark:border-white/10"
+                                src={mediaList[0].url}
+                                alt={mediaList[0].name || 'Media'}
+                                loading="eager"
+                                decoding="async"
+                                className="w-full h-auto max-h-52 object-cover rounded border border-black/10 dark:border-white/10"
                               />
                             )
-                          })}
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {mediaList.map((item, mIdx) => {
+                                if (item.type === 'video') {
+                                  return <video key={mIdx} src={item.url} controls className="w-24 h-24 object-cover bg-black rounded" />
+                                }
+                                return (
+                                  <img
+                                    key={mIdx}
+                                    src={item.url}
+                                    alt={item.name || `Media ${mIdx + 1}`}
+                                    loading="eager"
+                                    decoding="async"
+                                    className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-md border border-black/10 dark:border-white/10 shrink-0"
+                                  />
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      <div className="mb-2 font-normal">
-                        {template.text || template.template || (hasMedia ? '' : `[message]`)}
-                      </div>
+                      {(template.text || template.template || !hasMedia) && (
+                        <div className="mb-1 font-normal">
+                          {template.text || template.template || '[message]'}
+                        </div>
+                      )}
 
                       {template.footer ? (
                         <div className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-1 italic border-t border-black/5 dark:border-white/5 pt-1">
