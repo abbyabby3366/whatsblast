@@ -21,7 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { PhoneActiveIndicator, PhoneActiveTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
+import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 import {
   Dialog,
   DialogClose,
@@ -233,6 +233,13 @@ export function ManageMerchantSessionDialog({
                   <PhoneActiveTooltip />
                 </span>
                 <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-medium flex items-center gap-1">
+                  Last Message:
+                  <LastSentMessageTooltip />
+                </span>
+                <PhoneActiveIndicator lastPhoneActivityAt={session.last_physical_phone_sent_message_at} emptyLabel="No messages sent" />
               </div>
             </div>
 

@@ -15,6 +15,7 @@ export type Session = {
   active_start_time?: string
   active_end_time?: string
   last_phone_activity_at?: string
+  last_physical_phone_sent_message_at?: string
   created_at?: string
 }
 

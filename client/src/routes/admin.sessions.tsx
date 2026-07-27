@@ -14,6 +14,7 @@ import {
   Tag,
   Clock,
   Calendar,
+  MessageSquare,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
@@ -39,7 +40,7 @@ import type { Session, MasterPhone, User } from '@/components/admin-sessions/typ
 import { rows, ownerDisplay } from '@/components/admin-sessions/types'
 import { MasterPhonesCard } from '@/components/admin-sessions/components/MasterPhonesCard'
 import { ManageAdminSessionDialog } from '@/components/admin-sessions/components/ManageAdminSessionDialog'
-import { PhoneActiveIndicator, PhoneActiveTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
+import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 
 export const Route = createFileRoute('/admin/sessions')({ ssr: false, component: AdminSessionsPage })
 
@@ -467,6 +468,14 @@ function AdminSessionsPage() {
                         <PhoneActiveIndicator lastPhoneActivityAt={s.last_phone_activity_at} />
                       </div>
 
+                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                        <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-slate-400" /> Last Message:
+                          <LastSentMessageTooltip />
+                        </span>
+                        <PhoneActiveIndicator lastPhoneActivityAt={s.last_physical_phone_sent_message_at} emptyLabel="No messages sent" />
+                      </div>
+
                       {s.labels && s.labels.length > 0 && (
                         <div className="flex flex-wrap gap-1 pt-0.5">
                           {s.labels.map((lbl) => (
@@ -512,6 +521,11 @@ function AdminSessionsPage() {
                     <TableHead>
                       <span className="flex items-center gap-1">
                         Phone Active <PhoneActiveTooltip />
+                      </span>
+                    </TableHead>
+                    <TableHead>
+                      <span className="flex items-center gap-1">
+                        Last Message <LastSentMessageTooltip />
                       </span>
                     </TableHead>
                     <TableHead>Warmup & Limit</TableHead>
@@ -567,6 +581,9 @@ function AdminSessionsPage() {
                       </TableCell>
                       <TableCell>
                         <PhoneActiveIndicator lastPhoneActivityAt={s.last_phone_activity_at} />
+                      </TableCell>
+                      <TableCell>
+                        <PhoneActiveIndicator lastPhoneActivityAt={s.last_physical_phone_sent_message_at} emptyLabel="No messages sent" />
                       </TableCell>
                       <TableCell className="text-xs">
                         <div><span className="font-medium text-slate-500">Max/day:</span> {s.max_message_count_per_day ?? 50}</div>

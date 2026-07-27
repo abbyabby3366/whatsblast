@@ -31,6 +31,7 @@ export interface IWhatsAppSession extends Document {
   active_start_time: string;
   active_end_time: string;
   last_phone_activity_at?: Date;
+  last_physical_phone_sent_message_at?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,6 +61,7 @@ const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
     active_start_time: { type: String, default: '00:00' },
     active_end_time: { type: String, default: '23:59' },
     last_phone_activity_at: { type: Date },
+    last_physical_phone_sent_message_at: { type: Date },
   },
   { timestamps: true }
 );

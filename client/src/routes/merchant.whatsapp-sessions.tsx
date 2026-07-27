@@ -16,6 +16,7 @@ import {
   Tag,
   Clock,
   Calendar,
+  MessageSquare,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -40,7 +41,7 @@ import {
 } from '@/components/ui/table'
 
 import { ManageMerchantSessionDialog } from '@/components/merchant-whatsapp-sessions/components/ManageMerchantSessionDialog'
-import { PhoneActiveIndicator, PhoneActiveTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
+import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,
@@ -393,6 +394,14 @@ function SessionsPage() {
                     <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
                   </div>
 
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                    <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
+                      <MessageSquare className="w-3 h-3 text-slate-400" /> Last Message:
+                      <LastSentMessageTooltip />
+                    </span>
+                    <PhoneActiveIndicator lastPhoneActivityAt={session.last_physical_phone_sent_message_at} emptyLabel="No messages sent" />
+                  </div>
+
                   {session.labels && session.labels.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-0.5">
                       {session.labels.map((lbl: string) => (
@@ -436,6 +445,11 @@ function SessionsPage() {
                     Phone Active <PhoneActiveTooltip />
                   </span>
                 </TableHead>
+                <TableHead className="text-xs">
+                  <span className="flex items-center gap-1">
+                    Last Message <LastSentMessageTooltip />
+                  </span>
+                </TableHead>
                 <TableHead className="text-xs">Created At</TableHead>
                 <TableHead className="text-xs text-right">Actions</TableHead>
               </TableRow>
@@ -444,9 +458,10 @@ function SessionsPage() {
               {filteredSessions.map((session: any) => {
                 const sid = session.session_id || session.id
                 const isConnected = (session.status || '').toLowerCase() === 'connected'
+                const isCopied = copiedId === sid
 
                 return (
-                  <TableRow key={session.id}>
+                  <TableRow key={session.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                     <TableCell className="text-center py-2.5">
                       {isConnected ? (
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" title="Connected" />
@@ -476,7 +491,7 @@ function SessionsPage() {
                           title="Click to copy Session ID"
                         >
                           <span>{sid}</span>
-                          {copiedId === sid ? (
+                          {isCopied ? (
                             <Check className="w-3 h-3 text-emerald-600" />
                           ) : (
                             <Copy className="w-3 h-3 text-slate-400" />
@@ -501,6 +516,9 @@ function SessionsPage() {
                     </TableCell>
                     <TableCell className="py-2.5">
                       <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
+                    </TableCell>
+                    <TableCell className="py-2.5">
+                      <PhoneActiveIndicator lastPhoneActivityAt={session.last_physical_phone_sent_message_at} emptyLabel="No messages sent" />
                     </TableCell>
                     <TableCell className="py-2.5 text-xs text-slate-500 whitespace-nowrap">
                       {dayjs(session.created_at).format('DD/MM/YY · h:mm A')}

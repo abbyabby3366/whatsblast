@@ -705,10 +705,8 @@ function AdminCampaignsPage() {
       {/* Customer List Modal */}
       {selectedCustomerListCampaign && (
         <CustomerListModal
-          isOpen={Boolean(selectedCustomerListCampaign)}
+          campaign={selectedCustomerListCampaign}
           onClose={() => setSelectedCustomerListCampaign(null)}
-          campaignTitle={selectedCustomerListCampaign.name}
-          recipients={selectedCustomerListCampaign.recipient_phones || []}
         />
       )}
     </div>

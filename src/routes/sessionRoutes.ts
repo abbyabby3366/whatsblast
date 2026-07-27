@@ -18,6 +18,7 @@ function formatSession(s: any) {
   return {
     id: _id ? _id.toString() : obj.id,
     last_phone_activity_at: obj.last_phone_activity_at || null,
+    last_physical_phone_sent_message_at: obj.last_physical_phone_sent_message_at || null,
     ...rest,
   };
 }

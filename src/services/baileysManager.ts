@@ -43,6 +43,24 @@ export function removeActiveSession(sessionId: string): void {
   }
 }
 
+const systemSentMessageIds = new Set<string>();
+
+function markSystemSentMessageId(msgId?: string) {
+  if (!msgId) return;
+  systemSentMessageIds.add(msgId);
+  if (systemSentMessageIds.size > 10000) {
+    const first = systemSentMessageIds.values().next().value;
+    if (first) systemSentMessageIds.delete(first);
+  }
+}
+
+function isSystemSentMessageId(msgId?: string): boolean {
+  if (!msgId) return false;
+  if (systemSentMessageIds.has(msgId)) return true;
+  if (msgId.startsWith('BAE5') || msgId.startsWith('3EB0')) return true;
+  return false;
+}
+
 export async function updateLastPhoneActivity(sessionId: string, timestamp?: Date): Promise<void> {
   try {
     await WhatsAppSession.updateOne(
@@ -51,6 +69,18 @@ export async function updateLastPhoneActivity(sessionId: string, timestamp?: Dat
     );
   } catch (err) {
     console.error(`Failed to update last_phone_activity_at for ${sessionId}:`, err);
+  }
+}
+
+export async function updateLastPhysicalPhoneSentMessage(sessionId: string, timestamp?: Date): Promise<void> {
+  try {
+    const ts = timestamp || new Date();
+    await WhatsAppSession.updateOne(
+      { session_id: sessionId },
+      { $set: { last_physical_phone_sent_message_at: ts, last_phone_activity_at: ts } }
+    );
+  } catch (err) {
+    console.error(`Failed to update last_physical_phone_sent_message_at for ${sessionId}:`, err);
   }
 }
 
@@ -109,6 +139,16 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     printQRInTerminal: false,
     logger,
   });
+
+  // Intercept all socket.sendMessage calls to automatically track system-sent message IDs
+  const originalSendMessage = sock.sendMessage.bind(sock);
+  sock.sendMessage = async (...args: Parameters<typeof originalSendMessage>) => {
+    const res = await originalSendMessage(...args);
+    if (res?.key?.id) {
+      markSystemSentMessageId(res.key.id);
+    }
+    return res;
+  };
 
   const sessionObj: ActiveSession = { socket: sock, sessionId, clearCreds };
   activeSessions.set(sessionId, sessionObj);
@@ -207,8 +247,14 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
       const msgTime = msg.messageTimestamp ? new Date((msg.messageTimestamp as number) * 1000) : new Date();
 
       if (msg.key.fromMe) {
-        // Activity detected on primary phone or linked app
-        updateLastPhoneActivity(sessionId, msgTime).catch(console.error);
+        const msgId = msg.key.id || '';
+        if (isSystemSentMessageId(msgId)) {
+          // Sent by WhatsBlast system -> updates general phone sync activity only
+          updateLastPhoneActivity(sessionId, msgTime).catch(console.error);
+        } else {
+          // Sent directly from physical phone or official WhatsApp client -> updates last_physical_phone_sent_message_at
+          updateLastPhysicalPhoneSentMessage(sessionId, msgTime).catch(console.error);
+        }
         continue;
       }
 
@@ -250,6 +296,8 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
             const agentJid = `${agent.phone_number.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
             sock.sendMessage(agentJid, {
               text: `📩 *Inbound Reply* from ${pushName || senderPhone} (${senderPhone}):\n\n"${textContent}"`,
+            }).then((sentAgentMsg) => {
+              if (sentAgentMsg?.key?.id) markSystemSentMessageId(sentAgentMsg.key.id);
             }).catch(console.error);
           }
         }
