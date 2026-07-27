@@ -57,7 +57,7 @@ function markSystemSentMessageId(msgId?: string) {
 function isSystemSentMessageId(msgId?: string): boolean {
   if (!msgId) return false;
   if (systemSentMessageIds.has(msgId)) return true;
-  if (msgId.startsWith('BAE5') || msgId.startsWith('3EB0')) return true;
+  if (msgId.startsWith('BAE5')) return true;
   return false;
 }
 
