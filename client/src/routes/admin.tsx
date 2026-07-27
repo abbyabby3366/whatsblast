@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api'
+import { APP_VERSION } from '@/lib/version'
 
 export const Route = createFileRoute('/admin')({
   ssr: false,
@@ -98,7 +99,7 @@ function AdminLayout() {
           <SidebarHeader className="h-14 flex flex-row items-center border-b border-slate-200 dark:border-slate-800 px-4">
             <div className="flex items-center gap-2.5 text-lg font-bold">
               <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-7 h-7 object-contain rounded-lg shadow-sm" />
-              <span className="tracking-tight text-slate-900 dark:text-white"><span className="text-emerald-600 dark:text-emerald-400">Super</span>Admin</span>
+              <span className="tracking-tight text-slate-900 dark:text-white"><span className="text-emerald-600 dark:text-emerald-400">Super</span>Admin {APP_VERSION}</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
