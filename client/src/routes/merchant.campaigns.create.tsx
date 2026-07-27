@@ -106,6 +106,21 @@ const createEmptyTemplateDraft = (): TemplateDraft => ({
   previewUrl: null,
 })
 
+const isTemplateTextRequired = (tmpl: TemplateDraft) => {
+  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
+  const hasFiles = Boolean((tmpl.attachedFiles && tmpl.attachedFiles.length > 0) || tmpl.fileId || tmpl.previewUrl)
+  if (isMedia || hasFiles) return false
+  return true
+}
+
+const isTemplateComplete = (tmpl: TemplateDraft) => {
+  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
+  const hasFiles = Boolean((tmpl.attachedFiles && tmpl.attachedFiles.length > 0) || tmpl.fileId || tmpl.previewUrl)
+  if (isMedia && !hasFiles) return false
+  if (isTemplateTextRequired(tmpl) && !tmpl.template.trim()) return false
+  return true
+}
+
 const filePreviewUrl = (fileObj: any, buttonImageObj?: any) =>
   fileObj?.file_path ||
   fileObj?.file ||
@@ -650,7 +665,9 @@ function CreateCampaignPage() {
       return
     }
 
-    const invalidIndex = templateDrafts.findIndex((template) => !template.template.trim())
+    const invalidIndex = templateDrafts.findIndex(
+      (template) => isTemplateTextRequired(template) && !template.template.trim()
+    )
     if (invalidIndex !== -1) {
       setStep(2)
       setActiveTemplateIndex(invalidIndex)
@@ -659,7 +676,10 @@ function CreateCampaignPage() {
     }
 
     const missingMediaIndex = templateDrafts.findIndex(
-      (template) => ['image', 'video', 'document'].includes(template.messageType) && !template.fileId
+      (template) =>
+        ['image', 'video', 'document'].includes(template.messageType) &&
+        !template.fileId &&
+        (!template.attachedFiles || template.attachedFiles.length === 0)
     )
     if (missingMediaIndex !== -1) {
       setStep(2)
@@ -689,7 +709,9 @@ function CreateCampaignPage() {
   }
 
   const handleNextStep2 = () => {
-    const invalidIndex = templateDrafts.findIndex((template) => !template.template.trim())
+    const invalidIndex = templateDrafts.findIndex(
+      (template) => isTemplateTextRequired(template) && !template.template.trim()
+    )
     if (invalidIndex !== -1) {
       setActiveTemplateIndex(invalidIndex)
       toast.error(`Message template ${invalidIndex + 1} text is required.`)
@@ -697,7 +719,10 @@ function CreateCampaignPage() {
     }
 
     const missingMediaIndex = templateDrafts.findIndex(
-      (template) => ['image', 'video', 'document'].includes(template.messageType) && !template.fileId
+      (template) =>
+        ['image', 'video', 'document'].includes(template.messageType) &&
+        !template.fileId &&
+        (!template.attachedFiles || template.attachedFiles.length === 0)
     )
     if (missingMediaIndex !== -1) {
       setActiveTemplateIndex(missingMediaIndex)
@@ -1007,7 +1032,7 @@ function CreateCampaignPage() {
                     className={index === activeTemplateIndex ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
                   >
                     Template {index + 1}
-                    {template.template ? '' : ' *'}
+                    {isTemplateComplete(template) ? '' : ' *'}
                   </Button>
                 ))}
               </div>
@@ -1338,7 +1363,12 @@ function CreateCampaignPage() {
 
               {/* MESSAGE TEMPLATE TEXT AREA (PLACED BELOW MEDIA) */}
               <div className="space-y-2">
-                <Label>Message Template</Label>
+                <Label>
+                  Message Template{' '}
+                  {!isTemplateTextRequired(activeTemplate) && (
+                    <span className="text-xs font-normal text-slate-500">(Optional)</span>
+                  )}
+                </Label>
                 <Textarea
                   placeholder="Type your message template text here... Use {{phone}} for customer phone number."
                   value={activeTemplate.template}
