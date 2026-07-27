@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/table'
 
 import { ManageMerchantSessionDialog } from '@/components/merchant-whatsapp-sessions/components/ManageMerchantSessionDialog'
+import { PhoneActiveIndicator, PhoneActiveTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,
@@ -292,7 +293,7 @@ function SessionsPage() {
           <p className="text-xs text-slate-400 mt-1">Try clearing your search query or add a new WhatsApp session.</p>
         </div>
       ) : viewMode === 'grid' ? (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filteredSessions.map((session: any) => {
             const sid = session.session_id || session.id
             const isConnected = (session.status || '').toLowerCase() === 'connected'
@@ -312,7 +313,7 @@ function SessionsPage() {
                       <img src="/futuristic-whatsapp-logo.png" alt="WhatsApp" className="w-6 h-6 object-contain" />
                     </div>
                     <div className="min-w-0 space-y-0.5">
-                      <div className="font-bold text-base text-slate-900 dark:text-slate-100 font-mono truncate">
+                      <div className="font-bold text-base text-slate-900 dark:text-slate-100 font-mono whitespace-nowrap">
                         {session.phone_number || 'Unconnected Session'}
                       </div>
                       <div className="text-xs text-slate-400">
@@ -339,9 +340,9 @@ function SessionsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5 text-xs">
+                <div className="space-y-1 text-xs">
                   {session.alias && (
-                    <div className="flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-950/30 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
+                    <div className="flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-950/30 px-3 py-1 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
                       <span className="text-emerald-700 dark:text-emerald-400 font-medium shrink-0 flex items-center gap-1">
                         <Tag className="w-3 h-3 text-emerald-600" /> Alias:
                       </span>
@@ -349,7 +350,7 @@ function SessionsPage() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                     <span className="text-slate-400 font-medium shrink-0 mr-2">ID:</span>
                     <button
                       type="button"
@@ -366,7 +367,7 @@ function SessionsPage() {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                     <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-slate-400" /> Interval:
                     </span>
@@ -375,7 +376,7 @@ function SessionsPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                     <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-slate-400" /> Active Window:
                     </span>
@@ -384,15 +385,12 @@ function SessionsPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                     <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                       <Smartphone className="w-3 h-3 text-slate-400" /> Phone Active:
+                      <PhoneActiveTooltip />
                     </span>
-                    <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
-                      {session.last_phone_activity_at
-                        ? dayjs(session.last_phone_activity_at).format('DD/MM/YY · h:mm A')
-                        : 'No activity'}
-                    </span>
+                    <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
                   </div>
 
                   {session.labels && session.labels.length > 0 && (

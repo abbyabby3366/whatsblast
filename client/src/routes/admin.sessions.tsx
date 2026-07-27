@@ -39,6 +39,7 @@ import type { Session, MasterPhone, User } from '@/components/admin-sessions/typ
 import { rows, ownerDisplay } from '@/components/admin-sessions/types'
 import { MasterPhonesCard } from '@/components/admin-sessions/components/MasterPhonesCard'
 import { ManageAdminSessionDialog } from '@/components/admin-sessions/components/ManageAdminSessionDialog'
+import { PhoneActiveIndicator } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 
 export const Route = createFileRoute('/admin/sessions')({ ssr: false, component: AdminSessionsPage })
 
@@ -377,7 +378,7 @@ function AdminSessionsPage() {
               <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {sessions.map((s) => {
                 const sid = s.session_id || s.id
                 const isConnected = (s.status || '').toLowerCase() === 'connected' || (s.status || '').toLowerCase() === 'authenticated'
@@ -399,7 +400,7 @@ function AdminSessionsPage() {
                           <img src="/futuristic-whatsapp-logo.png" alt="WhatsApp" className="w-6 h-6 object-contain" />
                         </div>
                         <div className="min-w-0 space-y-0.5">
-                          <div className="font-bold text-base text-slate-900 dark:text-slate-100 font-mono truncate">
+                          <div className="font-bold text-base text-slate-900 dark:text-slate-100 font-mono whitespace-nowrap">
                             {s.phone_number || 'Unconnected Session'}
                           </div>
                           <div className="text-xs text-slate-400">
@@ -413,9 +414,9 @@ function AdminSessionsPage() {
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 text-xs">
+                    <div className="space-y-1 text-xs">
                       {s.alias && (
-                        <div className="flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-950/30 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
+                        <div className="flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-950/30 px-3 py-1 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
                           <span className="text-emerald-700 dark:text-emerald-400 font-medium shrink-0 flex items-center gap-1">
                             <Tag className="w-3 h-3 text-emerald-600" /> Alias:
                           </span>
@@ -423,7 +424,7 @@ function AdminSessionsPage() {
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                         <span className="text-slate-400 font-medium shrink-0 mr-2">ID:</span>
                         <button
                           type="button"
@@ -440,7 +441,7 @@ function AdminSessionsPage() {
                         </button>
                       </div>
 
-                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                         <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                           <Clock className="w-3 h-3 text-slate-400" /> Interval:
                         </span>
@@ -449,7 +450,7 @@ function AdminSessionsPage() {
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                         <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-400" /> Active Window:
                         </span>
@@ -458,15 +459,11 @@ function AdminSessionsPage() {
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-3 py-1 rounded-xl border border-slate-100 dark:border-slate-800/80">
                         <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
                           <Smartphone className="w-3 h-3 text-slate-400" /> Phone Active:
                         </span>
-                        <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
-                          {s.last_phone_activity_at
-                            ? dayjs(s.last_phone_activity_at).format('DD/MM/YY · h:mm A')
-                            : 'No activity'}
-                        </span>
+                        <PhoneActiveIndicator lastPhoneActivityAt={s.last_phone_activity_at} />
                       </div>
 
                       {s.labels && s.labels.length > 0 && (

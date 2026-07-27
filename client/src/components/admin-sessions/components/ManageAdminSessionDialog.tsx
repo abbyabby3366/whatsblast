@@ -12,12 +12,12 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import dayjs from 'dayjs'
 import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { PhoneActiveIndicator } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -223,9 +223,7 @@ export function ManageAdminSessionDialog({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-slate-500 font-medium">Phone Active:</span>
-                <span className="font-mono text-slate-700 dark:text-slate-300">
-                  {session.last_phone_activity_at ? dayjs(session.last_phone_activity_at).format('DD/MM/YY · h:mm A') : 'No activity recorded'}
-                </span>
+                <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
               </div>
             </div>
 
