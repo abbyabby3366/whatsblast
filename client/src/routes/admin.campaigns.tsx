@@ -16,7 +16,6 @@ import {
   Plus,
   RotateCcw,
   Trash2,
-  Video as VideoIcon,
   X,
 } from 'lucide-react'
 import dayjs from 'dayjs'
@@ -26,7 +25,6 @@ import { toast } from 'sonner'
 import { api, getErrorMessage } from '@/lib/api'
 import {
   WhatsAppPhonePreviewModal,
-  resolveTemplateMediaList,
 } from '@/components/campaigns/WhatsAppPhonePreviewModal'
 import { CustomerListModal } from '@/components/campaigns/CustomerListModal'
 import { Button } from '@/components/ui/button'
@@ -39,60 +37,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
+
+import type { User, Campaign, FormState } from '@/components/admin-campaigns/types'
+import {
+  emptyForm,
+  defaultFilters,
+  rows,
+  owner,
+  ownerId,
+} from '@/components/admin-campaigns/types'
+import { AdminCampaignFormDialog } from '@/components/admin-campaigns/components/AdminCampaignFormDialog'
 
 export const Route = createFileRoute('/admin/campaigns')({ ssr: false, component: AdminCampaignsPage })
-
-type User = { id?: string; _id?: string; phone_number?: string; role?: string }
-type Campaign = {
-  id: string
-  name?: string
-  status?: string
-  user?: string | User
-  created_at?: string
-  createdAt?: string
-  completed_at?: string
-  completedAt?: string
-  updatedAt?: string
-  recipient_phones?: string[]
-  contacts?: any[]
-  templates?: Array<any>
-  template?: any
-  min_interval_seconds?: number
-  max_interval_seconds?: number
-  enable_warmup?: boolean
-  retry_on_failure?: boolean
-  error_message?: string
-  current_index?: number
-  stats?: { total?: number; sent?: number; failed?: number }
-}
-
-type FormState = { id?: string; name: string; user: string; recipient_phones: string; text: string; enable_warmup: boolean; retry_on_failure: boolean }
-const emptyForm: FormState = { name: '', user: '', recipient_phones: '', text: '', enable_warmup: true, retry_on_failure: true }
-function rows<T>(data: unknown): T[] { if (Array.isArray(data)) return data as T[]; if (data && typeof data === 'object' && 'results' in data) return (data as { results?: T[] }).results ?? []; return [] }
-
-function owner(user: Campaign['user'], allUsers?: User[]) {
-  if (!user) return '-'
-  if (typeof user === 'object' && user.phone_number) return user.phone_number
-  const uId = typeof user === 'string' ? user : user.id || user._id || ''
-  if (uId && allUsers) {
-    const found = allUsers.find((u) => u.id === uId || u._id === uId)
-    if (found?.phone_number) return found.phone_number
-  }
-  return uId || '-'
-}
-
-function ownerId(user: Campaign['user']) {
-  if (!user) return ''
-  if (typeof user === 'string') return user
-  return user.id || user._id || ''
-}
-
-
-const defaultFilters = { search: '', status: 'all', user: 'all', ordering: '-created_at' }
 
 function AdminCampaignsPage() {
   const navigate = useNavigate()
@@ -130,7 +88,6 @@ function AdminCampaignsPage() {
   const { data: usersData } = useQuery({ queryKey: ['admin', 'users'], queryFn: () => api.get('users/').json<unknown>() })
   const { data: meData } = useQuery({ queryKey: ['admin', 'me'], queryFn: () => api.get('users/me/').json<User>() })
 
-
   const campaigns = rows<Campaign>(data)
   const totalCount = Array.isArray(data) ? campaigns.length : (data as { count?: number } | undefined)?.count || campaigns.length
   const maxPage = Math.max(1, Math.ceil(totalCount / pageSize))
@@ -155,7 +112,6 @@ function AdminCampaignsPage() {
     onSuccess: (res: any) => { refresh(); toast.success(res?.message || 'Retrying failed messages...') },
     onError: async (err: any) => { toast.error(await getErrorMessage(err, 'Failed to retry campaign.')) },
   })
-
 
   const isFiltered = filters.search !== '' || filters.status !== 'all' || filters.user !== 'all' || filters.ordering !== '-created_at'
   const clearFilters = () => { setFilters(defaultFilters); setPage(1) }
@@ -187,7 +143,6 @@ function AdminCampaignsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Card / Table Toggle */}
           <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
             <Button
               type="button"
@@ -334,7 +289,6 @@ function AdminCampaignsPage() {
           ) : campaigns.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">No campaigns found.</p>
           ) : viewMode === 'table' ? (
-            /* TABLE VIEW */
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -602,188 +556,57 @@ function AdminCampaignsPage() {
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent className="pt-4">
-                      <div className="space-y-4">
-                        {c.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                            <div className="flex-1 min-w-0">
-                              <span className="font-semibold">Paused Reason:</span> {c.error_message}
-                            </div>
-                          </div>
-                        )}
+                    <CardContent className="space-y-4 pt-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">Recipients:</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCustomerListCampaign(c)}
+                          className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
+                        >
+                          {c.stats?.total || c.recipient_phones?.length || c.contacts?.length || 0} customers
+                        </button>
+                      </div>
 
-                        <div>
-                          <p className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
-                            Recipients
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCustomerListCampaign(c)}
-                            className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-                            title="Click to view customer list"
-                          >
-                            {c.recipient_phones?.length || 0} customers
-                          </button>
-                        </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">Templates:</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPreviewCampaign(c)}
+                          className="inline-flex items-center gap-1.5 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          {c.templates?.length || (c.template ? 1 : 1)} template(s)
+                        </button>
+                      </div>
 
-                        {c.templates?.length ? (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                                Message Preview ({c.templates.length} template{c.templates.length === 1 ? '' : 's'})
-                              </p>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950/40 cursor-pointer"
-                                onClick={() => setSelectedPreviewCampaign(c)}
-                              >
-                                Phone Preview
-                              </Button>
-                            </div>
-                            <div className="space-y-3">
-                              {c.templates.map((template: any, templateIndex: number) => {
-                                const mediaList = resolveTemplateMediaList(template)
-
-                                return (
-                                  <div key={template.id || templateIndex} className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                                    <p className="mb-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                                      Template {templateIndex + 1}
-                                    </p>
-
-                                    {mediaList.length > 0 && (
-                                      <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                                        {mediaList.map((item, mIdx) => {
-                                          if (item.type === 'document') {
-                                            return (
-                                              <a
-                                                key={mIdx}
-                                                href={item.url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800"
-                                              >
-                                                <FileText className="h-4 w-4 text-red-500 shrink-0" />
-                                                <span className="truncate max-w-[150px] font-medium text-slate-700 dark:text-slate-200">
-                                                  {item.name || 'Document'}
-                                                </span>
-                                              </a>
-                                            )
-                                          }
-
-                                          return (
-                                            <a
-                                              key={mIdx}
-                                              href={item.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="group relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 flex items-center justify-center hover:border-emerald-500 transition-colors"
-                                              title={item.name || `Media #${mIdx + 1}`}
-                                            >
-                                              {item.type === 'video' ? (
-                                                <div className="flex h-full w-full items-center justify-center bg-slate-900 text-white">
-                                                  <VideoIcon className="h-4 w-4" />
-                                                </div>
-                                              ) : (
-                                                <img
-                                                  src={item.url}
-                                                  alt={item.name || `Media ${mIdx + 1}`}
-                                                  loading="eager"
-                                                  decoding="async"
-                                                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                                                />
-                                              )}
-                                            </a>
-                                          )
-                                        })}
-                                      </div>
-                                    )}
-
-                                    <p className="line-clamp-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
-                                      {template.text || template.template || 'No text'}
-                                    </p>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <div className="mt-4 space-y-2">
-                          {cStatus !== 'draft' && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="w-full flex items-center justify-center gap-2"
-                              onClick={() => navigate({ to: '/merchant/campaigns/progress', search: { id: c.id } })}
-                            >
-                              <Activity className="h-4 w-4" />
-                              View Progress
-                            </Button>
-                          )}
-                          {cStatus !== 'draft' && cStatus !== 'completed' && cStatus !== 'cancelled' && (
-                            <div className="flex flex-col gap-2">
-                              {cStatus === 'running' && (
-                                <Button
-                                  variant="outline"
-                                  className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
-                                  disabled={pauseCampaignMutation.isPending}
-                                  onClick={() => pauseCampaignMutation.mutate(c.id)}
-                                >
-                                  {pauseCampaignMutation.isPending && pauseCampaignMutation.variables === c.id ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Pause className="mr-2 h-4 w-4" />
-                                  )}
-                                  Pause Campaign
-                                </Button>
-                              )}
-                              {cStatus === 'paused' && (
-                                <Button
-                                  className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                                  disabled={resumeCampaignMutation.isPending}
-                                  onClick={() => resumeCampaignMutation.mutate(c.id)}
-                                >
-                                  {resumeCampaignMutation.isPending && resumeCampaignMutation.variables === c.id ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Play className="mr-2 h-4 w-4" />
-                                  )}
-                                  Resume Campaign
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                          <div className="flex gap-2 pt-1">
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => {
-                                setForm({
-                                  id: c.id,
-                                  name: c.name || '',
-                                  user: ownerId(c.user),
-                                  recipient_phones: (c.recipient_phones || []).join('\n'),
-                                  text: (c.templates || []).map((t) => t.text || '').join('\n---\n'),
-                                  enable_warmup: c.enable_warmup !== false,
-                                  retry_on_failure: c.retry_on_failure !== false,
-                                })
-                                setOpen(true)
-                              }}
-                            >
-                              <Edit className="mr-1.5 h-4 w-4" /> Edit
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              className="flex-1 bg-red-600 hover:bg-red-700"
-                              onClick={() => setDeleteTarget({ ids: [c.id], label: c.name || 'this campaign' })}
-                            >
-                              <Trash2 className="mr-1.5 h-4 w-4" /> Delete
-                            </Button>
-                          </div>
-                        </div>
+                      <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setForm({
+                              id: c.id,
+                              name: c.name || '',
+                              user: ownerId(c.user),
+                              recipient_phones: (c.recipient_phones || []).join('\n'),
+                              text: (c.templates || []).map((t) => t.text || '').join('\n---\n'),
+                              enable_warmup: c.enable_warmup !== false,
+                              retry_on_failure: c.retry_on_failure !== false,
+                            })
+                            setOpen(true)
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600"
+                          onClick={() => setDeleteTarget({ ids: [c.id], label: c.name || 'this campaign' })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -792,10 +615,19 @@ function AdminCampaignsPage() {
             </div>
           )}
 
+          {/* Pagination */}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm text-slate-500">
-            <div>Page {page} / {maxPage} • {totalCount} total • Showing {campaigns.length}</div>
+            <div>
+              Page {page} / {maxPage} • {totalCount} total • Showing {campaigns.length}
+            </div>
             <div className="flex items-center gap-2">
-              <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(v) => {
+                  setPageSize(Number(v))
+                  setPage(1)
+                }}
+              >
                 <SelectTrigger className="w-28">
                   <SelectValue />
                 </SelectTrigger>
@@ -817,97 +649,67 @@ function AdminCampaignsPage() {
         </CardContent>
       </Card>
 
-      {/* EDIT / CREATE DIALOG */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{form.id ? 'Edit Campaign' : 'Create Campaign'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Merchant</Label>
-              <Select value={form.user} onValueChange={(user) => setForm({ ...form, user })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select merchant" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((u) => (
-                    <SelectItem key={u.id || u._id} value={(u.id || u._id)!}>
-                      {u.phone_number || u.id || u._id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-slate-500">Your own admin account is excluded. Admins can create campaigns only for other users.</p>
-            </div>
-            <div className="flex flex-col gap-2 pt-1">
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="admin-enable-warmup" checked={form.enable_warmup} onChange={(e) => setForm({ ...form, enable_warmup: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
-                <Label htmlFor="admin-enable-warmup" className="cursor-pointer text-sm font-medium">Enable Account Warmup</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="admin-retry-on-failure" checked={form.retry_on_failure} onChange={(e) => setForm({ ...form, retry_on_failure: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
-                <Label htmlFor="admin-retry-on-failure" className="cursor-pointer text-sm font-medium">Retry with other session if message fails</Label>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Recipient phones</Label>
-              <Textarea value={form.recipient_phones} onChange={(e) => setForm({ ...form, recipient_phones: e.target.value })} placeholder="One phone per line or comma separated" />
-            </div>
-            <div className="space-y-2">
-              <Label>Message texts</Label>
-              <Textarea value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} placeholder={"Template 1 text\n---\nTemplate 2 text"} />
-              <p className="text-xs text-slate-500">Separate multiple templates with a line containing ---.</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || !form.user}>
-              {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Form Dialog */}
+      <AdminCampaignFormDialog
+        open={open}
+        onOpenChange={setOpen}
+        form={form}
+        setForm={setForm}
+        users={users}
+        onSave={() => save.mutate()}
+        isSaving={save.isPending}
+      />
 
-      {/* DELETE CONFIRMATION DIALOG */}
-      <Dialog open={!!deleteTarget} onOpenChange={(isOpen) => !isOpen && setDeleteTarget(null)}>
-        <DialogContent>
+      {/* Single / Bulk Delete Dialog */}
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(val) => !val && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete {deleteTarget?.label}?</DialogTitle>
+            <DialogTitle>Confirm Deletion</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-500">This action cannot be undone.</p>
+          <p className="text-sm text-slate-500">
+            Are you sure you want to delete {deleteTarget?.label}? This action cannot be undone.
+          </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               disabled={remove.isPending || bulkDelete.isPending}
               onClick={() => {
                 if (!deleteTarget) return
-                if (deleteTarget.ids.length === 1) remove.mutate(deleteTarget.ids[0])
-                else bulkDelete.mutate(deleteTarget.ids)
-                setDeleteTarget(null)
+                if (deleteTarget.ids.length === 1) {
+                  remove.mutate(deleteTarget.ids[0], { onSuccess: () => setDeleteTarget(null) })
+                } else {
+                  bulkDelete.mutate(deleteTarget.ids, { onSuccess: () => setDeleteTarget(null) })
+                }
               }}
             >
-              <Trash2 className="mr-2 h-4 w-4" />Delete
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <WhatsAppPhonePreviewModal
-        campaign={selectedPreviewCampaign}
-        onClose={() => setSelectedPreviewCampaign(null)}
-      />
+      {/* Preview Modal */}
+      {selectedPreviewCampaign && (
+        <WhatsAppPhonePreviewModal
+          isOpen={Boolean(selectedPreviewCampaign)}
+          onClose={() => setSelectedPreviewCampaign(null)}
+          title={selectedPreviewCampaign.name}
+          templates={selectedPreviewCampaign.templates || [selectedPreviewCampaign.template || { text: 'Hello' }]}
+        />
+      )}
 
-      <CustomerListModal
-        campaign={selectedCustomerListCampaign}
-        onClose={() => setSelectedCustomerListCampaign(null)}
-        invalidateQueryKey={['admin', 'campaigns']}
-      />
+      {/* Customer List Modal */}
+      {selectedCustomerListCampaign && (
+        <CustomerListModal
+          isOpen={Boolean(selectedCustomerListCampaign)}
+          onClose={() => setSelectedCustomerListCampaign(null)}
+          campaignTitle={selectedCustomerListCampaign.name}
+          recipients={selectedCustomerListCampaign.recipient_phones || []}
+        />
+      )}
     </div>
   )
 }

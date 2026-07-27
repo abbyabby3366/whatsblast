@@ -4,8 +4,11 @@ import dayjs from 'dayjs'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 
 export interface WhatsAppPhonePreviewModalProps {
-  campaign: any | null
+  isOpen?: boolean
   onClose: () => void
+  title?: string
+  campaign?: any | null
+  templates?: any[]
 }
 
 export const getCampaignTemplates = (campaign: any) => {
@@ -60,8 +63,8 @@ export const resolveTemplateMediaList = (template: any) => {
     })
   }
 
-  if (Array.isArray(template.media)) {
-    template.media.forEach((f: any) => {
+  if (Array.isArray(template.mediaList)) {
+    template.mediaList.forEach((f: any) => {
       if (typeof f === 'string') addMedia(f, 'image')
       else if (f && typeof f === 'object') {
         addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
@@ -69,34 +72,15 @@ export const resolveTemplateMediaList = (template: any) => {
     })
   }
 
-  // 2. Nested content object if present
-  if (template.content && typeof template.content === 'object') {
-    const c = template.content
-    if (c.file) {
-      if (typeof c.file === 'string') addMedia(c.file, c.file_type || c.type || template.type)
-      else if (typeof c.file === 'object') {
-        addMedia(c.file.file_url || c.file.file_path || c.file.url || c.file.file, c.file.file_type || c.file.type || c.type, c.file.file_name)
-      }
+  // 2. Objects containing media array
+  if (template.media && typeof template.media === 'object') {
+    if (Array.isArray(template.media.files)) {
+      template.media.files.forEach((f: any) => addMedia(f.url || f.file_path || f, f.type || 'image', f.name))
     }
-    if (c.button_image) {
-      if (typeof c.button_image === 'string') addMedia(c.button_image, 'image')
-      else if (typeof c.button_image === 'object') addMedia(c.button_image.file_url || c.button_image.file_path || c.button_image.url, 'image', c.button_image.file_name)
-    }
-    if (Array.isArray(c.files)) {
-      c.files.forEach((f: any) => {
-        if (typeof f === 'string') addMedia(f, 'image')
-        else if (f && typeof f === 'object') addMedia(f.file_url || f.file_path || f.url || f.file, f.file_type || f.type || 'image', f.file_name || f.name)
-      })
-    }
-    if (Array.isArray(c.attachedFiles)) {
-      c.attachedFiles.forEach((f: any) => {
-        if (typeof f === 'string') addMedia(f, 'image')
-        else if (f && typeof f === 'object') addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
-      })
-    }
-    addMedia(c.file_url, c.file_type || c.type || template.type)
-    addMedia(c.media_url, c.file_type || c.type || template.type)
-    addMedia(c.image_url, c.file_type || c.type || template.type)
+  }
+
+  if (template.custom_fields && typeof template.custom_fields === 'object') {
+    const c = template.custom_fields
     addMedia(c.url, c.file_type || c.type || template.type)
   }
 
@@ -128,9 +112,12 @@ export const resolveTemplateMediaList = (template: any) => {
   return list
 }
 
-export function WhatsAppPhonePreviewModal({ campaign, onClose }: WhatsAppPhonePreviewModalProps) {
+export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, onClose }: WhatsAppPhonePreviewModalProps) {
+  const activeCampaign = campaign || { name: title, templates: templates }
+  const isModalOpen = isOpen !== undefined ? isOpen : Boolean(campaign || (templates && templates.length > 0))
+
   return (
-    <Dialog open={Boolean(campaign)} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isModalOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent showCloseButton={false} className="sm:max-w-md bg-transparent border-none shadow-none p-0 flex justify-center">
         <DialogTitle className="sr-only">Message Preview</DialogTitle>
         <DialogDescription className="sr-only">WhatsApp UI Message Preview</DialogDescription>

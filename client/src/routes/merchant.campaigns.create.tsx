@@ -1,59 +1,19 @@
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   ArrowLeft,
-  ArrowRight,
   Loader2,
-  Megaphone,
-  Plus,
-  Search,
   Trash2,
   RotateCcw,
   Sparkles,
-  Users,
-  Save,
   AlertCircle,
-  FileSpreadsheet,
-  Download,
-  Info,
-  Upload,
-  CheckCircle2,
-  ExternalLink,
-  FileText,
-  Image as ImageIcon,
-  Video as VideoIcon,
-  Eye,
-  CheckCheck,
-  User,
-  MoreVertical,
-  Mic,
-  Layers,
-  Smartphone,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
-import * as XLSX from 'xlsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   Dialog,
   DialogClose,
@@ -65,140 +25,27 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 
+import type { TemplateDraft, AttachedFile } from '@/components/merchant-campaigns-create/types'
+import {
+  DRAFT_STORAGE_KEY,
+  createEmptyTemplateDraft,
+  isTemplateTextRequired,
+  filePreviewUrl,
+  normalizeButtonType,
+  buildTemplatePayload,
+} from '@/components/merchant-campaigns-create/types'
+
+import { CsvImportModal } from '@/components/merchant-campaigns-create/components/CsvImportModal'
+import { PhonePreviewModal } from '@/components/merchant-campaigns-create/components/PhonePreviewModal'
+import { Step1CampaignDetails } from '@/components/merchant-campaigns-create/components/Step1CampaignDetails'
+import { Step2MessageTemplates } from '@/components/merchant-campaigns-create/components/Step2MessageTemplates'
+import { Step3SendingSessions } from '@/components/merchant-campaigns-create/components/Step3SendingSessions'
+import { Step4Recipients } from '@/components/merchant-campaigns-create/components/Step4Recipients'
+import { Step5Summary } from '@/components/merchant-campaigns-create/components/Step5Summary'
+
 export const Route = createFileRoute('/merchant/campaigns/create')({
   component: CreateCampaignPage,
 })
-
-const DRAFT_STORAGE_KEY = 'whatsblast_campaign_draft'
-
-type ButtonDraft = {
-  id: string
-  type: 'reply' | 'url' | 'call' | 'copy'
-  display_text: string
-  value?: string
-}
-
-export type AttachedFile = {
-  id: string
-  url: string | null
-  name?: string
-  type?: string
-}
-
-type TemplateDraft = {
-  id?: string
-  messageType: string
-  template: string
-  footer?: string
-  fileId: string
-  attachedFiles?: AttachedFile[]
-  buttons: ButtonDraft[]
-  buttonMediaType: string
-  previewUrl: string | null
-}
-
-const createEmptyTemplateDraft = (): TemplateDraft => ({
-  messageType: 'text',
-  template: '',
-  footer: '',
-  fileId: '',
-  attachedFiles: [],
-  buttons: [],
-  buttonMediaType: 'none',
-  previewUrl: null,
-})
-
-const isTemplateTextRequired = (tmpl: TemplateDraft) => {
-  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
-  const hasFiles = Boolean((tmpl.attachedFiles && tmpl.attachedFiles.length > 0) || tmpl.fileId || tmpl.previewUrl)
-  if (isMedia || hasFiles) return false
-  return true
-}
-
-const isTemplateComplete = (tmpl: TemplateDraft) => {
-  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
-  const hasFiles = Boolean((tmpl.attachedFiles && tmpl.attachedFiles.length > 0) || tmpl.fileId || tmpl.previewUrl)
-  if (isMedia && !hasFiles) return false
-  if (isTemplateTextRequired(tmpl) && !tmpl.template.trim()) return false
-  return true
-}
-
-const filePreviewUrl = (fileObj: any, buttonImageObj?: any) =>
-  fileObj?.file_path ||
-  fileObj?.file ||
-  fileObj?.url ||
-  fileObj?.file_url ||
-  fileObj?.image ||
-  fileObj?.video ||
-  fileObj?.document ||
-  buttonImageObj?.file_path ||
-  buttonImageObj?.file ||
-  buttonImageObj?.url ||
-  buttonImageObj?.file_url ||
-  buttonImageObj?.image ||
-  null
-
-const normalizeButtonType = (type?: string): ButtonDraft['type'] => {
-  if (type === 'cta_url') return 'url'
-  if (type === 'cta_call') return 'call'
-  if (type === 'cta_copy') return 'copy'
-  if (type === 'url' || type === 'call' || type === 'copy') return type
-  return 'reply'
-}
-
-const resolveDraftMediaList = (tmpl: TemplateDraft, userFiles?: any[]) => {
-  const list: Array<{ id?: string; url: string; type: string; name?: string }> = []
-  const currentMediaType = tmpl.messageType === 'buttons' ? tmpl.buttonMediaType : tmpl.messageType
-
-  if (tmpl.attachedFiles && tmpl.attachedFiles.length > 0) {
-    tmpl.attachedFiles.forEach((f) => {
-      const matched = userFiles?.find((uf: any) => uf.id === f.id || uf._id === f.id)
-      const url = f.url || matched?.file_path || matched?.url || matched?.file_url || matched?.file || null
-      const type = f.type || currentMediaType || matched?.file_type || 'image'
-      const name = f.name || matched?.file_name || 'Attachment'
-      if (url) list.push({ id: f.id, url, type: String(type).toLowerCase(), name })
-    })
-  } else if (tmpl.fileId || tmpl.previewUrl) {
-    const matched = userFiles?.find((uf: any) => uf.id === tmpl.fileId || uf._id === tmpl.fileId)
-    const url = tmpl.previewUrl || matched?.file_path || matched?.url || matched?.file_url || matched?.file || null
-    const type = currentMediaType || matched?.file_type || 'image'
-    const name = matched?.file_name || 'Attachment'
-    if (url) list.push({ id: tmpl.fileId, url, type: String(type).toLowerCase(), name })
-  }
-
-  return list
-}
-
-const buildTemplatePayload = (value: TemplateDraft) => {
-  const existing = value.id ? { id: value.id } : {}
-  const fileIds = value.attachedFiles && value.attachedFiles.length > 0
-    ? value.attachedFiles.map((f) => f.id).filter(Boolean)
-    : value.fileId
-    ? [value.fileId]
-    : []
-  const primaryFileId = fileIds[0] || ''
-
-  return {
-    ...existing,
-    text: value.template,
-    footer: value.footer || '',
-    type: value.messageType,
-    ...(primaryFileId ? { file_id: primaryFileId } : {}),
-    ...(fileIds.length > 0 ? { file_ids: fileIds } : {}),
-    ...(value.previewUrl && !value.previewUrl.startsWith('blob:') ? { file_url: value.previewUrl } : {}),
-    ...(value.buttonMediaType !== 'none' && primaryFileId ? { button_image_id: primaryFileId } : {}),
-    ...(value.buttons?.length
-      ? {
-          buttons: value.buttons.map((b) => ({
-            id: b.id,
-            displayText: b.display_text,
-            type: b.type,
-            value: b.value,
-          })),
-        }
-      : {}),
-  }
-}
 
 function CreateCampaignPage() {
   const navigate = useNavigate()
@@ -230,6 +77,7 @@ function CreateCampaignPage() {
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
   const [isPhonePreviewOpen, setIsPhonePreviewOpen] = useState(false)
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
 
   // Fetch user files for resolving media previews
   const { data: userFiles } = useQuery({
@@ -254,88 +102,6 @@ function CreateCampaignPage() {
       }
     },
   })
-
-  // CSV Import State
-  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
-  const [saveToContacts, setSaveToContacts] = useState(true)
-  const [csvFile, setCsvFile] = useState<File | null>(null)
-  const [isImportingCsv, setIsImportingCsv] = useState(false)
-  const csvFileInputRef = useRef<HTMLInputElement>(null)
-
-  const handleDownloadCsvTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([{ name: 'John Doe', phone_number: '60123456789', label: 'VIP' }])
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Template')
-    XLSX.writeFile(wb, 'campaign_recipients_template.csv', { bookType: 'csv' })
-  }
-
-  const handleProcessCsvImport = async () => {
-    if (!csvFile) {
-      toast.error('Please select a CSV file first.')
-      return
-    }
-
-    setIsImportingCsv(true)
-    const reader = new FileReader()
-    reader.onload = async (evt) => {
-      try {
-        const bstr = evt.target?.result
-        const wb = XLSX.read(bstr, { type: 'binary' })
-        const wsname = wb.SheetNames[0]
-        const ws = wb.Sheets[wsname]
-        const data = XLSX.utils.sheet_to_json<any>(ws)
-
-        const importedContacts: { name: string; phone_number: string; label?: string }[] = []
-        const newPhones: string[] = []
-
-        for (const row of data) {
-          const phoneVal = row.phone_number || row.phone || row['Phone Number'] || row['Phone'] || row['phone number']
-          const nameVal = row.name || row.Name || row['Full Name'] || ''
-          const labelVal = row.label || row.Label || row['TAG'] || row['tag'] || ''
-
-          if (phoneVal) {
-            const cleanPhone = String(phoneVal).replace(/[^0-9]/g, '')
-            if (cleanPhone) {
-              newPhones.push(cleanPhone)
-              importedContacts.push({
-                name: String(nameVal),
-                phone_number: cleanPhone,
-                label: labelVal ? String(labelVal) : '',
-              })
-            }
-          }
-        }
-
-        if (newPhones.length === 0) {
-          toast.error('No valid phone numbers found in the CSV file.')
-          setIsImportingCsv(false)
-          return
-        }
-
-        // Add phone numbers to campaign recipients
-        setRecipients((prev) => Array.from(new Set([...prev, ...newPhones])))
-
-        // If "Add these customers to contacts" option is selected
-        if (saveToContacts && importedContacts.length > 0) {
-          await api.post('customers/import/', { json: { customers: importedContacts } }).json()
-          queryClient.invalidateQueries({ queryKey: ['customers'] })
-          queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
-          toast.success(`Imported ${newPhones.length} recipient(s) & saved to contacts!`)
-        } else {
-          toast.success(`Imported ${newPhones.length} recipient(s) for this campaign.`)
-        }
-
-        setIsCsvModalOpen(false)
-        setCsvFile(null)
-      } catch (err) {
-        console.error(err)
-        toast.error('Failed to parse or import CSV file.')
-      } finally {
-        setIsImportingCsv(false)
-      }
-    }
-    reader.readAsBinaryString(csvFile)
-  }
 
   // User profile for account-scoped draft checking
   const { data: userProfile } = useQuery({
@@ -496,21 +262,6 @@ function CreateCampaignPage() {
     toast.success('Draft cleared!')
   }
 
-  // Active template helpers
-  const activeTemplate = templateDrafts[activeTemplateIndex] || templateDrafts[0]
-  const updateActiveTemplate = (patch: Partial<TemplateDraft>) => {
-    setTemplateDrafts((drafts) => drafts.map((draft, index) => index === activeTemplateIndex ? { ...draft, ...patch } : draft))
-  }
-  const updateActiveButton = (buttonIndex: number, patch: Partial<ButtonDraft>) => {
-    setTemplateDrafts((drafts) => drafts.map((draft, index) => {
-      if (index !== activeTemplateIndex) return draft
-      return {
-        ...draft,
-        buttons: draft.buttons.map((button, idx) => idx === buttonIndex ? { ...button, ...patch } : button),
-      }
-    }))
-  }
-
   // Fetch campaign if editing
   useQuery({
     queryKey: ['campaign', editingCampaignId],
@@ -588,6 +339,8 @@ function CreateCampaignPage() {
     onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to delete file.')),
   })
 
+  const activeTemplate = templateDrafts[activeTemplateIndex] || templateDrafts[0]
+
   const handleTemplateFilesUpload = async (fileList: FileList | File[]) => {
     const files = Array.from(fileList)
     if (files.length === 0) return
@@ -621,16 +374,23 @@ function CreateCampaignPage() {
 
     const updatedAttachedFiles = [...currentAttached, ...uploadedResults]
 
-    updateActiveTemplate({
-      attachedFiles: updatedAttachedFiles,
-      fileId: updatedAttachedFiles[0]?.id || '',
-      previewUrl: updatedAttachedFiles[0]?.url || null,
-    })
+    setTemplateDrafts((drafts) =>
+      drafts.map((draft, index) =>
+        index === activeTemplateIndex
+          ? {
+              ...draft,
+              attachedFiles: updatedAttachedFiles,
+              fileId: updatedAttachedFiles[0]?.id || '',
+              previewUrl: updatedAttachedFiles[0]?.url || null,
+            }
+          : draft
+      )
+    )
 
     toast.success(`Attached ${uploadedResults.length} file(s) to Template ${activeTemplateIndex + 1}!`)
   }
 
-  // Launch Campaign mutation (runs blast directly)
+  // Launch Campaign mutation
   const launchCampaignMutation = useMutation({
     mutationFn: async (payload: any) => {
       let campaignId = editingCampaignId
@@ -1033,1453 +793,110 @@ function CreateCampaignPage() {
         </div>
       )}
 
-      {/* STEP 1: CAMPAIGN NAME & SETTINGS */}
+      {/* STEP 1 */}
       {step === 1 && (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-base font-semibold">Step 1: Campaign Details</CardTitle>
-            <CardDescription className="text-xs">
-              Give your campaign a title and set the warmup settings.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="campaign-name" className="text-xs font-semibold">
-                Campaign Name <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="campaign-name"
-                placeholder="e.g. Raya Special Promotion 2026"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="bg-white dark:bg-slate-950"
-              />
-            </div>
-
-            <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-              <input
-                id="enable-warmup"
-                type="checkbox"
-                checked={enableWarmup}
-                onChange={(e) => setEnableWarmup(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <div className="space-y-0.5">
-                <Label htmlFor="enable-warmup" className="cursor-pointer text-xs font-medium">
-                  Enable Account Warmup
-                </Label>
-                <p className="text-xs text-slate-500">
-                  Gradually increases sending speed to reduce risk of WhatsApp session ban.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Button onClick={handleNextStep1} className="bg-emerald-600 text-white hover:bg-emerald-700">
-                Next: Message Template <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <Step1CampaignDetails
+          name={name}
+          setName={setName}
+          enableWarmup={enableWarmup}
+          setEnableWarmup={setEnableWarmup}
+          onNext={handleNextStep1}
+        />
       )}
 
-      {/* STEP 2: MESSAGE TEMPLATE & MEDIA */}
+      {/* STEP 2 */}
       {step === 2 && (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-lg">Step 2: Message Template</CardTitle>
-            <CardDescription>
-              Create text, media, or button templates for your blast sequence. Media upload is placed above text.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Template Tabs */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-2">
-                {templateDrafts.map((template, index) => (
-                  <Button
-                    key={index}
-                    type="button"
-                    variant={index === activeTemplateIndex ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setActiveTemplateIndex(index)}
-                    className={index === activeTemplateIndex ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
-                  >
-                    Template {index + 1}
-                    {isTemplateComplete(template) ? '' : ' *'}
-                  </Button>
-                ))}
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setTemplateDrafts((drafts) => [...drafts, createEmptyTemplateDraft()])
-                  setActiveTemplateIndex(templateDrafts.length)
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" /> Add Template
-              </Button>
-            </div>
-
-            {/* Editing Active Template Box */}
-            <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Editing Template {activeTemplateIndex + 1} of {templateDrafts.length}
-                </p>
-                {templateDrafts.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-500 hover:bg-red-50 hover:text-red-700"
-                    onClick={() => {
-                      setTemplateDrafts((drafts) => drafts.filter((_, index) => index !== activeTemplateIndex))
-                      setActiveTemplateIndex((index) => Math.max(0, index - 1))
-                    }}
-                  >
-                    <Trash2 className="mr-1 h-4 w-4" /> Remove Template
-                  </Button>
-                )}
-              </div>
-
-              {/* Message Type */}
-              <div className="space-y-2">
-                <Label>Message Type</Label>
-                <Select
-                  value={activeTemplate.messageType}
-                  onValueChange={(val: any) =>
-                    updateActiveTemplate({
-                      messageType: val,
-                      fileId: '',
-                      previewUrl: null,
-                      buttonMediaType: val === 'buttons' ? activeTemplate.buttonMediaType : 'none',
-                    })
-                  }
-                >
-                  <SelectTrigger className="bg-white dark:bg-slate-950">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="text">Text Only</SelectItem>
-                    <SelectItem value="buttons">Interactive Buttons</SelectItem>
-                    <SelectItem value="image">Image</SelectItem>
-                    <SelectItem value="video">Video</SelectItem>
-                    <SelectItem value="document">Document</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* MEDIA UPLOAD AREA (PLACED ABOVE MESSAGE TEMPLATE TEXT) */}
-              {(['image', 'video', 'document'].includes(activeTemplate.messageType) ||
-                activeTemplate.messageType === 'buttons') && (
-                <div className="space-y-2">
-                  {activeTemplate.messageType === 'buttons' && (
-                    <div className="mb-3 flex items-center gap-2 pt-1">
-                      <input
-                        id={`add-image-checkbox-${activeTemplateIndex}`}
-                        type="checkbox"
-                        checked={activeTemplate.buttonMediaType === 'image'}
-                        onChange={(e) =>
-                          updateActiveTemplate({
-                            buttonMediaType: e.target.checked ? 'image' : 'none',
-                            fileId: '',
-                            previewUrl: null,
-                          })
-                        }
-                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <Label
-                        htmlFor={`add-image-checkbox-${activeTemplateIndex}`}
-                        className="cursor-pointer font-medium text-slate-700 dark:text-slate-300"
-                      >
-                        Add Image
-                      </Label>
-                    </div>
-                  )}
-
-                  {(activeTemplate.messageType !== 'buttons' || activeTemplate.buttonMediaType !== 'none') && (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <Label>
-                          {activeTemplate.messageType === 'buttons' ? 'Upload Button Image' : 'Upload Media'}
-                        </Label>
-                        {activeTemplate.attachedFiles && activeTemplate.attachedFiles.length > 0 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/50"
-                            onClick={() => {
-                              activeTemplate.attachedFiles?.forEach((f) => {
-                                if (f.id) deleteFileMutation.mutate(f.id)
-                              })
-                              updateActiveTemplate({ attachedFiles: [], fileId: '', previewUrl: null })
-                            }}
-                          >
-                            <Trash2 className="mr-1 h-3.5 w-3.5" /> Clear All Media
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* Hidden file input supporting multiple files */}
-                      <Input
-                        id={`template-file-${activeTemplateIndex}`}
-                        type="file"
-                        multiple
-                        accept={
-                          (activeTemplate.messageType === 'buttons'
-                            ? activeTemplate.buttonMediaType
-                            : activeTemplate.messageType) === 'image'
-                            ? 'image/*'
-                            : (activeTemplate.messageType === 'buttons'
-                                ? activeTemplate.buttonMediaType
-                                : activeTemplate.messageType) === 'video'
-                            ? 'video/*'
-                            : '.pdf,.doc,.docx,.txt'
-                        }
-                        onChange={async (e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            await handleTemplateFilesUpload(e.target.files)
-                          }
-                        }}
-                        className="hidden"
-                      />
-
-                      {/* Small Icon Previews List if files attached */}
-                      {(() => {
-                        const currentMediaType =
-                          activeTemplate.messageType === 'buttons'
-                            ? activeTemplate.buttonMediaType
-                            : activeTemplate.messageType
-
-                        const attachedList: AttachedFile[] =
-                          activeTemplate.attachedFiles && activeTemplate.attachedFiles.length > 0
-                            ? activeTemplate.attachedFiles
-                            : activeTemplate.fileId
-                            ? [
-                                {
-                                  id: activeTemplate.fileId,
-                                  url: activeTemplate.previewUrl,
-                                  type: currentMediaType,
-                                },
-                              ]
-                            : []
-
-                        const hasFiles = attachedList.length > 0
-
-                        return (
-                          <div className="space-y-3 mt-2">
-                            {hasFiles && (
-                              <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-                                <div className="mb-2 flex items-center justify-between">
-                                  <div className="flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                                    <span>
-                                      {attachedList.length} media file{attachedList.length > 1 ? 's' : ''} attached
-                                    </span>
-                                  </div>
-                                  <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
-                                    Icon Preview
-                                  </span>
-                                </div>
-
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  {attachedList.map((fileItem, idx) => {
-                                    const matchedFile = userFiles?.find(
-                                      (f: any) => f.id === fileItem.id || f._id === fileItem.id
-                                    )
-                                    const resolvedUrl =
-                                      fileItem.url ||
-                                      matchedFile?.file_path ||
-                                      matchedFile?.url ||
-                                      matchedFile?.file_url ||
-                                      matchedFile?.file ||
-                                      null
-                                    const resolvedName =
-                                      fileItem.name || matchedFile?.file_name || `Media #${idx + 1}`
-
-                                    return (
-                                      <div
-                                        key={fileItem.id || idx}
-                                        className="flex items-center justify-between gap-2.5 rounded-md border border-slate-200 bg-white p-2 shadow-xs dark:border-slate-800 dark:bg-slate-900"
-                                      >
-                                        {/* Small Icon Preview Thumbnail (40px x 40px) */}
-                                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 flex items-center justify-center">
-                                          {currentMediaType === 'image' && resolvedUrl ? (
-                                            <img
-                                              src={resolvedUrl}
-                                              alt={resolvedName}
-                                              loading="eager"
-                                              decoding="async"
-                                              className="h-full w-full object-cover"
-                                              onError={(e) => {
-                                                e.currentTarget.style.display = 'none'
-                                              }}
-                                            />
-                                          ) : currentMediaType === 'video' ? (
-                                            <div className="flex h-full w-full items-center justify-center bg-slate-900 text-white">
-                                              <VideoIcon className="h-4 w-4" />
-                                            </div>
-                                          ) : (
-                                            <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                                          )}
-                                        </div>
-
-                                        {/* File Info */}
-                                        <div className="min-w-0 flex-1">
-                                          <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200" title={resolvedName}>
-                                            {resolvedName}
-                                          </p>
-                                          <p className="text-[10px] text-slate-500 capitalize">
-                                            {currentMediaType} attachment
-                                          </p>
-                                        </div>
-
-                                        {/* Action buttons */}
-                                        <div className="flex items-center space-x-0.5 shrink-0">
-                                          {resolvedUrl && (
-                                            <a
-                                              href={resolvedUrl}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                                              title="Open file in new tab"
-                                            >
-                                              <ExternalLink className="h-3.5 w-3.5" />
-                                            </a>
-                                          )}
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/50"
-                                            title="Remove attachment"
-                                            onClick={() => {
-                                              const updated = attachedList.filter((_, i) => i !== idx)
-                                              updateActiveTemplate({
-                                                attachedFiles: updated,
-                                                fileId: updated[0]?.id || '',
-                                                previewUrl: updated[0]?.url || null,
-                                              })
-                                              if (fileItem.id) deleteFileMutation.mutate(fileItem.id)
-                                            }}
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Dropzone / Upload Trigger */}
-                            <div
-                              className={`relative cursor-pointer rounded-lg border-2 border-dashed border-slate-300 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-900 ${
-                                hasFiles ? 'p-3 text-center' : 'p-8 text-center'
-                              }`}
-                              onDragOver={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                              }}
-                              onDrop={async (e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                if (e.dataTransfer.files.length > 0) {
-                                  await handleTemplateFilesUpload(e.dataTransfer.files)
-                                }
-                              }}
-                              onClick={() =>
-                                document.getElementById(`template-file-${activeTemplateIndex}`)?.click()
-                              }
-                            >
-                              {hasFiles ? (
-                                <div className="flex items-center justify-center space-x-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-                                  <Plus className="h-4 w-4 text-emerald-600" />
-                                  <span>Add more images / media to this template</span>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col items-center justify-center space-y-2">
-                                  <div className="rounded-full bg-emerald-50 p-3 text-emerald-600 dark:bg-emerald-900/20">
-                                    <Plus className="h-6 w-6" />
-                                  </div>
-                                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                    Click or drag and drop to upload (single or multiple)
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    {activeTemplate.messageType === 'buttons'
-                                      ? 'PNG, JPG or GIF (backend button_image field)'
-                                      : activeTemplate.messageType === 'image'
-                                      ? 'SVG, PNG, JPG or GIF'
-                                      : activeTemplate.messageType === 'video'
-                                      ? 'MP4, WebM or OGG'
-                                      : 'PDF, DOC, DOCX or TXT'}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-
-                            {uploadFileMutation.isPending && (
-                              <p className="mt-2 flex items-center text-sm text-emerald-600">
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Uploading file(s)...
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* MESSAGE TEMPLATE TEXT AREA (PLACED BELOW MEDIA) */}
-              <div className="space-y-2">
-                <Label>
-                  Message Template{' '}
-                  {!isTemplateTextRequired(activeTemplate) && (
-                    <span className="text-xs font-normal text-slate-500">(Optional)</span>
-                  )}
-                </Label>
-                <Textarea
-                  placeholder="Type your message template text here... Use {{phone}} for customer phone number."
-                  value={activeTemplate.template}
-                  onChange={(e) => updateActiveTemplate({ template: e.target.value })}
-                  className="min-h-[100px] bg-white dark:bg-slate-950"
-                />
-              </div>
-
-              {/* MESSAGE FOOTER INPUT (OPTIONAL) */}
-              <div className="space-y-2">
-                <Label>Message Footer (Optional)</Label>
-                <Input
-                  placeholder="e.g. Reply STOP to unsubscribe or WhatsBlast"
-                  value={activeTemplate.footer || ''}
-                  onChange={(e) => updateActiveTemplate({ footer: e.target.value })}
-                  className="bg-white dark:bg-slate-950 text-sm"
-                />
-              </div>
-
-              {/* INTERACTIVE BUTTONS BUILDER */}
-              {activeTemplate.messageType === 'buttons' && (
-                <div className="space-y-4 pt-2">
-                  <Label>Interactive Buttons</Label>
-                  <div className="space-y-3">
-                    {activeTemplate.buttons.map((btn, index) => (
-                      <div
-                        key={index}
-                        className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={btn.type}
-                            onValueChange={(val: any) =>
-                              updateActiveButton(index, { type: val, value: val === 'reply' ? '' : btn.value })
-                            }
-                          >
-                            <SelectTrigger className="w-[150px] bg-slate-50">
-                              <SelectValue placeholder="Type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="reply">Quick Reply</SelectItem>
-                              <SelectItem value="url">URL Link</SelectItem>
-                              <SelectItem value="call">Phone Call</SelectItem>
-                              <SelectItem value="copy">Copy Code</SelectItem>
-                            </SelectContent>
-                          </Select>
-
-                          <Input
-                            value={btn.display_text}
-                            placeholder="Button text"
-                            className="flex-1"
-                            onChange={(e) => updateActiveButton(index, { display_text: e.target.value })}
-                          />
-
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="shrink-0 text-red-500 hover:bg-red-50 hover:text-red-700"
-                            onClick={() =>
-                              updateActiveTemplate({
-                                buttons: activeTemplate.buttons.filter((_, i) => i !== index),
-                              })
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-
-                        {btn.type !== 'reply' && (
-                          <div className="pl-[158px]">
-                            <Input
-                              value={btn.value || ''}
-                              placeholder={
-                                btn.type === 'url'
-                                  ? 'https://example.com'
-                                  : btn.type === 'call'
-                                  ? '+60123456789'
-                                  : 'Code to copy'
-                              }
-                              className="w-full bg-slate-50 text-sm"
-                              onChange={(e) => updateActiveButton(index, { value: e.target.value })}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        updateActiveTemplate({
-                          buttons: [
-                            ...activeTemplate.buttons,
-                            { id: Date.now().toString(), type: 'reply', display_text: '' },
-                          ],
-                        })
-                      }
-                    >
-                      <Plus className="mr-2 h-4 w-4" /> Add Button
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Step 2 Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <Button type="button" variant="outline" onClick={() => setStep(1)}>
-                <ArrowLeft className="mr-2 h-4 w-4" /> Back: Campaign Name
-              </Button>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSaveDraft}
-                  disabled={saveDraftMutation.isPending}
-                >
-                  {saveDraftMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}
-                  Save as Draft
-                </Button>
-                <Button onClick={handleNextStep2} className="bg-emerald-600 text-white hover:bg-emerald-700">
-                  Next: Sending Sessions <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <Step2MessageTemplates
+          templateDrafts={templateDrafts}
+          setTemplateDrafts={setTemplateDrafts}
+          activeTemplateIndex={activeTemplateIndex}
+          setActiveTemplateIndex={setActiveTemplateIndex}
+          userFiles={userFiles}
+          uploadFileMutation={uploadFileMutation}
+          deleteFileMutation={deleteFileMutation}
+          handleTemplateFilesUpload={handleTemplateFilesUpload}
+          handleSaveDraft={handleSaveDraft}
+          isSavingDraft={saveDraftMutation.isPending}
+          onBack={() => setStep(1)}
+          onNext={handleNextStep2}
+        />
       )}
 
-      {/* STEP 3: SENDING SESSIONS */}
+      {/* STEP 3 */}
       {step === 3 && (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-base font-semibold">Step 3: Sending Sessions</CardTitle>
-            <CardDescription className="text-xs">
-              Choose which WhatsApp session(s) should be used to send messages for this campaign.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Session Mode Selector Cards */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div
-                onClick={() => setSessionMode('ALL')}
-                className={`group relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
-                  sessionMode === 'ALL'
-                    ? 'border-emerald-600 bg-emerald-50/50 dark:border-emerald-500 dark:bg-emerald-950/30'
-                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`rounded-lg p-2.5 ${sessionMode === 'ALL' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
-                      <Layers className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">All Connected Sessions</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Automatically rotate through all active WhatsApp sessions in your account</p>
-                    </div>
-                  </div>
-                  <input
-                    type="radio"
-                    name="session_mode"
-                    checked={sessionMode === 'ALL'}
-                    onChange={() => setSessionMode('ALL')}
-                    className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div
-                onClick={() => setSessionMode('SPECIFIC')}
-                className={`group relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
-                  sessionMode === 'SPECIFIC'
-                    ? 'border-emerald-600 bg-emerald-50/50 dark:border-emerald-500 dark:bg-emerald-950/30'
-                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`rounded-lg p-2.5 ${sessionMode === 'SPECIFIC' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
-                      <Smartphone className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Specific Sessions</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Select individual connected session(s) specifically for this blast</p>
-                    </div>
-                  </div>
-                  <input
-                    type="radio"
-                    name="session_mode"
-                    checked={sessionMode === 'SPECIFIC'}
-                    onChange={() => setSessionMode('SPECIFIC')}
-                    className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Session Selection Grid when Mode is SPECIFIC */}
-            {sessionMode === 'SPECIFIC' && (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      Select WhatsApp Sessions ({selectedSessions.length} selected)
-                    </h4>
-                    <p className="text-xs text-slate-500">Only messages sent via selected sessions will be processed.</p>
-                  </div>
-                  {availableSessions.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const allIds = availableSessions.map((s: any) => s.session_id)
-                          setSelectedSessions(allIds)
-                        }}
-                        className="h-7 text-xs text-emerald-600 hover:text-emerald-700"
-                      >
-                        Select All
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelectedSessions([])}
-                        className="h-7 text-xs text-slate-500 hover:text-slate-700"
-                      >
-                        Deselect All
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {isLoadingSessions ? (
-                  <div className="p-6 text-center text-slate-500">
-                    <Loader2 className="mx-auto h-5 w-5 animate-spin text-emerald-600" />
-                    <p className="mt-2 text-xs">Loading available WhatsApp sessions...</p>
-                  </div>
-                ) : availableSessions.length === 0 ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-                    No WhatsApp sessions found in your account. Please add and connect a session first.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    {availableSessions.map((sess: any) => {
-                      const sId = sess.session_id
-                      const isSelected = selectedSessions.includes(sId)
-                      const isConnected = sess.status === 'CONNECTED'
-
-                      return (
-                        <div
-                          key={sId}
-                          onClick={() => {
-                            setSelectedSessions((prev) =>
-                              isSelected ? prev.filter((id) => id !== sId) : [...prev, sId]
-                            )
-                          }}
-                          className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all ${
-                            isSelected
-                              ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-600 dark:bg-emerald-950/40 shadow-xs'
-                              : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className={`h-9 w-9 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${isConnected ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                              <Smartphone className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
-                                {sess.push_name || sess.phone_number || sId}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
-                                <span className="truncate">{sess.phone_number || sId}</span>
-                                <span>•</span>
-                                <span className={`font-medium shrink-0 ${isConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
-                                  {sess.status || 'OFFLINE'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {}}
-                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900/50">
-              <input
-                id="retry-on-failure"
-                type="checkbox"
-                checked={retryOnFailure}
-                onChange={(e) => setRetryOnFailure(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <div>
-                <Label htmlFor="retry-on-failure" className="cursor-pointer text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  If message fails to send, retry with other session
-                </Label>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Automatically fallback to another active WhatsApp session if a message delivery fails on the current session.
-                </p>
-              </div>
-            </div>
-
-            {/* Step 3 Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <Button type="button" variant="outline" onClick={() => setStep(2)}>
-                <ArrowLeft className="mr-2 h-4 w-4" /> Back: Message Template
-              </Button>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSaveDraft}
-                  disabled={saveDraftMutation.isPending}
-                >
-                  {saveDraftMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}
-                  Save as Draft
-                </Button>
-                <Button onClick={handleNextStep3} className="bg-emerald-600 text-white hover:bg-emerald-700">
-                  Next: Select Recipients <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <Step3SendingSessions
+          sessionMode={sessionMode}
+          setSessionMode={setSessionMode}
+          selectedSessions={selectedSessions}
+          setSelectedSessions={setSelectedSessions}
+          availableSessions={availableSessions}
+          isLoadingSessions={isLoadingSessions}
+          retryOnFailure={retryOnFailure}
+          setRetryOnFailure={setRetryOnFailure}
+          handleSaveDraft={handleSaveDraft}
+          isSavingDraft={saveDraftMutation.isPending}
+          onBack={() => setStep(2)}
+          onNext={handleNextStep3}
+        />
       )}
 
-      {/* STEP 4: RECIPIENT SELECTION */}
+      {/* STEP 4 */}
       {step === 4 && (
-        <div className="space-y-4">
-          <Card className="border-slate-200 dark:border-slate-800">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">Step 4: Select Recipients</CardTitle>
-              <CardDescription className="text-xs">
-                Choose which contacts should receive this campaign. Search or select all matching.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Search & Actions */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="relative w-full max-w-sm">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    placeholder="Search name or phone..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value)
-                      setCustomerPage(1)
-                    }}
-                    className="pl-9"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsCsvModalOpen(true)}
-                  >
-                    <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
-                    Import CSV
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isSelectingAllCustomers}
-                    onClick={handleSelectAllMatching}
-                  >
-                    {isSelectingAllCustomers ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Users className="mr-2 h-4 w-4 text-emerald-600" />
-                    )}
-                    {allMatchingCustomersSelected ? 'Deselect All' : 'Select All Matching'}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Contacts List */}
-              <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950">
-                {isLoadingCustomers ? (
-                  <div className="p-8 text-center text-slate-500">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                    <p className="mt-2 text-sm">Loading contacts...</p>
-                  </div>
-                ) : currentCustomers.length === 0 ? (
-                  <p className="p-8 text-center text-sm text-slate-500">No contacts found.</p>
-                ) : (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {currentCustomers.map((customer: any) => {
-                      const phone = customer.phone_number || customer.phone
-                      const isSelected = recipients.includes(phone)
-                      return (
-                        <div
-                          key={customer.id || phone}
-                          onClick={() => {
-                            setRecipients((prev) =>
-                              isSelected ? prev.filter((p) => p !== phone) : [...prev, phone]
-                            )
-                          }}
-                          className={`flex cursor-pointer items-center justify-between p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900 ${
-                            isSelected ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : ''
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-slate-900 dark:text-slate-100">
-                                {customer.name || 'Unnamed Contact'}
-                              </p>
-                              {customer.label && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80">
-                                  {customer.label}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500">{phone}</p>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {}}
-                            className="h-4 w-4 rounded border-slate-300 text-emerald-600"
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Step 4 Actions */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => setStep(3)}>
-                  <ArrowLeft className="mr-2 h-4 w-4" /> Back: Sending Sessions
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleSaveDraft}
-                    disabled={saveDraftMutation.isPending}
-                  >
-                    {saveDraftMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="mr-2 h-4 w-4" />
-                    )}
-                    Save as Draft
-                  </Button>
-
-                  <Button
-                    type="button"
-                    onClick={handleNextStep4}
-                    className="bg-emerald-600 text-white hover:bg-emerald-700"
-                  >
-                    Next: Campaign Summary <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Step4Recipients
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          setCustomerPage={setCustomerPage}
+          setIsCsvModalOpen={setIsCsvModalOpen}
+          isSelectingAllCustomers={isSelectingAllCustomers}
+          handleSelectAllMatching={handleSelectAllMatching}
+          allMatchingCustomersSelected={allMatchingCustomersSelected}
+          isLoadingCustomers={isLoadingCustomers}
+          currentCustomers={currentCustomers}
+          recipients={recipients}
+          setRecipients={setRecipients}
+          handleSaveDraft={handleSaveDraft}
+          isSavingDraft={saveDraftMutation.isPending}
+          onBack={() => setStep(3)}
+          onNext={handleNextStep4}
+        />
       )}
 
-      {/* STEP 5: CAMPAIGN SUMMARY & LAUNCH */}
+      {/* STEP 5 */}
       {step === 5 && (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-base font-semibold">Step 5: Campaign Summary</CardTitle>
-            <CardDescription className="text-xs">
-              Review your campaign configuration and message sequence before launching your blast.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Overview Grid */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Campaign Name</span>
-                <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">{name || 'Untitled'}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Session Retry & Warmup</span>
-                <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
-                  {retryOnFailure ? 'Retry Enabled' : 'No Retry'}
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Warmup: {enableWarmup ? 'Enabled' : 'Disabled'}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Sending Sessions</span>
-                <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
-                  {sessionMode === 'ALL' ? 'All Sessions' : `${selectedSessions.length} Selected`}
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Mode: {sessionMode === 'ALL' ? 'Auto-Rotate' : 'Specific Sessions'}
-                </p>
-              </div>
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Target Recipients</span>
-                <p className="mt-1 text-base font-semibold text-emerald-900 dark:text-emerald-200">
-                  {recipients.length} contact(s)
-                </p>
-              </div>
-            </div>
-
-            {/* Sequence Templates Preview */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-semibold text-slate-900 dark:text-slate-100">
-                  Message Sequence ({templateDrafts.length} template{templateDrafts.length > 1 ? 's' : ''})
-                </h4>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsPhonePreviewOpen(true)}
-                    className="text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
-                  >
-                    <Eye className="mr-1.5 h-3.5 w-3.5" /> Sample Preview
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setStep(2)}
-                    className="text-xs text-emerald-600 hover:text-emerald-700"
-                  >
-                    Edit Templates
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {templateDrafts.map((tmpl, idx) => {
-                  const typeLabel =
-                    tmpl.messageType === 'text'
-                      ? 'Text Only'
-                      : tmpl.messageType === 'buttons'
-                      ? 'Interactive Buttons'
-                      : tmpl.messageType === 'image'
-                      ? 'Image'
-                      : tmpl.messageType === 'video'
-                      ? 'Video'
-                      : 'Document'
-
-                  const mediaList = resolveDraftMediaList(tmpl, userFiles)
-
-                  return (
-                    <div
-                      key={idx}
-                      className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-xs text-slate-500">
-                          Template {idx + 1}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {mediaList.length > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                              {tmpl.messageType === 'image' || tmpl.buttonMediaType === 'image' ? (
-                                <ImageIcon className="h-3 w-3" />
-                              ) : tmpl.messageType === 'video' ? (
-                                <VideoIcon className="h-3 w-3" />
-                              ) : (
-                                <FileText className="h-3 w-3" />
-                              )}
-                              Media Attached ({mediaList.length})
-                            </span>
-                          )}
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            {typeLabel}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Display attached image/video/file preview directly in the card */}
-                      {mediaList.length > 0 && (
-                        <div className="rounded-lg border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50 space-y-2">
-                          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                            Attached Media
-                          </div>
-                          <div className="flex flex-wrap gap-3">
-                            {mediaList.map((item, mIdx) => {
-                              if (item.type === 'image') {
-                                return (
-                                  <div key={mIdx} className="relative group overflow-hidden rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                                    <img
-                                      src={item.url}
-                                      alt={item.name || `Image ${mIdx + 1}`}
-                                      loading="eager"
-                                      decoding="async"
-                                      className="max-h-48 w-auto object-contain rounded-md"
-                                      onError={(e) => {
-                                        e.currentTarget.style.display = 'none'
-                                      }}
-                                    />
-                                    {item.url && (
-                                      <a
-                                        href={item.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white backdrop-blur-xs hover:bg-black/80 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                      >
-                                        <ExternalLink className="h-3 w-3" /> View
-                                      </a>
-                                    )}
-                                  </div>
-                                )
-                              }
-                              if (item.type === 'video') {
-                                return (
-                                  <div key={mIdx} className="relative overflow-hidden rounded-md border border-slate-200 dark:border-slate-800 bg-black max-w-sm">
-                                    <video src={item.url} controls className="max-h-48 w-full rounded-md" />
-                                  </div>
-                                )
-                              }
-                              return (
-                                <div key={mIdx} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-2 text-xs dark:border-slate-800 dark:bg-slate-900">
-                                  <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
-                                  <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{item.name}</span>
-                                  {item.url && (
-                                    <a href={item.url} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline flex items-center gap-0.5 text-[11px] ml-auto">
-                                      <ExternalLink className="h-3 w-3" /> View
-                                    </a>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {tmpl.template && (
-                        <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap rounded-md bg-slate-50 p-2.5 dark:bg-slate-900/60 font-sans border border-slate-100 dark:border-slate-800">
-                          {tmpl.template}
-                        </p>
-                      )}
-
-                      {tmpl.footer && (
-                        <p className="text-xs text-slate-500 italic pl-1">
-                          Footer: {tmpl.footer}
-                        </p>
-                      )}
-
-                      {tmpl.buttons && tmpl.buttons.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {tmpl.buttons.map((b, bIdx) => (
-                            <span
-                              key={bIdx}
-                              className="inline-flex items-center text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded px-2 py-1 font-medium"
-                            >
-                              [{b.type.toUpperCase()}] {b.display_text || 'Button'}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Step 5 Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <Button type="button" variant="outline" onClick={() => setStep(4)}>
-                <ArrowLeft className="mr-2 h-4 w-4" /> Back: Recipients
-              </Button>
-              <div className="flex items-center gap-2">
-                {editingCampaignId && (
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
-                        disabled={deleteCampaignMutation.isPending}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4 text-red-500" />
-                        Delete Campaign
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent onClick={(e) => e.stopPropagation()}>
-                      <DialogHeader>
-                        <DialogTitle>Delete Campaign?</DialogTitle>
-                        <DialogDescription>
-                          Are you sure you want to delete this campaign? This action cannot be undone.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button type="button" variant="outline">Cancel</Button>
-                        </DialogClose>
-                        <DialogClose asChild>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={() => deleteCampaignMutation.mutate(editingCampaignId)}
-                            className="bg-red-600 text-white hover:bg-red-700"
-                          >
-                            {deleteCampaignMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Delete
-                          </Button>
-                        </DialogClose>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                )}
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSaveDraft}
-                  disabled={saveDraftMutation.isPending}
-                >
-                  {saveDraftMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}
-                  Save as Draft
-                </Button>
-
-                <Button
-                  type="button"
-                  onClick={handleFinalSubmit}
-                  disabled={launchCampaignMutation.isPending}
-                  className="bg-emerald-600 font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700"
-                >
-                  {launchCampaignMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Megaphone className="mr-2 h-4 w-4" />
-                  )}
-                  {editingCampaignId ? 'Update Campaign' : 'Launch Campaign'}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <Step5Summary
+          name={name}
+          retryOnFailure={retryOnFailure}
+          enableWarmup={enableWarmup}
+          sessionMode={sessionMode}
+          selectedSessions={selectedSessions}
+          recipients={recipients}
+          templateDrafts={templateDrafts}
+          userFiles={userFiles}
+          editingCampaignId={editingCampaignId}
+          setIsPhonePreviewOpen={setIsPhonePreviewOpen}
+          setStep={setStep}
+          deleteCampaignMutation={deleteCampaignMutation}
+          handleSaveDraft={handleSaveDraft}
+          isSavingDraft={saveDraftMutation.isPending}
+          handleFinalSubmit={handleFinalSubmit}
+          isLaunching={launchCampaignMutation.isPending}
+        />
       )}
 
-      {/* CSV Import Modal Dialog */}
-      <Dialog open={isCsvModalOpen} onOpenChange={setIsCsvModalOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
-              <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
-              Import Recipients via CSV
-            </DialogTitle>
-            <DialogDescription>
-              Upload a CSV or Excel file to directly add recipient phone numbers to this campaign.
-            </DialogDescription>
-          </DialogHeader>
+      {/* Modals */}
+      <CsvImportModal
+        isOpen={isCsvModalOpen}
+        onClose={() => setIsCsvModalOpen(false)}
+        setRecipients={setRecipients}
+      />
 
-          <div className="space-y-4 py-2">
-            {/* File Upload Area */}
-            <div
-              className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-lg p-5 text-center hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer"
-              onClick={() => csvFileInputRef.current?.click()}
-            >
-              <input
-                type="file"
-                accept=".csv, .xlsx"
-                className="hidden"
-                ref={csvFileInputRef}
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) setCsvFile(file)
-                }}
-              />
-              <Upload className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-              {csvFile ? (
-                <div>
-                  <p className="font-medium text-emerald-600 dark:text-emerald-400 text-sm">{csvFile.name}</p>
-                  <p className="text-xs text-slate-500 font-normal mt-0.5">
-                    {(csvFile.size / 1024).toFixed(1)} KB • Click to change file
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Click to select CSV or XLSX file</p>
-                  <p className="text-xs text-slate-400 mt-1">Columns: name, phone_number, label</p>
-                </div>
-              )}
-            </div>
-
-            {/* Save to contacts option checkbox & notice */}
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-2 bg-slate-50/50 dark:bg-slate-900/50">
-              <label className="flex items-center gap-2.5 cursor-pointer font-medium text-sm text-slate-800 dark:text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={saveToContacts}
-                  onChange={(e) => setSaveToContacts(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span>Add these customers to contacts</span>
-              </label>
-
-              {saveToContacts && (
-                <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 p-2.5 border border-amber-200/80 dark:border-amber-900/50 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
-                  <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p>
-                    <span className="font-semibold">Note:</span> If phone number matches an existing contact, details will be overwritten, and new labels will be added on.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Download Template */}
-            <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
-              <span>Need a sample template?</span>
-              <button
-                type="button"
-                onClick={handleDownloadCsvTemplate}
-                className="text-emerald-600 hover:underline inline-flex items-center gap-1 font-medium"
-              >
-                <Download className="h-3.5 w-3.5" /> Download CSV Template
-              </button>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsCsvModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleProcessCsvImport}
-              disabled={!csvFile || isImportingCsv}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {isImportingCsv && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Import Recipients
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* WHATSAPP MESSAGE PREVIEW MODAL FOR CREATION STEP 4 */}
-      <Dialog
-        open={isPhonePreviewOpen}
-        onOpenChange={setIsPhonePreviewOpen}
-      >
-        <DialogContent showCloseButton={false} className="sm:max-w-md bg-transparent border-none shadow-none p-0 flex justify-center">
-          <DialogTitle className="sr-only">Message Preview</DialogTitle>
-          <DialogDescription className="sr-only">WhatsApp UI Message Preview</DialogDescription>
-          
-          {/* Phone Frame */}
-          <div className="w-[340px] h-[650px] border-[14px] border-slate-900 rounded-[3rem] overflow-hidden relative shadow-2xl flex flex-col bg-[#efeae2] dark:bg-[#0b141a]">
-            {/* Phone Notch/Dynamic Island */}
-            <div className="absolute top-0 inset-x-0 h-6 flex justify-center z-20 pointer-events-none">
-              <div className="w-32 h-6 bg-slate-900 rounded-b-2xl"></div>
-            </div>
-            
-            {/* WhatsApp Header */}
-            <div className="bg-[#008069] dark:bg-[#202c33] text-white pt-8 pb-3 px-2 flex items-center gap-2 z-10 shadow-sm shrink-0">
-              <button 
-                onClick={() => setIsPhonePreviewOpen(false)} 
-                className="flex items-center justify-center p-1 -ml-1 rounded-full hover:bg-white/20 transition-colors cursor-pointer"
-                aria-label="Back"
-              >
-                <ArrowLeft className="w-[22px] h-[22px] text-white" />
-              </button>
-              <div className="w-10 h-10 rounded-full bg-slate-300 dark:bg-slate-600 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                <User className="w-6 h-6 text-slate-500 dark:text-slate-400" />
-              </div>
-              <div className="flex flex-col flex-1 min-w-0 ml-1">
-                <span className="font-semibold text-[16px] truncate leading-tight">
-                  {name || 'Sample Contact'}
-                </span>
-                <span className="text-xs text-white/80 font-medium">online</span>
-              </div>
-              <MoreVertical className="w-5 h-5 text-white/90 shrink-0" />
-            </div>
-
-            {/* Chat Background Pattern */}
-            <div className="absolute inset-0 top-20 bottom-14 opacity-[0.06] dark:opacity-[0.03] pointer-events-none mix-blend-multiply" 
-                 style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: 'cover' }}>
-            </div>
-
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 relative z-10">
-              {/* Date Badge */}
-              <div className="flex justify-center my-2">
-                <span className="bg-[#e1f3fb]/90 dark:bg-[#182229]/90 text-[#54656f] dark:text-[#8696a0] text-xs px-3 py-1.5 rounded-lg shadow-sm font-medium uppercase tracking-wide text-[10px]">
-                  Today
-                </span>
-              </div>
-
-              {/* Message Bubbles for each template */}
-              {templateDrafts.map((template, idx) => {
-                const mediaList = resolveDraftMediaList(template, userFiles)
-                const hasMedia = mediaList.length > 0
-
-                return (
-                  <div key={idx} className="space-y-1">
-                    {templateDrafts.length > 1 && (
-                      <div className="text-[10px] font-semibold text-slate-500 text-right pr-1">
-                        Template {idx + 1}
-                      </div>
-                    )}
-                    <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2 max-w-[85%] ml-auto relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">
-                      {hasMedia && (
-                        <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 p-1 flex flex-wrap gap-1">
-                          {mediaList.map((item, mIdx) => {
-                            if (item.type === 'video') {
-                              return <video key={mIdx} src={item.url} controls className="w-full h-auto max-h-48 bg-black rounded" />
-                            }
-                            if (item.type === 'audio') {
-                              return <audio key={mIdx} src={item.url} controls className="w-full max-w-full h-10 my-1" />
-                            }
-                            if (item.type === 'document') {
-                              return (
-                                <div key={mIdx} className="flex items-center gap-2 p-2 bg-black/5 dark:bg-white/5 rounded w-full">
-                                  <div className="w-8 h-8 rounded bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-[10px] shadow-sm">FILE</div>
-                                  <span className="text-xs truncate font-medium flex-1">{item.name || 'Document Attachment'}</span>
-                                </div>
-                              )
-                            }
-                            if (mediaList.length === 1) {
-                              return (
-                                <img
-                                  key={mIdx}
-                                  src={item.url}
-                                  alt="Media attachment"
-                                  loading="eager"
-                                  decoding="async"
-                                  className="w-full h-auto max-h-48 object-cover rounded"
-                                />
-                              )
-                            }
-                            return (
-                              <img
-                                key={mIdx}
-                                src={item.url}
-                                alt={`Media ${mIdx + 1}`}
-                                loading="eager"
-                                decoding="async"
-                                className="h-16 w-16 object-cover rounded border border-black/10 dark:border-white/10"
-                              />
-                            )
-                          })}
-                        </div>
-                      )}
-                      
-                      <div className="mb-2 font-normal">
-                        {template.template || (hasMedia ? '' : `[message]`)}
-                      </div>
-
-                      {/* Footer */}
-                      {template.footer ? (
-                        <div className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-1 italic border-t border-black/5 dark:border-white/5 pt-1">
-                          {template.footer}
-                        </div>
-                      ) : null}
-
-                      {/* Interactive Buttons */}
-                      {template.buttons?.length ? (
-                        <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
-                          {template.buttons.map((button, bIdx) => {
-                            const label = button.display_text || button.value || `Button ${bIdx + 1}`
-                            const val = button.value || ''
-                            return (
-                              <div
-                                key={button.id || bIdx}
-                                className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-sm dark:bg-[#111b21]/50 dark:text-[#53bdeb] flex flex-col items-center justify-center"
-                              >
-                                <span>{label}</span>
-                                {val && val !== label && (
-                                  <span className="text-[10px] opacity-75 truncate max-w-full font-normal">{val}</span>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      ) : null}
-                      
-                      {/* Meta row: Time and Ticks */}
-                      <div className="flex justify-end items-center gap-1 float-right mt-1 ml-2">
-                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
-                          12:00
-                        </span>
-                        <CheckCheck className="w-[15px] h-[15px] text-[#53bdeb]" />
-                      </div>
-                      
-                      {/* Bubble Tail SVG */}
-                      <svg viewBox="0 0 8 13" className="absolute top-0 -right-2 w-2 h-3 text-[#d9fdd3] dark:text-[#005c4b] fill-current">
-                        <path d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z"></path>
-                      </svg>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Input Footer */}
-            <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-2 py-2.5 flex items-center gap-2 z-10 shrink-0 pb-6 sm:pb-3 border-t border-black/5 dark:border-white/5">
-              <div className="flex-1 bg-white dark:bg-[#2a3942] h-10 rounded-full flex items-center px-4 shadow-sm border border-transparent dark:border-white/5">
-                <span className="text-[#8696a0] text-[15px]">Message</span>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center shrink-0 shadow-sm text-white">
-                <Mic className="w-5 h-5 fill-current" />
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PhonePreviewModal
+        isOpen={isPhonePreviewOpen}
+        onClose={() => setIsPhonePreviewOpen(false)}
+        name={name}
+        templateDrafts={templateDrafts}
+        userFiles={userFiles}
+      />
     </div>
   )
 }

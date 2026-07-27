@@ -1,49 +1,20 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
-  CheckCircle2,
-  Clock,
-  Loader2,
   Megaphone,
-  Pause,
-  Play,
   Plus,
-  FileText,
-  Activity,
   LayoutGrid,
   List,
-  AlertCircle,
-  RotateCcw,
-  Video as VideoIcon,
-  Edit3,
 } from 'lucide-react'
-import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { api, getErrorMessage } from '@/lib/api'
-import {
-  WhatsAppPhonePreviewModal,
-  resolveTemplateMediaList,
-} from '@/components/campaigns/WhatsAppPhonePreviewModal'
+import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
 import { CustomerListModal } from '@/components/campaigns/CustomerListModal'
 import { Button } from '@/components/ui/button'
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { MerchantCampaignViews } from '@/components/merchant-campaigns-index/components/MerchantCampaignViews'
 
 export const Route = createFileRoute('/merchant/campaigns/')({
   component: CampaignsPage,
@@ -54,11 +25,8 @@ function CampaignsPage() {
   const queryClient = useQueryClient()
   const [selectedPreviewCampaign, setSelectedPreviewCampaign] = useState<any>(null)
   const [selectedCustomerListCampaign, setSelectedCustomerListCampaign] = useState<any>(null)
+  const [actionId, setActionId] = useState<string | number | undefined>(undefined)
 
-
-
-
-  // Fetch campaigns
   const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
     queryKey: ['campaigns'],
     queryFn: () => api.get('blast-campaigns/').json<any>(),
@@ -69,7 +37,10 @@ function CampaignsPage() {
     : campaignsResponse?.results || []
 
   const pauseCampaignMutation = useMutation({
-    mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/pause/`).json(),
+    mutationFn: (id: string | number) => {
+      setActionId(id)
+      return api.post(`blast-campaigns/${id}/pause/`).json()
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast.success('Campaign paused.')
@@ -77,10 +48,14 @@ function CampaignsPage() {
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to pause campaign.'))
     },
+    onSettled: () => setActionId(undefined),
   })
 
   const resumeCampaignMutation = useMutation({
-    mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/resume/`).json(),
+    mutationFn: (id: string | number) => {
+      setActionId(id)
+      return api.post(`blast-campaigns/${id}/resume/`).json()
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast.success('Campaign resumed.')
@@ -88,12 +63,14 @@ function CampaignsPage() {
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to resume campaign.'))
     },
+    onSettled: () => setActionId(undefined),
   })
 
-
-
   const retryFailedMutation = useMutation({
-    mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/retry-failed/`).json<any>(),
+    mutationFn: (id: string | number) => {
+      setActionId(id)
+      return api.post(`blast-campaigns/${id}/retry-failed/`).json<any>()
+    },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['campaign-logs'] })
@@ -102,8 +79,8 @@ function CampaignsPage() {
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to retry campaign.'))
     },
+    onSettled: () => setActionId(undefined),
   })
-
 
   const handleEdit = (campaign: any) => {
     navigate({ to: '/merchant/campaigns/create', search: { edit: campaign.id } })
@@ -127,7 +104,6 @@ function CampaignsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Card / Table Toggle */}
           <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
             <Button
               type="button"
@@ -162,522 +138,50 @@ function CampaignsPage() {
           </div>
 
           <Button
-            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20"
             onClick={() => navigate({ to: '/merchant/campaigns/create' })}
+            className="bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700"
           >
-            <Plus className="mr-2 h-4 w-4" />
-            New Campaign
+            <Plus className="mr-2 h-4 w-4" /> Create New Campaign
           </Button>
         </div>
       </div>
 
-      {isLoadingCampaigns ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-        </div>
-      ) : campaigns.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900">
-          <Megaphone className="mx-auto mb-4 h-12 w-12 text-slate-300" />
-          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-            No Campaigns Yet
-          </h3>
-          <p className="mb-4">
-            Create your first WhatsApp blast to reach your customers.
-          </p>
-          <Button onClick={() => navigate({ to: '/merchant/campaigns/create' })} variant="outline">
-            Create Campaign
-          </Button>
-        </div>
-      ) : viewMode === 'table' ? (
-        /* TABLE VIEW */
-        <Card className="border-slate-200 shadow-sm dark:border-slate-800">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50/80 dark:bg-slate-900/60">
-                  <TableHead className="w-[240px]">Campaign Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Recipients</TableHead>
-                  <TableHead>Templates</TableHead>
-                  <TableHead className="w-[120px]">Progress</TableHead>
-                  <TableHead>Created / Completed Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaigns.map((campaign: any) => {
-                  const cStatus = (campaign.status || 'draft').toLowerCase()
-                  const stats = campaign.stats || {}
-                  const total = stats.total || campaign.recipient_phones?.length || campaign.contacts?.length || 0
-                  const sent = stats.sent || campaign.current_index || 0
-                  const failed = stats.failed || 0
-                  const percent = total > 0 ? Math.min(100, Math.round(((sent + failed) / total) * 100)) : 0
+      <MerchantCampaignViews
+        viewMode={viewMode}
+        campaigns={campaigns}
+        isLoading={isLoadingCampaigns}
+        onEdit={handleEdit}
+        onPause={(id) => pauseCampaignMutation.mutate(id)}
+        onResume={(id) => resumeCampaignMutation.mutate(id)}
+        onRetryFailed={(id) => retryFailedMutation.mutate(id)}
+        onProgress={(id) => navigate({ to: '/merchant/campaigns/progress', search: { id } })}
+        onPreview={(campaign) => setSelectedPreviewCampaign(campaign)}
+        onCustomerList={(campaign) => setSelectedCustomerListCampaign(campaign)}
+        isPausing={pauseCampaignMutation.isPending}
+        isResuming={resumeCampaignMutation.isPending}
+        isRetrying={retryFailedMutation.isPending}
+        actionId={actionId}
+      />
 
-                  return (
-                    <TableRow key={campaign.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50">
-                      <TableCell className="font-bold text-slate-900 dark:text-slate-100">
-                        {campaign.name}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <span
-                            className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                              cStatus === 'completed'
-                                ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                                : cStatus === 'scheduled'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                                : cStatus === 'running'
-                                ? 'bg-teal-100 text-teal-800 border border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800'
-                                : cStatus === 'paused'
-                                ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
-                                : cStatus === 'failed'
-                                ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                                : cStatus === 'cancelled'
-                                ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                                : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
-                            }`}
-                          >
-                            {cStatus.toUpperCase()}
-                          </span>
-                          {campaign.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                            <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[220px] leading-tight" title={campaign.error_message}>
-                              <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
-                              <span className="truncate">{campaign.error_message}</span>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm font-medium">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCustomerListCampaign(campaign)}
-                          className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-                          title="Click to view customer list"
-                        >
-                          {total} customers
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPreviewCampaign(campaign)}
-                          className="inline-flex items-center gap-1.5 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-                          title="Click to preview message"
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          {campaign.templates?.length || (campaign.template ? 1 : 1)} template(s)
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        {cStatus === 'draft' ? (
-                          <span className="text-xs text-slate-400">Not Launched</span>
-                        ) : (
-                          <div className="w-24 space-y-1">
-                            <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
-                              <span>{sent}/{total}</span>
-                              <span className="text-slate-700 dark:text-slate-300 font-bold">{percent}%</span>
-                            </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                              <div
-                                className="h-full bg-slate-500 transition-all duration-300"
-                                style={{ width: `${percent}%` }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-500 whitespace-nowrap">
-                        <div>
-                          <span className="text-slate-400">Created:</span>{' '}
-                          {dayjs(campaign.created_at || campaign.createdAt).format('DD/MM/YY h:mm A')}
-                        </div>
-                        {(campaign.completed_at || campaign.completedAt || (cStatus === 'completed' && campaign.updatedAt)) && (
-                          <div className="mt-0.5 font-medium text-slate-600 dark:text-slate-400">
-                            <span className="text-slate-500 dark:text-slate-400">Completed:</span>{' '}
-                            {dayjs(campaign.completed_at || campaign.completedAt || campaign.updatedAt).format('DD/MM/YY h:mm A')}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {cStatus === 'paused' && (
-                            <Button
-                              type="button"
-                              variant="default"
-                              size="sm"
-                              className="h-8 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
-                              disabled={resumeCampaignMutation.isPending}
-                              onClick={() => resumeCampaignMutation.mutate(campaign.id)}
-                            >
-                              {resumeCampaignMutation.isPending && resumeCampaignMutation.variables === campaign.id ? (
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Play className="mr-1 h-3.5 w-3.5 fill-current" />
-                              )}
-                              Resume
-                            </Button>
-                          )}
-                          {cStatus === 'running' && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50 font-medium dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-950/40"
-                              disabled={pauseCampaignMutation.isPending}
-                              onClick={() => pauseCampaignMutation.mutate(campaign.id)}
-                            >
-                              {pauseCampaignMutation.isPending && pauseCampaignMutation.variables === campaign.id ? (
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Pause className="mr-1 h-3.5 w-3.5" />
-                              )}
-                              Pause
-                            </Button>
-                          )}
-                          {cStatus !== 'draft' && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2.5 text-xs"
-                              onClick={() => navigate({ to: '/merchant/campaigns/progress', search: { id: campaign.id } })}
-                            >
-                              <Activity className="mr-1 h-3.5 w-3.5" />
-                              Progress
-                            </Button>
-                          )}
-                          {Boolean(campaign.stats?.failed) && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2.5 text-xs border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300 font-medium"
-                              disabled={retryFailedMutation.isPending}
-                              onClick={() => retryFailedMutation.mutate(campaign.id)}
-                            >
-                              {retryFailedMutation.isPending && retryFailedMutation.variables === campaign.id ? (
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <RotateCcw className="mr-1 h-3.5 w-3.5 text-rose-600" />
-                              )}
-                              Retry ({campaign.stats.failed})
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2.5 text-xs font-medium"
-                            onClick={() => handleEdit(campaign)}
-                          >
-                            <Edit3 className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
-                            {cStatus === 'draft' ? 'Edit Draft' : 'Edit'}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ) : (
-        /* CARD VIEW */
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {isLoadingCampaigns ? (
-          <div className="col-span-full flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-          </div>
-        ) : campaigns.length === 0 ? (
-          <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900">
-            <Megaphone className="mx-auto mb-4 h-12 w-12 text-slate-300" />
-            <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-              No Campaigns Yet
-            </h3>
-            <p className="mb-4">
-              Create your first WhatsApp blast to reach your customers.
-            </p>
-            <Button onClick={() => navigate({ to: '/merchant/campaigns/create' })} variant="outline">
-              Create Campaign
-            </Button>
-          </div>
-        ) : (
-          campaigns.map((campaign: any) => (
-            <Card
-              key={campaign.id}
-              className="group overflow-hidden border-slate-200/80 bg-white/60 shadow-lg shadow-slate-900/5 transition-all duration-300 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900/60 backdrop-blur-sm"
-            >
-              <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4 dark:border-slate-800 dark:bg-slate-800/50">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="line-clamp-1 text-lg">
-                      {campaign.name}
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      {dayjs(campaign.created_at || campaign.createdAt).format('DD/MM/YY h:mm A')}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const cStatus = (campaign.status || 'draft').toLowerCase()
-                      return (
-                        <span
-                          className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            cStatus === 'completed'
-                              ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                              : cStatus === 'scheduled'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                              : cStatus === 'running'
-                              ? 'bg-teal-100 text-teal-800 border border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800'
-                              : cStatus === 'paused'
-                              ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
-                              : cStatus === 'failed'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                              : cStatus === 'cancelled'
-                              ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                              : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
-                          }`}
-                        >
-                          {cStatus === 'draft' && (
-                            <Clock className="mr-1 h-3 w-3" />
-                          )}
-                          {cStatus === 'scheduled' && (
-                            <Clock className="mr-1 h-3 w-3" />
-                          )}
-                          {cStatus === 'running' && (
-                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                          )}
-                          {cStatus === 'completed' && (
-                            <CheckCircle2 className="mr-1 h-3 w-3 text-slate-500 dark:text-slate-400" />
-                          )}
-                          {cStatus === 'paused' && (
-                            <Pause className="mr-1 h-3 w-3" />
-                          )}
-                          {cStatus.toUpperCase()}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="space-y-4">
-                  {campaign.error_message && ((campaign.status || '').toLowerCase() === 'paused' || (campaign.status || '').toLowerCase() === 'failed') && (
-                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-semibold">Paused Reason:</span> {campaign.error_message}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <p className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
-                      Recipients
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCustomerListCampaign(campaign)}
-                      className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-                      title="Click to view customer list"
-                    >
-                      {campaign.recipient_phones?.length || 0} customers
-                    </button>
-                  </div>
-
-                  {campaign.templates?.length ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Message Preview ({campaign.templates.length} template{campaign.templates.length === 1 ? '' : 's'})
-                        </p>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950/40 cursor-pointer"
-                          onClick={() => setSelectedPreviewCampaign(campaign)}
-                        >
-                          Phone Preview
-                        </Button>
-                      </div>
-                      <div className="space-y-3">
-                        {campaign.templates.map((template: any, templateIndex: number) => {
-                          const mediaList = resolveTemplateMediaList(template)
-
-                          return (
-                            <div key={template.id || templateIndex} className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                              <p className="mb-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                                Template {templateIndex + 1}
-                              </p>
-
-                              {mediaList.length > 0 && (
-                                <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                                  {mediaList.map((item, mIdx) => {
-                                    if (item.type === 'document') {
-                                      return (
-                                        <a
-                                          key={mIdx}
-                                          href={item.url}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800"
-                                        >
-                                          <FileText className="h-4 w-4 text-red-500 shrink-0" />
-                                          <span className="truncate max-w-[150px] font-medium text-slate-700 dark:text-slate-200">
-                                            {item.name || 'Document'}
-                                          </span>
-                                        </a>
-                                      )
-                                    }
-
-                                    return (
-                                      <a
-                                        key={mIdx}
-                                        href={item.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="group relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 flex items-center justify-center hover:border-emerald-500 transition-colors"
-                                        title={item.name || `Media #${mIdx + 1}`}
-                                      >
-                                        {item.type === 'video' ? (
-                                          <div className="flex h-full w-full items-center justify-center bg-slate-900 text-white">
-                                            <VideoIcon className="h-4 w-4" />
-                                          </div>
-                                        ) : (
-                                          <img
-                                            src={item.url}
-                                            alt={item.name || `Media ${mIdx + 1}`}
-                                            loading="eager"
-                                            decoding="async"
-                                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                                          />
-                                        )}
-                                      </a>
-                                    )
-                                  })}
-                                </div>
-                              )}
-
-                              <p className="line-clamp-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
-                                {template.text || template.template || 'No text'}
-                              </p>
-                              {template.footer ? (
-                                <p className="mt-1 text-xs italic text-slate-500 dark:text-slate-400">{template.footer}</p>
-                              ) : null}
-                              {template.buttons?.length ? (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  {template.buttons.map((button: any, index: number) => (
-                                    <span key={button.id || index} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
-                                      {button.displayText || button.display_text || button.text || button.title || button.value || 'Button'}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-
-                {(() => {
-                  const cStatus = (campaign.status || 'draft').toLowerCase()
-                  return (
-                    <div className="mt-4 space-y-2">
-                      {cStatus === 'draft' ? (
-                        <div className="flex flex-col gap-2">
-                          <Button
-                            variant="outline"
-                            className="w-full bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
-                            onClick={() => handleEdit(campaign)}
-                          >
-                            Edit Draft
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full flex items-center justify-center gap-2"
-                          onClick={() => navigate({ to: '/merchant/campaigns/progress', search: { id: campaign.id } })}
-                        >
-                          <Activity className="h-4 w-4" />
-                          View Progress
-                        </Button>
-                      )}
-                      {cStatus !== 'draft' && cStatus !== 'completed' && cStatus !== 'cancelled' && (
-                        <div className="flex flex-col gap-2">
-                          {cStatus === 'running' && (
-                            <Button
-                              variant="outline"
-                              className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
-                              disabled={pauseCampaignMutation.isPending}
-                              onClick={() => pauseCampaignMutation.mutate(campaign.id)}
-                            >
-                              {pauseCampaignMutation.isPending && pauseCampaignMutation.variables === campaign.id ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Pause className="mr-2 h-4 w-4" />
-                              )}
-                              Pause Campaign
-                            </Button>
-                          )}
-                          {cStatus === 'paused' && (
-                            <Button
-                              className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                              disabled={resumeCampaignMutation.isPending}
-                              onClick={() => resumeCampaignMutation.mutate(campaign.id)}
-                            >
-                              {resumeCampaignMutation.isPending && resumeCampaignMutation.variables === campaign.id ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Play className="mr-2 h-4 w-4" />
-                              )}
-                              Resume Campaign
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => handleEdit(campaign)}
-                          >
-                            Edit
-                          </Button>
-                        </div>
-                      )}
-                      {cStatus === 'scheduled' && (
-                        <Button
-                          disabled
-                          className="mt-2 w-full"
-                          variant="secondary"
-                        >
-                          <Clock className="mr-2 h-4 w-4" />
-                          Scheduled...
-                        </Button>
-                      )}
-                    </div>
-                  )
-                })()}
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+      {/* Preview Modal */}
+      {selectedPreviewCampaign && (
+        <WhatsAppPhonePreviewModal
+          isOpen={Boolean(selectedPreviewCampaign)}
+          onClose={() => setSelectedPreviewCampaign(null)}
+          title={selectedPreviewCampaign.name}
+          templates={selectedPreviewCampaign.templates || [selectedPreviewCampaign.template || { text: 'Hello' }]}
+        />
       )}
 
-      <WhatsAppPhonePreviewModal
-        campaign={selectedPreviewCampaign}
-        onClose={() => setSelectedPreviewCampaign(null)}
-      />
-
-      <CustomerListModal
-        campaign={selectedCustomerListCampaign}
-        onClose={() => setSelectedCustomerListCampaign(null)}
-        invalidateQueryKey={['campaigns']}
-      />
+      {/* Customer List Modal */}
+      {selectedCustomerListCampaign && (
+        <CustomerListModal
+          isOpen={Boolean(selectedCustomerListCampaign)}
+          onClose={() => setSelectedCustomerListCampaign(null)}
+          campaignTitle={selectedCustomerListCampaign.name}
+          recipients={selectedCustomerListCampaign.recipient_phones || []}
+        />
+      )}
     </div>
   )
 }

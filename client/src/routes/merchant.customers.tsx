@@ -6,7 +6,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Plus, Trash2, Search, Loader2, Pencil } from 'lucide-react'
+import { Plus, Trash2, Search, Loader2 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
@@ -35,181 +35,14 @@ import {
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
+import type { Customer, CustomerImportResult, CustomerResponse } from '@/components/merchant-customers/types'
+import { EditCustomerButton, DeleteCustomerButton } from '@/components/merchant-customers/components/CustomerDialogs'
+
 export const Route = createFileRoute('/merchant/customers')({
   component: CustomersPage,
 })
 
-type Customer = {
-  id: string
-  name: string
-  phone_number: string
-  label?: string
-  created_at: string
-}
-
-type CustomerImportResult = {
-  success?: boolean
-  imported?: number
-  created?: number
-  updated?: number
-  skipped?: number
-  count?: number
-  total?: number
-}
-
-type CustomerResponse = {
-  count: number
-  next: string | null
-  previous: string | null
-  page_size: number
-  results: Customer[]
-}
-
 const columnHelper = createColumnHelper<Customer>()
-
-const DeleteCustomerButton = ({ id, removeCustomerMutation }: { id: string, removeCustomerMutation: any }) => {
-  const [isOpen, setIsOpen] = useState(false)
-  
-  return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-red-500 hover:text-red-700 hover:bg-red-50"
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Are you sure?</DialogTitle>
-          <DialogDescription>
-            This action cannot be undone. This will permanently delete the customer.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={() => {
-              removeCustomerMutation.mutate(id, {
-                onSuccess: () => setIsOpen(false)
-              })
-            }}
-            disabled={removeCustomerMutation.isPending}
-            className="bg-red-600 hover:bg-red-700 text-white"
-          >
-            {removeCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-const EditCustomerButton = ({ customer, updateCustomerMutation }: { customer: Customer; updateCustomerMutation: any }) => {
-  const [isOpen, setIsOpen] = useState(false)
-  const [name, setName] = useState(customer.name || '')
-  const [phone, setPhone] = useState(customer.phone_number || '')
-  const [label, setLabel] = useState(customer.label || '')
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(customer.name || '')
-      setPhone(customer.phone_number || '')
-      setLabel(customer.label || '')
-    }
-  }, [isOpen, customer])
-
-  const handleUpdate = () => {
-    if (!name || !phone) {
-      toast.error('Please fill in both name and phone.')
-      return
-    }
-    updateCustomerMutation.mutate(
-      { id: customer.id, name, phone_number: phone, label },
-      {
-        onSuccess: () => setIsOpen(false)
-      }
-    )
-  }
-
-  return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-        >
-          <Pencil className="w-4 h-4" />
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Edit Customer</DialogTitle>
-          <DialogDescription>
-            Update customer details. Ensure the phone number includes the country code.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor={`edit-name-${customer.id}`} className="text-right">
-              Name
-            </Label>
-            <Input
-              id={`edit-name-${customer.id}`}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
-              className="col-span-3"
-            />
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor={`edit-phone-${customer.id}`} className="text-right">
-              Phone
-            </Label>
-            <Input
-              id={`edit-phone-${customer.id}`}
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="60123456789"
-              className="col-span-3"
-            />
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor={`edit-label-${customer.id}`} className="text-right">
-              Label
-            </Label>
-            <Input
-              id={`edit-label-${customer.id}`}
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="VIP, Retail, etc."
-              className="col-span-3"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleUpdate}
-            disabled={updateCustomerMutation.isPending}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-          >
-            {updateCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 
 function CustomersPage() {
   const queryClient = useQueryClient()
@@ -249,7 +82,6 @@ function CustomersPage() {
     placeholderData: (previousData) => previousData,
   })
 
-  // Support paginated results from DRF ({ results: [] }) or flat array
   const customers: Customer[] = useMemo(() => {
     if (!response) return []
     return Array.isArray(response) ? response : response.results
@@ -508,65 +340,65 @@ function CustomersPage() {
           )}
           
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Customer
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Add New Customer</DialogTitle>
-              <DialogDescription>
-                Add a new customer to your contact list. Ensure the phone number includes the country code.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
-                  Name
-                </Label>
-                <Input
-                  id="name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="John Doe"
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="phone" className="text-right">
-                  Phone
-                </Label>
-                <Input
-                  id="phone"
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="60123456789"
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="label" className="text-right">
-                  Label
-                </Label>
-                <Input
-                  id="label"
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                  placeholder="VIP, Retail, etc."
-                  className="col-span-3"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" onClick={handleAdd} disabled={addCustomerMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
-                {addCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Save Contact
+            <DialogTrigger asChild>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Customer
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add New Customer</DialogTitle>
+                <DialogDescription>
+                  Add a new customer to your contact list. Ensure the phone number includes the country code.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="name" className="text-right">
+                    Name
+                  </Label>
+                  <Input
+                    id="name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="John Doe"
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="phone" className="text-right">
+                    Phone
+                  </Label>
+                  <Input
+                    id="phone"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    placeholder="60123456789"
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="label" className="text-right">
+                    Label
+                  </Label>
+                  <Input
+                    id="label"
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    placeholder="VIP, Retail, etc."
+                    className="col-span-3"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" onClick={handleAdd} disabled={addCustomerMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                  {addCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Save Contact
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -669,22 +501,22 @@ function CustomersPage() {
                 <SelectItem value="100">100 / page</SelectItem>
               </SelectContent>
             </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
           </div>
         </div>
       </div>

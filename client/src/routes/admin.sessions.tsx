@@ -4,23 +4,14 @@ import {
   Loader2,
   Plus,
   QrCode,
-  ShieldCheck,
   Smartphone,
-  Trash2,
   Copy,
   Settings,
-  RefreshCw,
-  LogOut,
-  UserCheck,
-  HelpCircle,
-  Send,
-  Shuffle,
-  Tag,
   LayoutGrid,
   List,
   Search,
   Check,
-  ChevronDown,
+  Tag,
   Clock,
   Calendar,
 } from 'lucide-react'
@@ -41,67 +32,15 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Textarea } from '@/components/ui/textarea'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+
+import type { Session, MasterPhone, User } from '@/components/admin-sessions/types'
+import { rows, ownerDisplay } from '@/components/admin-sessions/types'
+import { MasterPhonesCard } from '@/components/admin-sessions/components/MasterPhonesCard'
+import { ManageAdminSessionDialog } from '@/components/admin-sessions/components/ManageAdminSessionDialog'
 
 export const Route = createFileRoute('/admin/sessions')({ ssr: false, component: AdminSessionsPage })
-
-type User = { id: string; phone_number?: string; role?: string }
-type Session = {
-  id: string
-  session_id?: string
-  phone_number?: string
-  alias?: string
-  labels?: string[]
-  status?: string
-  user?: string | User
-  warmup_schedule?: number[]
-  max_message_count_per_day?: number
-  min_interval_seconds?: number
-  max_interval_seconds?: number
-  active_start_time?: string
-  active_end_time?: string
-  created_at?: string
-}
-type MasterPhone = {
-  id: string
-  session: string
-  session_id?: string
-  session_status?: string
-  phone_number?: string
-  is_active: boolean
-  created_at?: string
-}
-
-function rows<T>(data: unknown): T[] {
-  if (Array.isArray(data)) return data as T[]
-  if (data && typeof data === 'object' && 'results' in data) return (data as { results?: T[] }).results ?? []
-  return []
-}
-
-function ownerDisplay(user: Session['user']) {
-  if (!user) return '-'
-  if (typeof user === 'string') return user
-  return user.phone_number ? `${user.phone_number} (${user.role || 'user'})` : user.id
-}
-
-function ownerId(user: Session['user']) {
-  if (!user) return ''
-  if (typeof user === 'string') return user
-  return user.id
-}
 
 function getStatusBadge(status?: string) {
   const s = (status || 'initializing').toLowerCase()
@@ -330,89 +269,17 @@ function AdminSessionsPage() {
       </div>
 
       {/* Master OTP Phones Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-600" /> Master OTP Phone Numbers
-          </CardTitle>
-          <CardDescription>
-            OTPs for user registration and password resets are routed through active master numbers.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <Select
-              value={selectedMasterSession}
-              onValueChange={setSelectedMasterSession}
-              disabled={createMaster.isPending || connectedSessions.length === 0}
-            >
-              <SelectTrigger className="md:w-96">
-                <SelectValue placeholder={connectedSessions.length ? 'Select connected session' : 'No available connected sessions'} />
-              </SelectTrigger>
-              <SelectContent>
-                {connectedSessions.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.phone_number ? `${s.phone_number} (${s.session_id || s.id})` : s.session_id || s.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              onClick={() => {
-                if (!selectedMasterSession) {
-                  toast.error('Please select a session first')
-                  return
-                }
-                createMaster.mutate(selectedMasterSession)
-              }}
-              disabled={createMaster.isPending || !selectedMasterSession}
-            >
-              {createMaster.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Add to Master OTP
-            </Button>
-          </div>
-          {mastersLoading ? (
-            <div className="flex min-h-24 items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Session ID</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Active</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {masters.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-medium">{m.phone_number || '-'}</TableCell>
-                      <TableCell>
-                        <div className="font-medium font-mono text-xs">{m.session_id || m.session}</div>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(m.session_status)}</TableCell>
-                      <TableCell>
-                        <Switch checked={m.is_active} onCheckedChange={(is_active) => toggleMaster.mutate({ id: m.id, is_active })} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => deleteMaster.mutate(m.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {masters.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No master OTP phone numbers configured.</p> : null}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <MasterPhonesCard
+        masters={masters}
+        mastersLoading={mastersLoading}
+        connectedSessions={connectedSessions}
+        selectedMasterSession={selectedMasterSession}
+        setSelectedMasterSession={setSelectedMasterSession}
+        createMaster={createMaster}
+        toggleMaster={toggleMaster}
+        deleteMaster={deleteMaster}
+        getStatusBadge={getStatusBadge}
+      />
 
       {/* Main Sessions List */}
       <Card>
@@ -510,7 +377,6 @@ function AdminSessionsPage() {
               <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
             </div>
           ) : viewMode === 'grid' ? (
-            /* Grid View matching Image 2 */
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {sessions.map((s) => {
                 const sid = s.session_id || s.id
@@ -521,7 +387,6 @@ function AdminSessionsPage() {
                     key={s.id}
                     className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4 flex flex-col justify-between space-y-3.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-md"
                   >
-                    {/* Top Row: Logo + Phone & Date (Left) | Status Badge (Upper Right Corner) */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-3 min-w-0">
                         <div
@@ -543,13 +408,11 @@ function AdminSessionsPage() {
                         </div>
                       </div>
 
-                      {/* Upper Right Corner Status Badge */}
                       <div className="shrink-0">
                         {getStatusBadge(s.status)}
                       </div>
                     </div>
 
-                    {/* Body info: Alias (once!), Session ID, Interval, Active Window & Labels */}
                     <div className="space-y-1.5 text-xs">
                       {s.alias && (
                         <div className="flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-950/30 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
@@ -606,7 +469,6 @@ function AdminSessionsPage() {
                       )}
                     </div>
 
-                    {/* Bottom Row: Manage Button (Right aligned) */}
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end">
                       <Button
                         variant="outline"
@@ -627,7 +489,6 @@ function AdminSessionsPage() {
               )}
             </div>
           ) : (
-            /* Table View */
             <div className="overflow-x-auto border rounded-md">
               <Table>
                 <TableHeader>
@@ -840,511 +701,9 @@ function AdminSessionsPage() {
           onDisconnect={() => setDisconnectConfirmId(manageSession.id)}
           onDelete={() => setDeleteConfirmId(manageSession.id)}
           isReconnecting={reconnectSession.isPending}
+          getStatusBadge={getStatusBadge}
         />
       )}
     </div>
-  )
-}
-
-function ManageAdminSessionDialog({
-  isOpen,
-  onClose,
-  session,
-  users,
-  onUpdated,
-  onScan,
-  onReconnect,
-  onDisconnect,
-  onDelete,
-  isReconnecting,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  session: Session
-  users: User[]
-  onUpdated: () => void
-  onScan: () => void
-  onReconnect: () => void
-  onDisconnect: () => void
-  onDelete: () => void
-  isReconnecting: boolean
-}) {
-  const queryClient = useQueryClient()
-  const [selectedUser, setSelectedUser] = useState(ownerId(session.user))
-  const [alias, setAlias] = useState(session.alias || '')
-  const [labelsStr, setLabelsStr] = useState(session.labels?.join(', ') || '')
-  const [maxMessages, setMaxMessages] = useState<number>(session.max_message_count_per_day ?? 50)
-  const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
-  const [minInterval, setMinInterval] = useState<number>(session.min_interval_seconds ?? 10)
-  const [maxInterval, setMaxInterval] = useState<number>(session.max_interval_seconds ?? 15)
-  const [activeStartTime, setActiveStartTime] = useState<string>(session.active_start_time || '00:00')
-  const [activeEndTime, setActiveEndTime] = useState<string>(session.active_end_time || '23:59')
-  const [newAgentPhone, setNewAgentPhone] = useState('')
-  const [testPhone, setTestPhone] = useState('')
-  const [testText, setTestText] = useState('Hello! This is a test message sent from WhatsBlast session.')
-  const [isSendingTest, setIsSendingTest] = useState(false)
-
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedUser(ownerId(session.user))
-      setAlias(session.alias || '')
-      setLabelsStr(session.labels?.join(', ') || '')
-      setMaxMessages(session.max_message_count_per_day ?? 50)
-      setWarmup(session.warmup_schedule?.join(', ') || '')
-      setMinInterval(session.min_interval_seconds ?? 10)
-      setMaxInterval(session.max_interval_seconds ?? 15)
-      setActiveStartTime(session.active_start_time || '00:00')
-      setActiveEndTime(session.active_end_time || '23:59')
-      setNewAgentPhone('')
-      setTestPhone('')
-      setTestText('Hello! This is a test message sent from WhatsBlast session.')
-      setIsSendingTest(false)
-    }
-  }, [isOpen, session])
-
-  const { data: agentsResponse, isLoading: isLoadingAgents } = useQuery({
-    queryKey: ['agent-phone-numbers', session.id],
-    queryFn: () => api.get(`agent-phone-numbers/?session=${session.id}`).json<any>(),
-    enabled: isOpen,
-  })
-
-  const agents = Array.isArray(agentsResponse) ? agentsResponse : agentsResponse?.results || []
-
-  const updateSessionMutation = useMutation({
-    mutationFn: (data: any) => api.patch(`whatsapp-sessions/${session.id}/`, { json: data }).json(),
-    onSuccess: () => {
-      onUpdated()
-      toast.success('Session updated successfully')
-      onClose()
-    },
-    onError: () => toast.error('Failed to update session'),
-  })
-
-  const createAgentMutation = useMutation({
-    mutationFn: (phone_number: string) => api.post('agent-phone-numbers/', { json: { session: session.id, phone_number } }).json(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent-phone-numbers', session.id] })
-      setNewAgentPhone('')
-      toast.success('Agent phone number added')
-    },
-    onError: () => toast.error('Failed to add agent phone number'),
-  })
-
-  const deleteAgentMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`agent-phone-numbers/${id}/`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent-phone-numbers', session.id] })
-      toast.success('Agent removed')
-    },
-    onError: () => toast.error('Failed to remove agent'),
-  })
-
-  const handleSave = () => {
-    const patchData: any = {}
-    if (selectedUser) {
-      patchData.user = selectedUser
-    }
-    patchData.alias = alias.trim()
-    patchData.labels = labelsStr.split(',').map((s) => s.trim()).filter(Boolean)
-    patchData.max_message_count_per_day = Number(maxMessages) || 50
-    patchData.min_interval_seconds = Number(minInterval) || 10
-    patchData.max_interval_seconds = Number(maxInterval) || 15
-    patchData.active_start_time = activeStartTime || '00:00'
-    patchData.active_end_time = activeEndTime || '23:59'
-
-    if (warmup.trim()) {
-      const parts = warmup.split(',').map((s) => parseInt(s.trim()))
-      if (parts.some(isNaN)) {
-        toast.error('Warmup schedule must be a comma-separated list of numbers')
-        return
-      }
-      patchData.warmup_schedule = parts
-    } else {
-      patchData.warmup_schedule = []
-    }
-
-    updateSessionMutation.mutate(patchData)
-  }
-
-  const handleAddAgent = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newAgentPhone.trim()) return
-    createAgentMutation.mutate(newAgentPhone.trim())
-  }
-
-  const handlePickRandomUser = () => {
-    const usersWithPhone = users.filter((u) => u.phone_number)
-    if (usersWithPhone.length === 0) {
-      toast.error('No users with phone numbers available to pick')
-      return
-    }
-    const randomUser = usersWithPhone[Math.floor(Math.random() * usersWithPhone.length)]
-    if (randomUser.phone_number) {
-      setTestPhone(randomUser.phone_number)
-      toast.info(`Selected random contact: ${randomUser.phone_number}`)
-    }
-  }
-
-  const handleSendTestMessage = async () => {
-    if (!testPhone.trim() || !testText.trim()) {
-      toast.error('Please enter a recipient phone number and test message')
-      return
-    }
-    setIsSendingTest(true)
-    try {
-      const sessionIdStr = session.session_id || session.id
-      await api.post(`messages/${sessionIdStr}/send-text`, {
-        json: { to: testPhone.trim(), text: testText.trim() },
-      }).json()
-      toast.success(`Test message sent to ${testPhone.trim()}!`)
-    } catch (err: any) {
-      const errorMsg = err?.response?.data?.error || err.message || 'Failed to send test message'
-      toast.error(errorMsg)
-    } finally {
-      setIsSendingTest(false)
-    }
-  }
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-emerald-600" /> Manage Session
-          </DialogTitle>
-          <DialogDescription>
-            Configure session settings, forwarding, and test messaging.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          {/* Key Info & Quick Actions Banner */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <div className="space-y-1 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Session ID:</span>
-                <span className="font-mono font-semibold">{session.session_id || session.id}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Phone Number:</span>
-                <span className="font-mono">{session.phone_number || 'Not connected yet'}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {getStatusBadge(session.status)}
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 font-medium">
-                    Actions
-                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem
-                    onClick={() => {
-                      onClose()
-                      onScan()
-                    }}
-                    className="cursor-pointer gap-2 text-xs"
-                  >
-                    <QrCode className="h-3.5 w-3.5 text-slate-600" />
-                    Scan QR
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => onReconnect()}
-                    disabled={isReconnecting}
-                    className="cursor-pointer gap-2 text-xs text-blue-600 focus:text-blue-600"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
-                    Reconnect
-                  </DropdownMenuItem>
-                  {(session.status || '').toLowerCase() === 'connected' && (
-                    <DropdownMenuItem
-                      onClick={() => {
-                        onClose()
-                        onDisconnect()
-                      }}
-                      className="cursor-pointer gap-2 text-xs text-amber-600 focus:text-amber-600"
-                    >
-                      <LogOut className="h-3.5 w-3.5" />
-                      Logout
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => {
-                      onClose()
-                      onDelete()
-                    }}
-                    className="cursor-pointer gap-2 text-xs text-red-600 focus:text-red-600"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete Session
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          <Tabs defaultValue="settings" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="settings">Session settings</TabsTrigger>
-              <TabsTrigger value="forwarding">Forwarding</TabsTrigger>
-              <TabsTrigger value="testing">Testing</TabsTrigger>
-            </TabsList>
-
-            {/* TAB 1: Session Settings */}
-            <TabsContent value="settings" className="space-y-4 pt-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Session Alias (Friendly Name)</Label>
-                  <Input
-                    value={alias}
-                    onChange={(e) => setAlias(e.target.value)}
-                    placeholder="e.g. Marketing Line 1"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Labels / Tags (comma-separated)</Label>
-                  <Input
-                    value={labelsStr}
-                    onChange={(e) => setLabelsStr(e.target.value)}
-                    placeholder="e.g. marketing, primary, cs"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="flex items-center gap-1.5">
-                  <UserCheck className="h-4 w-4 text-slate-500" /> Assign Merchant / Owner
-                </Label>
-                <Select value={selectedUser} onValueChange={setSelectedUser}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select user owner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.phone_number || u.id} ({u.role || 'user'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Max Messages Per Day</Label>
-                  <Input
-                    type="number"
-                    value={maxMessages}
-                    onChange={(e) => setMaxMessages(Number(e.target.value))}
-                    placeholder="50"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <Label>Warmup Schedule</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          Warmup schedule is a comma-separated sequence of daily max message caps during warmup phase.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    value={warmup}
-                    onChange={(e) => setWarmup(e.target.value)}
-                    placeholder="e.g. 5, 10, 15, 20, 30"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Min Interval (seconds)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={minInterval}
-                    onChange={(e) => setMinInterval(parseInt(e.target.value, 10) || 1)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Max Interval (seconds)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={maxInterval}
-                    onChange={(e) => setMaxInterval(parseInt(e.target.value, 10) || 1)}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <Label>Active Window Start</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          Daily start time for sending messages. Messages queued before this time will wait until the window opens.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    type="time"
-                    value={activeStartTime}
-                    onChange={(e) => setActiveStartTime(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <Label>Active Window End</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          Daily end time for sending messages. Messages queued after this time will pause until the next day.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    type="time"
-                    value={activeEndTime}
-                    onChange={(e) => setActiveEndTime(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={handleSave}
-                disabled={updateSessionMutation.isPending}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 rounded-lg shadow-sm transition-colors"
-              >
-                {updateSessionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Session Settings
-              </Button>
-            </TabsContent>
-
-            {/* TAB 2: Forwarding */}
-            <TabsContent value="forwarding" className="space-y-4 pt-3">
-              <p className="text-xs text-slate-500">
-                Messages received on this session will be automatically forwarded to these agent phone numbers.
-              </p>
-
-              <form onSubmit={handleAddAgent} className="flex items-end gap-2">
-                <div className="space-y-1 flex-1">
-                  <Label>Agent Phone Number</Label>
-                  <Input
-                    value={newAgentPhone}
-                    onChange={(e) => setNewAgentPhone(e.target.value)}
-                    placeholder="e.g. 60123456789"
-                  />
-                </div>
-                <Button type="submit" disabled={!newAgentPhone.trim() || createAgentMutation.isPending}>
-                  {createAgentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                </Button>
-              </form>
-
-              <div className="border rounded-md overflow-hidden">
-                {isLoadingAgents ? (
-                  <div className="p-4 flex justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-                  </div>
-                ) : agents.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-slate-500">No forwarding agents added.</div>
-                ) : (
-                  <ul className="divide-y">
-                    {agents.map((agent: any) => (
-                      <li key={agent.id} className="p-3 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                        <span className="font-medium text-sm font-mono">{agent.phone_number}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 px-2"
-                          onClick={() => deleteAgentMutation.mutate(agent.id)}
-                          disabled={deleteAgentMutation.isPending}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* TAB 3: Testing */}
-            <TabsContent value="testing" className="space-y-4 pt-3">
-              <p className="text-xs text-slate-500">
-                Send a test message using this WhatsApp session to test connection and message delivery.
-              </p>
-
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label>Recipient Phone Number</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePickRandomUser}
-                      className="h-7 text-xs gap-1 text-slate-700 dark:text-slate-300"
-                    >
-                      <Shuffle className="h-3.5 w-3.5" /> Pick Random Contact
-                    </Button>
-                  </div>
-                  <Input
-                    value={testPhone}
-                    onChange={(e) => setTestPhone(e.target.value)}
-                    placeholder="e.g. 60123456789"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Test Message Text</Label>
-                  <Textarea
-                    value={testText}
-                    onChange={(e) => setTestText(e.target.value)}
-                    rows={3}
-                    placeholder="Type a message to test..."
-                  />
-                </div>
-
-                <Button
-                  onClick={handleSendTestMessage}
-                  disabled={isSendingTest || !testPhone.trim() || !testText.trim()}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
-                >
-                  {isSendingTest ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  Send Test Message
-                </Button>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }

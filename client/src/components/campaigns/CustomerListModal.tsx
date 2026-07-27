@@ -321,29 +321,30 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        <div className="flex flex-col items-center justify-center text-center w-full min-w-[90px] mx-auto">
+                        <div className="flex flex-col items-center justify-center text-center w-full min-w-[100px] mx-auto min-h-[42px] gap-1">
                           {!isSent && (
                             <Button
                               type="button"
                               variant={isFailed ? 'destructive' : 'outline'}
                               size="sm"
                               className={`h-7 px-2.5 text-xs font-medium ${
-                                isFailed ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 border-slate-200'
+                                isFailed ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-slate-200'
                               }`}
                               disabled={retryRecipientMutation.isPending}
                               onClick={() => campaign && retryRecipientMutation.mutate({ cId: campaign.id, phone: row.phone })}
                               title="Retry message for this customer"
                             >
                               {retryRecipientMutation.isPending && retryRecipientMutation.variables?.phone === row.phone ? (
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
                               ) : (
-                                <RotateCcw className="mr-1 h-3 w-3" />
+                                <RotateCcw className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                               )}
                               Retry
                             </Button>
                           )}
                           {Boolean(row.retryCount) && (
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5 block whitespace-nowrap text-center">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/60 leading-none whitespace-nowrap">
+                              <RotateCcw className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                               Retried {row.retryCount} time{row.retryCount > 1 ? 's' : ''}
                             </span>
                           )}

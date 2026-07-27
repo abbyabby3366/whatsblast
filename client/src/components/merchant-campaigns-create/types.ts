@@ -1,0 +1,124 @@
+export type ButtonDraft = {
+  id: string
+  type: 'reply' | 'url' | 'call' | 'copy'
+  display_text: string
+  value?: string
+}
+
+export type AttachedFile = {
+  id: string
+  url: string | null
+  name?: string
+  type?: string
+}
+
+export type TemplateDraft = {
+  id?: string
+  messageType: string
+  template: string
+  footer?: string
+  fileId: string
+  attachedFiles?: AttachedFile[]
+  buttons: ButtonDraft[]
+  buttonMediaType: string
+  previewUrl: string | null
+}
+
+export const DRAFT_STORAGE_KEY = 'whatsblast_campaign_draft'
+
+export const createEmptyTemplateDraft = (): TemplateDraft => ({
+  messageType: 'text',
+  template: '',
+  footer: '',
+  fileId: '',
+  attachedFiles: [],
+  buttons: [],
+  buttonMediaType: 'none',
+  previewUrl: null,
+})
+
+export const isTemplateTextRequired = (tmpl: TemplateDraft) => {
+  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
+  const hasFiles = Boolean((tmpl.attachedFiles && tmpl.attachedFiles.length > 0) || tmpl.fileId || tmpl.previewUrl)
+  if (isMedia || hasFiles) return false
+  return true
+}
+
+export const isTemplateComplete = (tmpl: TemplateDraft) => {
+  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
+  const hasFiles = Boolean((tmpl.attachedFiles && tmpl.attachedFiles.length > 0) || tmpl.fileId || tmpl.previewUrl)
+  if (isMedia && !hasFiles) return false
+  if (isTemplateTextRequired(tmpl) && !tmpl.template.trim()) return false
+  return true
+}
+
+export const filePreviewUrl = (fileObj: any, buttonImageObj?: any) =>
+  fileObj?.file_path ||
+  fileObj?.file ||
+  fileObj?.url ||
+  fileObj?.file_url ||
+  fileObj?.image ||
+  fileObj?.video ||
+  fileObj?.document ||
+  buttonImageObj?.file_path ||
+  buttonImageObj?.file ||
+  buttonImageObj?.url ||
+  buttonImageObj?.file_url ||
+  buttonImageObj?.image ||
+  null
+
+export const normalizeButtonType = (type?: string): ButtonDraft['type'] => {
+  if (type === 'cta_url') return 'url'
+  if (type === 'cta_call') return 'call'
+  if (type === 'cta_copy') return 'copy'
+  if (type === 'url' || type === 'call' || type === 'copy') return type
+  return 'reply'
+}
+
+export const resolveDraftMediaList = (tmpl: TemplateDraft, userFiles?: any[]) => {
+  const list: Array<{ id?: string; url: string; type: string; name?: string }> = []
+  const currentMediaType = tmpl.messageType === 'buttons' ? tmpl.buttonMediaType : tmpl.messageType
+
+  if (tmpl.attachedFiles && tmpl.attachedFiles.length > 0) {
+    tmpl.attachedFiles.forEach((f) => {
+      const matched = userFiles?.find((uf: any) => uf.id === f.id || uf._id === f.id)
+      const url = f.url || matched?.file_path || matched?.url || matched?.file_url || matched?.file || null
+      const type = f.type || currentMediaType || matched?.file_type || 'image'
+      const name = f.name || matched?.file_name || 'Attachment'
+      if (url) list.push({ id: f.id, url, type: String(type).toLowerCase(), name })
+    })
+  } else if (tmpl.fileId || tmpl.previewUrl) {
+    const matched = userFiles?.find((uf: any) => uf.id === tmpl.fileId || uf._id === tmpl.fileId)
+    const url = tmpl.previewUrl || matched?.file_path || matched?.url || matched?.file_url || matched?.file || null
+    const type = currentMediaType || matched?.file_type || 'image'
+    const name = matched?.file_name || 'Attachment'
+    if (url) list.push({ id: tmpl.fileId, url, type: String(type).toLowerCase(), name })
+  }
+
+  return list
+}
+
+export const buildTemplatePayload = (tmpl: TemplateDraft) => {
+  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
+  const isButtons = tmpl.messageType === 'buttons'
+
+  const file_ids = (tmpl.attachedFiles || []).map((f) => f.id).filter(Boolean)
+  if (tmpl.fileId && !file_ids.includes(tmpl.fileId)) file_ids.push(tmpl.fileId)
+
+  return {
+    template: isMedia || isButtons ? (tmpl.template.trim() || undefined) : tmpl.template.trim(),
+    message_type: tmpl.messageType,
+    footer_text: isButtons ? (tmpl.footer?.trim() || undefined) : undefined,
+    file_id: file_ids[0] || undefined,
+    file_ids: file_ids.length > 0 ? file_ids : undefined,
+    buttons: isButtons && tmpl.buttons.length > 0
+      ? tmpl.buttons.map((b) => ({
+          type: b.type,
+          display_text: b.display_text.trim(),
+          ...(b.type === 'url' ? { url: b.value?.trim() } : {}),
+          ...(b.type === 'call' ? { phone_number: b.value?.trim() } : {}),
+          ...(b.type === 'copy' ? { copy_code: b.value?.trim() } : {}),
+        }))
+      : undefined,
+  }
+}

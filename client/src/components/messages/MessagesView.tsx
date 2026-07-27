@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   createColumnHelper,
   flexRender,
@@ -11,10 +11,9 @@ import {
   Trash2,
   RotateCcw,
   Eye,
-  Filter,
-  X,
   MessageSquare,
   Store,
+  Calendar,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -46,33 +45,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
+import type { Message } from './types'
 
 export interface MessagesViewProps {
   isAdmin?: boolean
-}
-
-type Message = {
-  id: string
-  direction: string
-  message_type: string
-  sender_phone?: string | null
-  recipient_phone?: string | null
-  from_jid?: string | null
-  to_jid?: string | null
-  user?: any
-  template?: {
-    text: string | null
-    file?: any
-    button_image?: any
-    buttons?: any[]
-  } | null
-  created_at: string
-  scheduled_at?: string | null
-  scheduled_datetime?: string | null
-  sent_at?: string | null
-  status: string
-  session_phone?: string | null
-  [key: string]: any
 }
 
 const columnHelper = createColumnHelper<Message>()
@@ -149,203 +125,109 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       if (debouncedFilter) {
         searchParams.set('search', debouncedFilter)
       }
-      if (statusFilter !== 'ALL') {
-        searchParams.set('status', statusFilter.toLowerCase())
+      if (statusFilter && statusFilter !== 'ALL') {
+        searchParams.set('status', statusFilter)
       }
-      if (isAdmin && selectedMerchant !== 'ALL') {
-        searchParams.set('user_id', selectedMerchant)
+      if (isAdmin && selectedMerchant && selectedMerchant !== 'ALL') {
+        searchParams.set('user', selectedMerchant)
       }
       if (startDate) {
-        searchParams.set('start_date', dayjs(startDate).startOf('day').toISOString())
+        searchParams.set('created_at_after', startDate)
       }
       if (endDate) {
-        searchParams.set('end_date', dayjs(endDate).endOf('day').toISOString())
+        searchParams.set('created_at_before', endDate)
       }
 
       return api.get('messages/', { searchParams }).json<any>()
     },
-    placeholderData: (prev) => prev,
+    placeholderData: (previousData) => previousData,
   })
 
   const messages: Message[] = useMemo(() => {
-    return response?.results || []
+    if (!response) return []
+    return Array.isArray(response) ? response : response.results || []
   }, [response])
 
-  const totalCount = response?.count || 0
+  const totalCount = Array.isArray(response) ? response.length : response?.count || 0
   const pageCount = Math.ceil(totalCount / pageSize)
 
-  const retryMessageMutation = useMutation({
-    mutationFn: (msgId: string) => api.post(`messages/${msgId}/retry`).json<any>(),
-    onSuccess: (data) => {
-      toast.success(data?.message || 'Message retried successfully!')
-      queryClient.invalidateQueries({ queryKey: ['messages'] })
-    },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err, 'Failed to retry message.'))
-    },
-  })
-
   const columns = useMemo(() => {
-    const cols: any[] = []
-
-    if (isAdmin) {
-      cols.push(
-        columnHelper.accessor('user' as any, {
-          id: 'merchant',
-          header: 'Merchant',
-          cell: (info) => (
-            <span className="font-semibold text-xs text-[#008069] dark:text-[#53bdeb] bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-              {ownerDisplay(info.getValue(), info.row.original)}
-            </span>
-          ),
-        })
-      )
-    }
-
-    cols.push(
-      columnHelper.accessor('campaign_name' as any, {
-        header: 'Campaign Name',
+    const cols: any[] = [
+      columnHelper.accessor('recipient_phone', {
+        header: 'Recipient Phone',
         cell: (info) => {
-          const cName = info.getValue() || info.row.original.campaign?.name || info.row.original.campaign_name || (info.row.original.campaign ? 'Campaign Blast' : 'Testing')
-          const isTesting = cName.toLowerCase().includes('testing') || cName.toLowerCase().includes('test') || (!info.row.original.campaign && !info.row.original.campaign_name)
-          return (
-            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${
-              isTesting 
-                ? 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800' 
-                : 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800'
-            }`}>
-              {cName}
-            </span>
-          )
+          const val = info.getValue() || info.row.original.to_jid?.split('@')[0] || '-'
+          return <span className="font-mono font-medium text-slate-900 dark:text-slate-100">{val}</span>
         },
       }),
-      columnHelper.accessor('sender_phone', {
-        header: 'Sent From',
-        cell: (info) => <span className="font-medium text-slate-700 dark:text-slate-200">{info.row.original.session_phone || info.getValue() || info.row.original.from_jid || 'System'}</span>,
-      }),
-      columnHelper.accessor('recipient_phone', {
-        header: 'Sent To',
-        cell: (info) => <span className="font-medium text-emerald-600 dark:text-emerald-400">{info.getValue() || info.row.original.to_jid || 'Unknown'}</span>,
-      }),
-      columnHelper.accessor('template.text' as any, {
-        header: 'Message',
+      columnHelper.accessor('template', {
+        header: 'Message Content',
         cell: (info) => {
-          const text = info.getValue() || info.row.original.content?.text || info.row.original.text
-          const type = info.row.original.message_type || info.row.original.type || 'text'
-          if (text) {
-            return <span className="line-clamp-2 text-sm text-slate-600 dark:text-slate-300 max-w-xs">{text}</span>
-          }
-          return <span className="text-slate-400 italic text-sm">[{type} message]</span>
+          const tmpl = info.getValue()
+          const text = tmpl?.text || info.row.original.content || info.row.original.body || '-'
+          return (
+            <div className="max-w-[280px] sm:max-w-[360px] truncate text-slate-700 dark:text-slate-300 font-sans text-xs" title={text}>
+              {text}
+            </div>
+          )
         },
       }),
       columnHelper.accessor('status', {
         header: 'Status',
         cell: (info) => {
-          const status = (info.getValue() || 'UNKNOWN').toUpperCase()
-          let colorClass = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
-          if (status === 'SENT' || status === 'DELIVERED' || status === 'READ') {
-            colorClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 font-semibold"
-          } else if (status === 'FAILED' || status === 'ERROR') {
-            colorClass = "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-semibold"
-          } else if (status === 'PENDING' || status === 'QUEUED' || status === 'SENDING') {
-            colorClass = "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-semibold"
-          }
-          
+          const st = (info.getValue() || 'sent').toLowerCase()
           return (
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs ${colorClass}`}>
-              {status}
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium uppercase ${
+                st === 'delivered' || st === 'sent'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                  : st === 'pending' || st === 'queued'
+                  ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+              }`}
+            >
+              {st}
             </span>
           )
         },
       }),
-      columnHelper.accessor('scheduled_at' as any, {
-        id: 'scheduled_sent_time',
-        header: 'Scheduled / Sent Time',
+      columnHelper.accessor('created_at', {
+        header: 'Sent / Created At',
         cell: (info) => {
-          const schedVal = info.row.original.scheduled_at || info.row.original.scheduled_datetime || info.row.original.created_at || info.row.original.createdAt
-          const sentVal = info.row.original.sent_at || (info.row.original.status?.toLowerCase() !== 'pending' && info.row.original.status?.toLowerCase() !== 'queued' ? info.row.original.wa_timestamp : null)
-
-          return (
-            <div className="flex flex-col text-xs space-y-0.5 py-0 min-w-[160px] leading-tight">
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider w-[46px]">Sched:</span>
-                <span className="text-slate-700 dark:text-slate-300 font-medium">
-                  {schedVal ? dayjs(schedVal).format('MMM D, YYYY h:mm:ss A') : <span className="italic text-slate-400">Immediate</span>}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider w-[46px]">Sent:</span>
-                {sentVal ? (
-                  <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                    {dayjs(sentVal).format('MMM D, YYYY h:mm:ss A')}
-                  </span>
-                ) : (
-                  <span className="text-amber-600 dark:text-amber-400 italic font-medium">Pending</span>
-                )}
-              </div>
-            </div>
-          )
+          const sent = info.row.original.sent_at || info.getValue()
+          return sent ? dayjs(sent).format('MMM D, YYYY h:mm A') : '-'
         },
       }),
+    ]
+
+    if (isAdmin) {
+      cols.splice(1, 0, columnHelper.accessor('user', {
+        header: 'Merchant',
+        cell: (info) => ownerDisplay(info.getValue(), info.row.original),
+      }))
+    }
+
+    cols.push(
       columnHelper.display({
         id: 'actions',
-        header: () => <div className="text-center font-medium">Actions</div>,
-        cell: (info) => {
-          const msg = info.row.original
-          const status = (msg.status || '').toLowerCase()
-          const isSuccess = status === 'sent' || status === 'delivered' || status === 'read'
-          const isFailed = status === 'failed' || status === 'error'
-
-          return (
-            <div className="flex flex-col items-center justify-center text-center w-full min-w-[120px] mx-auto gap-0.5">
-              <div className="flex items-center justify-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 px-2 text-[11px] font-medium text-slate-700 hover:text-slate-900 border-slate-200 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800"
-                  onClick={() => setSelectedMessage(msg)}
-                  title="Preview message"
-                >
-                  <Eye className="mr-1 h-3 w-3 text-slate-500" />
-                  Preview
-                </Button>
-                {!isSuccess && (
-                  <Button
-                    type="button"
-                    variant={isFailed ? "destructive" : "outline"}
-                    size="sm"
-                    className={`h-6 px-2 text-[11px] font-medium ${
-                      isFailed
-                        ? 'bg-rose-600 hover:bg-rose-700 text-white'
-                        : 'text-slate-600 hover:text-slate-900 border-slate-200'
-                    }`}
-                    disabled={retryMessageMutation.isPending}
-                    onClick={() => retryMessageMutation.mutate(msg.id)}
-                    title="Retry sending this message"
-                  >
-                    {retryMessageMutation.isPending && retryMessageMutation.variables === msg.id ? (
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    ) : (
-                      <RotateCcw className="mr-1 h-3 w-3" />
-                    )}
-                    Retry
-                  </Button>
-                )}
-              </div>
-              {Boolean(msg.retry_count) && (
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium whitespace-nowrap text-center">
-                  Retried {msg.retry_count} time{msg.retry_count > 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-          )
-        },
+        header: () => <div className="text-right">Actions</div>,
+        cell: (info) => (
+          <div className="flex items-center justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedMessage(info.row.original)}
+              className="h-8 px-2.5 text-xs gap-1.5"
+            >
+              <Eye className="w-3.5 h-3.5" /> Preview
+            </Button>
+          </div>
+        ),
       })
     )
 
     return cols
-  }, [isAdmin, allUsers, retryMessageMutation])
+  }, [isAdmin, allUsers])
 
   const table = useReactTable({
     data: messages,
@@ -354,10 +236,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     manualPagination: true,
     pageCount,
     state: {
-      pagination: {
-        pageIndex,
-        pageSize,
-      },
+      pagination: { pageIndex, pageSize },
     },
     onPaginationChange: (updater) => {
       if (typeof updater === 'function') {
@@ -371,228 +250,177 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     },
   })
 
-  const hasActiveFilters =
-    statusFilter !== 'ALL' ||
-    (isAdmin && selectedMerchant !== 'ALL') ||
-    startDate !== '' ||
-    endDate !== '' ||
-    globalFilter !== ''
+  const hasActiveFilters = Boolean(globalFilter || statusFilter !== 'ALL' || selectedMerchant !== 'ALL' || startDate || endDate)
 
-  const clearFilters = () => {
+  const handleResetFilters = () => {
+    setGlobalFilter('')
     setStatusFilter('ALL')
     setSelectedMerchant('ALL')
     setStartDate('')
     setEndDate('')
-    setGlobalFilter('')
-    setPageIndex(0)
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-4 max-w-7xl mx-auto pb-10">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">Messages</h2>
-          <p className="text-xs text-slate-500">
-            {isAdmin
-              ? 'View and track all outbound WhatsApp messages across all platform merchants.'
-              : 'View and track all outbound WhatsApp campaign messages.'}
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-emerald-600" />
+            Messages History
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            View all sent and scheduled WhatsApp campaign messages.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => setIsClearConfirmOpen(true)}
-          disabled={totalCount === 0 || clearMessagesMutation.isPending}
-          className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/50 shrink-0 font-medium self-start sm:self-auto"
-        >
-          {clearMessagesMutation.isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin text-rose-600" />
-          ) : (
-            <Trash2 className="w-4 h-4 mr-2 text-rose-500" />
-          )}
-          Clear All Messages
-        </Button>
+
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsClearConfirmOpen(true)}
+            className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 text-xs font-medium gap-1.5"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Clear All Messages
+          </Button>
+        )}
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between">
-          <div className="relative w-full xl:w-72">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+      {/* Filter Bar */}
+      <div className="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <Input
-              placeholder={isAdmin ? "Search merchant, recipient, message..." : "Search recipient phone, message..."}
-              value={globalFilter ?? ''}
+              placeholder="Search phone or text..."
+              value={globalFilter}
               onChange={(e) => setGlobalFilter(e.target.value)}
-              className="pl-9 h-9 text-sm"
+              className="pl-9 h-9 text-xs bg-white dark:bg-slate-950"
             />
-            {globalFilter && (
-              <button
-                type="button"
-                onClick={() => setGlobalFilter('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-            {hasActiveFilters && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className="h-9 text-xs px-2.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 shrink-0"
-              >
-                Clear filters
-              </Button>
-            )}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-950">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Statuses</SelectItem>
+              <SelectItem value="SENT">Sent / Delivered</SelectItem>
+              <SelectItem value="PENDING">Pending / Queued</SelectItem>
+              <SelectItem value="FAILED">Failed</SelectItem>
+            </SelectContent>
+          </Select>
 
-            {isAdmin && (
-              <div className="w-56 sm:w-60 min-w-[210px]">
-                <Select value={selectedMerchant} onValueChange={setSelectedMerchant}>
-                  <SelectTrigger className="h-9 text-xs flex items-center justify-between overflow-hidden">
-                    <div className="flex items-center min-w-0 flex-1 mr-1">
-                      <Store className="w-3.5 h-3.5 mr-1.5 text-slate-400 shrink-0" />
-                      <div className="truncate">
-                        <SelectValue placeholder="All Merchants" />
-                      </div>
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Merchants</SelectItem>
-                    {allUsers.map((u) => (
-                      <SelectItem key={u.id || u._id} value={u.id || u._id}>
-                        {u.phone_number || u.email || 'Merchant'} ({u.role || 'user'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+          {isAdmin && (
+            <Select value={selectedMerchant} onValueChange={setSelectedMerchant}>
+              <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-950">
+                <Store className="w-3.5 h-3.5 text-slate-400 mr-1" />
+                <SelectValue placeholder="All Merchants" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Merchants</SelectItem>
+                {allUsers.map((u) => (
+                  <SelectItem key={u.id || u._id} value={u.id || u._id}>
+                    {u.phone_number || u.id} ({u.role || 'merchant'})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
-            <div className="w-40">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-9 text-xs">
-                  <Filter className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
-                  <SelectValue placeholder="Filter Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Statuses</SelectItem>
-                  <SelectItem value="SENT">Sent / Delivered / Read</SelectItem>
-                  <SelectItem value="PENDING">Pending / Queued</SelectItem>
-                  <SelectItem value="FAILED">Failed / Error</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="relative">
+            <Calendar className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="pl-8 h-9 text-xs bg-white dark:bg-slate-950"
+              title="Start Date"
+            />
+          </div>
 
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-9 text-xs w-36"
-                placeholder="Start date"
-              />
-              <span className="text-slate-400 text-xs">-</span>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-9 text-xs w-36"
-                placeholder="End date"
-              />
-            </div>
+          <div className="relative">
+            <Calendar className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="pl-8 h-9 text-xs bg-white dark:bg-slate-950"
+              title="End Date"
+            />
           </div>
         </div>
 
-        <div className="relative overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-slate-50 dark:bg-slate-800/50">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="text-xs font-semibold">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
+        {hasActiveFilters && (
+          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800 text-xs">
+            <span className="text-slate-500 font-medium">Filters active</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="h-6 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1"
+            >
+              <RotateCcw className="w-3 h-3 mr-1" /> Reset filters
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Main Table */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id} className="hover:bg-transparent border-slate-200 dark:border-slate-800">
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id} className="text-xs font-semibold">
+                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-32 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600" />
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-32 text-center text-slate-500 text-sm">
+                  No message history found.
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50">
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="py-2.5 text-xs">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
                   ))}
                 </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center">
-                    <div className="flex flex-col items-center justify-center gap-2 text-slate-500">
-                      <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
-                      <span className="text-xs">Loading messages...</span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="py-1 px-3">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center text-slate-500 text-sm">
-                    No outbound messages found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+              ))
+            )}
+          </TableBody>
+        </Table>
 
-        {/* Pagination Bar */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-xs text-slate-500">
-            Showing <span className="font-medium text-slate-900 dark:text-slate-100">{messages.length}</span> of{' '}
-            <span className="font-medium text-slate-900 dark:text-slate-100">{totalCount}</span> messages
+        {/* Pagination */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+          <div>
+            Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1} • {totalCount} total
           </div>
-
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
-              disabled={pageIndex === 0 || isLoading}
-              className="h-8 text-xs"
-            >
-              Previous
-            </Button>
-
-            <span className="text-xs text-slate-600 dark:text-slate-400 px-2 font-medium">
-              Page {pageIndex + 1} of {pageCount || 1}
-            </span>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPageIndex((p) => Math.min(pageCount - 1, p + 1))}
-              disabled={pageIndex >= pageCount - 1 || isLoading}
-              className="h-8 text-xs"
-            >
-              Next
-            </Button>
-
             <Select
-              value={String(pageSize)}
-              onValueChange={(val) => {
-                setPageSize(Number(val))
+              value={String(table.getState().pagination.pageSize)}
+              onValueChange={(v) => {
                 setPageIndex(0)
+                table.setPageSize(Number(v))
               }}
             >
-              <SelectTrigger className="h-8 w-20 text-xs">
-                <SelectValue placeholder="20" />
-              </SelectTrigger>
+              <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="10">10 / page</SelectItem>
                 <SelectItem value="20">20 / page</SelectItem>
@@ -600,84 +428,56 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
                 <SelectItem value="100">100 / page</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* WHATSAPP PHONE PREVIEW MODAL */}
+      {/* Message Preview Modal */}
       {selectedMessage && (
         <WhatsAppPhonePreviewModal
-          campaign={{
-            id: selectedMessage.campaign?.id || selectedMessage.id,
-            name: selectedMessage.campaign?.name || selectedMessage.campaign_name || 'Message Preview',
-            recipient_phones: [selectedMessage.recipient_phone || selectedMessage.to_jid || 'Recipient'],
-            created_at: selectedMessage.created_at,
-            templates: (() => {
-              const msgContent: any = selectedMessage.content || {}
-              const msgTemplate: any = typeof selectedMessage.template === 'object' && selectedMessage.template ? selectedMessage.template : {}
-
-              const text = msgContent.text || selectedMessage.text || msgTemplate.text || msgTemplate.template || ''
-              const file = msgContent.file || selectedMessage.file || msgTemplate.file || msgTemplate.file_url
-              const file_url = msgContent.file_url || selectedMessage.file_url || selectedMessage.media_url || selectedMessage.image_url || selectedMessage.url || msgTemplate.file_url || msgTemplate.url
-              const button_image = msgContent.button_image || selectedMessage.button_image || msgTemplate.button_image || msgTemplate.button_image_url
-              const buttons = msgContent.buttons || selectedMessage.buttons || msgTemplate.buttons || []
-              const footer = msgContent.footer || selectedMessage.footer || msgTemplate.footer || ''
-              const files = msgContent.files || selectedMessage.files || msgTemplate.files || []
-              const attachedFiles = msgContent.attachedFiles || selectedMessage.attachedFiles || msgTemplate.attachedFiles || []
-              const messageType = msgContent.file_type || selectedMessage.message_type || selectedMessage.type || msgTemplate.type || msgTemplate.messageType
-
-              return [
-                {
-                  ...msgTemplate,
-                  ...msgContent,
-                  text,
-                  file: file || file_url,
-                  file_url: file_url || (typeof file === 'string' ? file : undefined),
-                  button_image,
-                  buttons,
-                  footer,
-                  files,
-                  attachedFiles,
-                  type: messageType,
-                  messageType,
-                },
-              ]
-            })(),
-          }}
+          isOpen={Boolean(selectedMessage)}
           onClose={() => setSelectedMessage(null)}
+          title={selectedMessage.recipient_phone || 'Preview'}
+          templates={[selectedMessage.template || { text: selectedMessage.content || selectedMessage.body || '' }]}
         />
       )}
 
-      {/* CLEAR ALL MESSAGES CONFIRMATION MODAL */}
+      {/* Admin Clear Confirm Modal */}
       <Dialog open={isClearConfirmOpen} onOpenChange={setIsClearConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
-              <Trash2 className="h-5 w-5" />
-              <DialogTitle className="text-lg font-bold">Clear All Messages</DialogTitle>
-            </div>
+            <DialogTitle>Clear All Messages?</DialogTitle>
           </DialogHeader>
-          <div className="py-2 text-sm text-slate-600 dark:text-slate-300">
-            Are you sure you want to clear all outbound campaign messages? This action cannot be undone.
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <p className="text-sm text-slate-500">
+            Are you sure you want to delete all message history? This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsClearConfirmOpen(false)}>Cancel</Button>
             <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsClearConfirmOpen(false)}
-              disabled={clearMessagesMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
               variant="destructive"
-              onClick={() => clearMessagesMutation.mutate()}
               disabled={clearMessagesMutation.isPending}
-              className="bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={() => clearMessagesMutation.mutate()}
             >
-              {clearMessagesMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Clear All Messages
+              {clearMessagesMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Clear All
             </Button>
           </DialogFooter>
         </DialogContent>
