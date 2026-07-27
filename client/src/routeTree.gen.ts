@@ -18,6 +18,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminCampaignsRouteImport } from './routes/admin.campaigns'
+import { Route as AdminMessagesRouteImport } from './routes/admin.messages'
 import { Route as AdminSessionsRouteImport } from './routes/admin.sessions'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as MerchantIndexRouteImport } from './routes/merchant.index'
@@ -73,6 +74,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminCampaignsRoute = AdminCampaignsRouteImport.update({
   id: '/campaigns',
   path: '/campaigns',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMessagesRoute = AdminMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminSessionsRoute = AdminSessionsRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/campaigns': typeof AdminCampaignsRoute
+  '/admin/messages': typeof AdminMessagesRoute
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/merchant/campaigns': typeof MerchantCampaignsRouteWithChildren
@@ -162,6 +169,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/campaigns': typeof AdminCampaignsRoute
+  '/admin/messages': typeof AdminMessagesRoute
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/merchant/customers': typeof MerchantCustomersRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/campaigns': typeof AdminCampaignsRoute
+  '/admin/messages': typeof AdminMessagesRoute
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/merchant/campaigns': typeof MerchantCampaignsRouteWithChildren
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/admin/campaigns'
+    | '/admin/messages'
     | '/admin/sessions'
     | '/admin/users'
     | '/merchant/campaigns'
@@ -228,6 +238,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/admin/campaigns'
+    | '/admin/messages'
     | '/admin/sessions'
     | '/admin/users'
     | '/merchant/customers'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/admin/campaigns'
+    | '/admin/messages'
     | '/admin/sessions'
     | '/admin/users'
     | '/merchant/campaigns'
@@ -338,6 +350,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCampaignsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/messages': {
+      id: '/admin/messages'
+      path: '/messages'
+      fullPath: '/admin/messages'
+      preLoaderRoute: typeof AdminMessagesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/sessions': {
       id: '/admin/sessions'
       path: '/sessions'
@@ -420,6 +439,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminCampaignsRoute: typeof AdminCampaignsRoute
+  AdminMessagesRoute: typeof AdminMessagesRoute
   AdminSessionsRoute: typeof AdminSessionsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -427,6 +447,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminCampaignsRoute: AdminCampaignsRoute,
+  AdminMessagesRoute: AdminMessagesRoute,
   AdminSessionsRoute: AdminSessionsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,

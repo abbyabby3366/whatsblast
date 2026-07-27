@@ -269,10 +269,10 @@ function CampaignProgressPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Created: {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY h:mm A')}
+              Created: {dayjs(campaign.created_at || campaign.createdAt).format('DD/MM/YY h:mm A')}
               {campaign.completed_at && (
                 <span className="ml-3">
-                  Completed: {dayjs(campaign.completed_at).format('MMM D, YYYY h:mm A')}
+                  Completed: {dayjs(campaign.completed_at).format('DD/MM/YY h:mm A')}
                 </span>
               )}
             </p>

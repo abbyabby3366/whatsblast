@@ -112,11 +112,14 @@ export async function parseApiError(
     try {
       const response: Response = err.response;
       if (typeof response.clone === 'function') {
-        const cloned = response.clone();
-        body = await cloned.json().catch(async () => {
-          const text = await cloned.text().catch(() => null);
-          return text ? { error: text } : null;
-        });
+        const text = await response.clone().text().catch(() => null);
+        if (text) {
+          try {
+            body = JSON.parse(text);
+          } catch {
+            body = { error: text };
+          }
+        }
       } else if (typeof response.json === 'function') {
         body = await response.json().catch(() => null);
       } else if (err.response.data) {

@@ -12,7 +12,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Store, LogOut, Megaphone, Smartphone } from 'lucide-react'
+import { LayoutDashboard, Store, LogOut, Megaphone, Smartphone, MessageSquare } from 'lucide-react'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -73,6 +73,9 @@ function AdminLayout() {
   const linkClass = 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'
 
   const getPageHeader = () => {
+    if (location.pathname.startsWith('/admin/messages')) {
+      return { title: 'Messages Log', Icon: MessageSquare }
+    }
     if (location.pathname.startsWith('/admin/sessions')) {
       return { title: 'WhatsApp Sessions', Icon: Smartphone }
     }
@@ -124,6 +127,14 @@ function AdminLayout() {
                       <Link to="/admin/campaigns" activeProps={{ className: activeClass }} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${linkClass}`}>
                         <Megaphone className="h-4 w-4 shrink-0" />
                         <span>Campaigns</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/admin/messages" activeProps={{ className: activeClass }} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${linkClass}`}>
+                        <MessageSquare className="h-4 w-4 shrink-0" />
+                        <span>Messages</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

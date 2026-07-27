@@ -4,6 +4,7 @@ import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { getActiveSession, initWhatsAppSession, verifyAndFormatJid, pickUserSession } from '../services/baileysManager.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { BlastCampaign } from '../models/BlastCampaign.js';
+import { User } from '../models/User.js';
 import { retryCampaignRecipient } from './campaignRoutes.js';
 
 const router = Router();
@@ -15,6 +16,11 @@ function formatMessage(m: any) {
   const { _id, __v, ...rest } = obj;
   const sessionPhone = typeof obj.session === 'object' && obj.session ? obj.session.phone_number : obj.sender_phone;
   const campaignName = typeof obj.campaign === 'object' && obj.campaign ? obj.campaign.name : null;
+  const user = (typeof obj.campaign === 'object' && obj.campaign && obj.campaign.user)
+    ? obj.campaign.user
+    : (typeof obj.session === 'object' && obj.session && obj.session.user)
+      ? obj.session.user
+      : null;
   const isSentOrFailed = obj.status === MessageStatus.SENT || obj.status === MessageStatus.FAILED || obj.status === MessageStatus.DELIVERED || obj.status === MessageStatus.READ;
 
   return {
@@ -26,26 +32,38 @@ function formatMessage(m: any) {
     session_phone: sessionPhone || obj.sender_phone || 'System',
     sender_phone: sessionPhone || obj.sender_phone || 'System',
     campaign_name: campaignName || obj.campaign_name || 'Direct / Quick Send',
+    user: user,
     retry_count: obj.retry_count || 0,
     ...rest,
   };
 }
 
 const getMessages = async (req: AuthRequest, res: Response) => {
-  const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
-  const sessionIds = userSessions.map((s) => s._id);
+  const filter: any = {};
+  const { status, session_id, campaign_id, user_id, merchant_id, direction, is_campaign, search, start_date, end_date } = req.query;
 
-  const userCampaigns = await BlastCampaign.find({ user: req.user?._id }).select('_id');
-  const campaignIds = userCampaigns.map((c) => c._id);
+  if (req.user?.role !== 'admin') {
+    const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
+    const sessionIds = userSessions.map((s) => s._id);
 
-  const filter: any = {
-    $or: [
+    const userCampaigns = await BlastCampaign.find({ user: req.user?._id }).select('_id');
+    const campaignIds = userCampaigns.map((c) => c._id);
+
+    filter.$or = [
       { session: { $in: sessionIds } },
       { campaign: { $in: campaignIds } },
-    ],
-  };
-
-  const { status, session_id, campaign_id, direction, is_campaign, search, start_date, end_date } = req.query;
+    ];
+  } else {
+    const targetUserId = user_id || merchant_id;
+    if (targetUserId && targetUserId !== 'all') {
+      const uSessions = await WhatsAppSession.find({ user: targetUserId }).select('_id');
+      const uCampaigns = await BlastCampaign.find({ user: targetUserId }).select('_id');
+      filter.$or = [
+        { session: { $in: uSessions.map((s) => s._id) } },
+        { campaign: { $in: uCampaigns.map((c) => c._id) } },
+      ];
+    }
+  }
 
   if (campaign_id && campaign_id !== 'all') {
     filter.campaign = campaign_id;
@@ -76,6 +94,22 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     const searchStr = String(search).trim();
     if (searchStr) {
       const searchRegex = new RegExp(searchStr, 'i');
+
+      const matchingUsers = await User.find({
+        $or: [{ phone_number: searchRegex }, { email: searchRegex }, { name: searchRegex }],
+      }).select('_id');
+      const matchingUserIds = matchingUsers.map((u) => u._id);
+
+      const matchingSessions = await WhatsAppSession.find({
+        $or: [{ phone_number: searchRegex }, { session_id: searchRegex }, { user: { $in: matchingUserIds } }],
+      }).select('_id');
+      const matchingSessionIds = matchingSessions.map((s) => s._id);
+
+      const matchingCampaigns = await BlastCampaign.find({
+        $or: [{ name: searchRegex }, { user: { $in: matchingUserIds } }],
+      }).select('_id');
+      const matchingCampaignIds = matchingCampaigns.map((c) => c._id);
+
       filter.$and = filter.$and || [];
       filter.$and.push({
         $or: [
@@ -83,6 +117,8 @@ const getMessages = async (req: AuthRequest, res: Response) => {
           { sender_phone: searchRegex },
           { to_jid: searchRegex },
           { 'content.text': searchRegex },
+          { session: { $in: matchingSessionIds } },
+          { campaign: { $in: matchingCampaignIds } },
         ],
       });
     }
@@ -101,9 +137,17 @@ const getMessages = async (req: AuthRequest, res: Response) => {
   const [totalCount, messages] = await Promise.all([
     Message.countDocuments(filter),
     Message.find(filter)
-      .populate('session', 'phone_number session_id')
+      .populate({
+        path: 'session',
+        select: 'phone_number session_id user',
+        populate: { path: 'user', select: 'phone_number role' },
+      })
       .populate('template', 'text name')
-      .populate('campaign', 'name')
+      .populate({
+        path: 'campaign',
+        select: 'name user',
+        populate: { path: 'user', select: 'phone_number role' },
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(pageSize),

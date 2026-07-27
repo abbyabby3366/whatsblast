@@ -527,12 +527,12 @@ function AdminCampaignsPage() {
                         <TableCell className="text-xs text-slate-500 whitespace-nowrap">
                           <div>
                             <span className="text-slate-400">Created:</span>{' '}
-                            {dayjs(c.created_at || c.createdAt).format('MMM D, YYYY h:mm A')}
+                            {dayjs(c.created_at || c.createdAt).format('DD/MM/YY h:mm A')}
                           </div>
                           {(c.completed_at || c.completedAt || (cStatus === 'completed' && c.updatedAt)) && (
                             <div className="mt-0.5 font-medium text-emerald-600 dark:text-emerald-400">
                               <span className="text-emerald-600/80 dark:text-emerald-400/80">Completed:</span>{' '}
-                              {dayjs(c.completed_at || c.completedAt || c.updatedAt).format('MMM D, YYYY h:mm A')}
+                              {dayjs(c.completed_at || c.completedAt || c.updatedAt).format('DD/MM/YY h:mm A')}
                             </div>
                           )}
                         </TableCell>
@@ -655,7 +655,7 @@ function AdminCampaignsPage() {
                           <CardDescription className="mt-1">
                             Merchant: <span className="font-semibold text-slate-700 dark:text-slate-300">{owner(c.user, allUsers)}</span>
                             <br />
-                            {dayjs(c.created_at || c.createdAt).format('MMM D, YYYY h:mm A')}
+                            {dayjs(c.created_at || c.createdAt).format('DD/MM/YY h:mm A')}
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
