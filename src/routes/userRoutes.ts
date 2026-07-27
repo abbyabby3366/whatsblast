@@ -290,17 +290,23 @@ const getMerchantDashboardStats = async (req: AuthRequest, res: Response) => {
       });
 
       const messageCount = await Message.countDocuments({
-        $or: [
-          { session: { $in: sessionIds } },
-          { campaign: { $in: campaignIds } },
+        $and: [
+          {
+            $or: [
+              { session: { $in: sessionIds } },
+              { campaign: { $in: campaignIds } },
+            ],
+          },
+          {
+            $or: [
+              { sent_at: { $gte: startOfDay, $lte: endOfDay } },
+              { wa_timestamp: { $gte: startOfDay, $lte: endOfDay } },
+              { createdAt: { $gte: startOfDay, $lte: endOfDay } },
+            ],
+          },
         ],
         direction: MessageDirection.OUTBOUND,
         status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
-        $or: [
-          { sent_at: { $gte: startOfDay, $lte: endOfDay } },
-          { wa_timestamp: { $gte: startOfDay, $lte: endOfDay } },
-          { createdAt: { $gte: startOfDay, $lte: endOfDay } },
-        ],
       });
 
       chartData.push({
