@@ -16,6 +16,7 @@ export interface IBlastCampaign extends Document {
   contacts: string[];
   recipient_phones?: string[];
   status: CampaignStatus;
+  error_message?: string;
   min_interval_seconds: number;
   max_interval_seconds: number;
   enable_warmup: boolean;
@@ -41,6 +42,7 @@ const BlastCampaignSchema = new Schema<IBlastCampaign>(
     contacts: [{ type: String }],
     recipient_phones: [{ type: String }],
     status: { type: String, enum: Object.values(CampaignStatus), default: CampaignStatus.DRAFT },
+    error_message: { type: String },
     min_interval_seconds: { type: Number, default: 10 },
     max_interval_seconds: { type: Number, default: 15 },
     enable_warmup: { type: Boolean, default: true },

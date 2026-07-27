@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Save, User } from 'lucide-react'
 
-import { api } from '@/lib/api'
+import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -48,8 +48,8 @@ function ProfilePage() {
       queryClient.invalidateQueries({ queryKey: ['profile'] })
       toast.success('Profile updated successfully')
     },
-    onError: () => {
-      toast.error('Failed to update profile')
+    onError: async (err) => {
+      toast.error(await getErrorMessage(err, 'Failed to update profile'))
     }
   })
 
@@ -86,10 +86,10 @@ function ProfilePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-4 max-w-2xl mx-auto">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Profile Settings</h2>
-        <p className="text-slate-500">
+        <h2 className="text-xl font-bold tracking-tight">Profile Settings</h2>
+        <p className="text-xs text-slate-500">
           Manage your personal information and preferences.
         </p>
       </div>
@@ -100,11 +100,11 @@ function ProfilePage() {
             <User className="w-5 h-5 text-emerald-600" />
             Account Information
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs">
             Update your sending interval configurations.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>Login Phone Number</Label>
             <Input disabled value={userProfile?.phone_number || ''} className="bg-slate-50 text-slate-500" />

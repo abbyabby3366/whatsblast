@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
-import { api, baseInstance } from '@/lib/api'
+import { api, baseInstance, getErrorMessage } from '@/lib/api'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 
 export const Route = createFileRoute('/login')({
@@ -53,8 +53,9 @@ function LoginPage() {
       toast.success('Successfully logged in!')
       navigate({ to: me.role === 'admin' ? '/admin' : '/merchant', replace: true })
     } catch (err: any) {
-      console.log(err)
-      toast.error('Invalid credentials or network error')
+      console.error(err)
+      const errorMessage = await getErrorMessage(err, 'Invalid credentials or network error')
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }

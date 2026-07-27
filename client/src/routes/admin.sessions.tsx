@@ -19,7 +19,7 @@ import {
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 
-import { api } from '@/lib/api'
+import { api, getErrorMessage } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -118,6 +118,7 @@ function AdminSessionsPage() {
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [disconnectConfirmId, setDisconnectConfirmId] = useState<string | null>(null)
+  const [selectedMasterSession, setSelectedMasterSession] = useState<string>('')
 
   const query = new URLSearchParams()
   if (filters.search) query.set('search', filters.search)
@@ -142,7 +143,7 @@ function AdminSessionsPage() {
     refetchInterval: 3000,
   })
 
-  const { data: qrQueryData, isFetching: isFetchingQr, refetch: refetchQrData } = useQuery({
+  const { data: qrQueryData } = useQuery({
     queryKey: ['session-qr', selectedScanId],
     queryFn: () => api.get(`whatsapp-sessions/${selectedScanId}/qr/`).json<any>(),
     enabled: isQrOpen && Boolean(selectedScanId),
@@ -183,7 +184,7 @@ function AdminSessionsPage() {
       toast.success('Admin WhatsApp session created')
       handleScan(session.id)
     },
-    onError: () => toast.error('Unable to create session. Only super admins can create admin sessions.'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Unable to create session. Only super admins can create admin sessions.')),
   })
 
   const fetchQr = useMutation({
@@ -193,7 +194,7 @@ function AdminSessionsPage() {
       if (qr) setQrBase64(qr)
       else toast.error('No QR code returned')
     },
-    onError: () => toast.error('Failed to fetch QR. Try again.'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to fetch QR. Try again.')),
   })
 
   const reconnectSession = useMutation({
@@ -202,7 +203,7 @@ function AdminSessionsPage() {
       refreshSessions()
       toast.success('Reconnecting session...')
     },
-    onError: () => toast.error('Failed to reconnect session'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to reconnect session')),
   })
 
   const logoutSession = useMutation({
@@ -212,7 +213,7 @@ function AdminSessionsPage() {
       toast.success('Session disconnected')
       setDisconnectConfirmId(null)
     },
-    onError: () => toast.error('Failed to disconnect session'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to disconnect session')),
   })
 
   const deleteSession = useMutation({
@@ -222,23 +223,24 @@ function AdminSessionsPage() {
       toast.success('Session deleted successfully')
       setDeleteConfirmId(null)
     },
-    onError: () => toast.error('Failed to delete session'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to delete session')),
   })
 
   const createMaster = useMutation({
     mutationFn: (session: string) => api.post('master-phone-numbers/', { json: { session, is_active: true } }).json<MasterPhone>(),
     onSuccess: () => {
       refreshMasters()
+      setSelectedMasterSession('')
       toast.success('Master phone number added')
     },
-    onError: () => toast.error('Unable to add master phone number'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Unable to add master phone number')),
   })
 
   const toggleMaster = useMutation({
     mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
       api.patch(`master-phone-numbers/${id}/`, { json: { is_active } }).json<MasterPhone>(),
     onSuccess: refreshMasters,
-    onError: () => toast.error('Unable to update master phone number'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Unable to update master phone number')),
   })
 
   const deleteMaster = useMutation({
@@ -247,7 +249,7 @@ function AdminSessionsPage() {
       refreshMasters()
       toast.success('Master phone number removed')
     },
-    onError: () => toast.error('Unable to remove master phone number'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Unable to remove master phone number')),
   })
 
   function handleScan(id: string) {
@@ -263,7 +265,7 @@ function AdminSessionsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <p className="text-slate-500 text-sm">
@@ -286,19 +288,37 @@ function AdminSessionsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 md:flex-row">
-            <Select onValueChange={(session) => createMaster.mutate(session)} disabled={createMaster.isPending || connectedSessions.length === 0}>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <Select
+              value={selectedMasterSession}
+              onValueChange={setSelectedMasterSession}
+              disabled={createMaster.isPending || connectedSessions.length === 0}
+            >
               <SelectTrigger className="md:w-96">
-                <SelectValue placeholder={connectedSessions.length ? 'Add connected session as master' : 'No available connected sessions'} />
+                <SelectValue placeholder={connectedSessions.length ? 'Select connected session' : 'No available connected sessions'} />
               </SelectTrigger>
               <SelectContent>
                 {connectedSessions.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
-                    {s.phone_number || s.session_id || s.id}
+                    {s.phone_number ? `${s.phone_number} (${s.session_id || s.id})` : s.session_id || s.id}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
+            <Button
+              onClick={() => {
+                if (!selectedMasterSession) {
+                  toast.error('Please select a session first')
+                  return
+                }
+                createMaster.mutate(selectedMasterSession)
+              }}
+              disabled={createMaster.isPending || !selectedMasterSession}
+            >
+              {createMaster.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Add to Master OTP
+            </Button>
           </div>
           {mastersLoading ? (
             <div className="flex min-h-24 items-center justify-center">

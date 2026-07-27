@@ -6,13 +6,13 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Plus, Trash2, Search, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Search, Loader2, Pencil } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { api } from '@/lib/api'
+import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -108,6 +108,109 @@ const DeleteCustomerButton = ({ id, removeCustomerMutation }: { id: string, remo
   )
 }
 
+const EditCustomerButton = ({ customer, updateCustomerMutation }: { customer: Customer; updateCustomerMutation: any }) => {
+  const [isOpen, setIsOpen] = useState(false)
+  const [name, setName] = useState(customer.name || '')
+  const [phone, setPhone] = useState(customer.phone_number || '')
+  const [label, setLabel] = useState(customer.label || '')
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(customer.name || '')
+      setPhone(customer.phone_number || '')
+      setLabel(customer.label || '')
+    }
+  }, [isOpen, customer])
+
+  const handleUpdate = () => {
+    if (!name || !phone) {
+      toast.error('Please fill in both name and phone.')
+      return
+    }
+    updateCustomerMutation.mutate(
+      { id: customer.id, name, phone_number: phone, label },
+      {
+        onSuccess: () => setIsOpen(false)
+      }
+    )
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+        >
+          <Pencil className="w-4 h-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Edit Customer</DialogTitle>
+          <DialogDescription>
+            Update customer details. Ensure the phone number includes the country code.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor={`edit-name-${customer.id}`} className="text-right">
+              Name
+            </Label>
+            <Input
+              id={`edit-name-${customer.id}`}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="John Doe"
+              className="col-span-3"
+            />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor={`edit-phone-${customer.id}`} className="text-right">
+              Phone
+            </Label>
+            <Input
+              id={`edit-phone-${customer.id}`}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="60123456789"
+              className="col-span-3"
+            />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor={`edit-label-${customer.id}`} className="text-right">
+              Label
+            </Label>
+            <Input
+              id={`edit-label-${customer.id}`}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="VIP, Retail, etc."
+              className="col-span-3"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleUpdate}
+            disabled={updateCustomerMutation.isPending}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {updateCustomerMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+
 function CustomersPage() {
   const queryClient = useQueryClient()
   const [globalFilter, setGlobalFilter] = useState('')
@@ -170,7 +273,18 @@ function CustomersPage() {
       setIsAddOpen(false)
       toast.success('Customer added successfully!')
     },
-    onError: () => toast.error('Failed to add customer.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to add customer.'))
+  })
+
+  const updateCustomerMutation = useMutation({
+    mutationFn: (updatedCustomer: { id: string; name: string; phone_number: string; label?: string }) =>
+      api.put(`customers/${updatedCustomer.id}/`, { json: updatedCustomer }).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
+      toast.success('Customer updated successfully!')
+    },
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to update customer.'))
   })
 
   const importCustomersMutation = useMutation({
@@ -180,6 +294,7 @@ function CustomersPage() {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       queryClient.invalidateQueries({ queryKey: ['customer-labels'] })
     },
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to import customers.'))
   })
 
   const removeCustomerMutation = useMutation({
@@ -190,7 +305,7 @@ function CustomersPage() {
       setSelectedIds((current) => current.filter((selectedId) => selectedId !== id))
       toast.success('Customer removed')
     },
-    onError: () => toast.error('Failed to remove customer.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to remove customer.'))
   })
 
   const bulkDeleteMutation = useMutation({
@@ -202,7 +317,7 @@ function CustomersPage() {
       setBulkDeleteOpen(false)
       toast.success(`${data.deleted} customer${data.deleted === 1 ? '' : 's'} removed`)
     },
-    onError: () => toast.error('Failed to remove selected customers.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to remove selected customers.'))
   })
 
   const handleExportTemplate = () => {
@@ -322,11 +437,14 @@ function CustomersPage() {
       columnHelper.display({
         id: 'actions',
         cell: (info) => (
-          <DeleteCustomerButton id={info.row.original.id} removeCustomerMutation={removeCustomerMutation} />
+          <div className="flex items-center gap-1">
+            <EditCustomerButton customer={info.row.original} updateCustomerMutation={updateCustomerMutation} />
+            <DeleteCustomerButton id={info.row.original.id} removeCustomerMutation={removeCustomerMutation} />
+          </div>
         ),
       }),
     ],
-    [removeCustomerMutation, selectedIds, allVisibleSelected, visibleIds]
+    [removeCustomerMutation, updateCustomerMutation, selectedIds, allVisibleSelected, visibleIds]
   )
 
   const table = useReactTable({
@@ -354,11 +472,11 @@ function CustomersPage() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Customers</h2>
-          <p className="text-slate-500">Manage your contact list for WhatsApp blasting.</p>
+          <h2 className="text-xl font-bold tracking-tight">Customers</h2>
+          <p className="text-xs text-slate-500">Manage your contact list for WhatsApp blasting.</p>
         </div>
 
         <div className="flex items-center gap-2">

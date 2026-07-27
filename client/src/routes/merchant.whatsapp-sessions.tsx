@@ -1,21 +1,29 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Plus, QrCode, Trash2, Smartphone, Settings, Copy, HelpCircle, Send, Shuffle } from 'lucide-react'
+import { 
+  Loader2, 
+  Plus, 
+  QrCode, 
+  Trash2, 
+  Smartphone, 
+  Settings, 
+  Copy, 
+  HelpCircle, 
+  Send, 
+  Shuffle, 
+  LayoutGrid, 
+  List, 
+  Search,
+  Check
+} from 'lucide-react'
 import dayjs from 'dayjs'
 
-import { api } from '@/lib/api'
+import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   Dialog,
   DialogClose,
@@ -26,10 +34,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,
@@ -41,6 +56,9 @@ function SessionsPage() {
   const [qrBase64, setQrBase64] = useState<string | null>(null)
   const [isQrOpen, setIsQrOpen] = useState(false)
   const [isManageOpen, setIsManageOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const { data: sessionsResponse, isLoading } = useQuery({
     queryKey: ['whatsapp-sessions'],
@@ -49,6 +67,23 @@ function SessionsPage() {
   })
 
   const sessions = Array.isArray(sessionsResponse) ? sessionsResponse : sessionsResponse?.results || []
+
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery.trim()) return sessions
+    const query = searchQuery.toLowerCase().trim()
+    return sessions.filter((s: any) => 
+      (s.phone_number || '').toLowerCase().includes(query) ||
+      (s.session_id || s.id || '').toLowerCase().includes(query) ||
+      (s.status || '').toLowerCase().includes(query)
+    )
+  }, [sessions, searchQuery])
+
+  const stats = useMemo(() => {
+    const total = sessions.length
+    const connected = sessions.filter((s: any) => (s.status || '').toLowerCase() === 'connected').length
+    const disconnected = total - connected
+    return { total, connected, disconnected }
+  }, [sessions])
 
   // Periodically query QR & status while QR modal is open
   const { data: qrQueryData } = useQuery({
@@ -96,7 +131,7 @@ function SessionsPage() {
         handleScan(data.id)
       }
     },
-    onError: () => toast.error('Failed to create session.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to create session.'))
   })
 
   const fetchQrMutation = useMutation({
@@ -116,7 +151,7 @@ function SessionsPage() {
         toast.error('No QR code returned.')
       }
     },
-    onError: () => toast.error('Failed to fetch QR. Try again.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to fetch QR. Try again.'))
   })
 
   const disconnectSessionMutation = useMutation({
@@ -125,7 +160,7 @@ function SessionsPage() {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
       toast.success('Session disconnected')
     },
-    onError: () => toast.error('Failed to disconnect session.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to disconnect session.'))
   })
 
   const deleteSessionMutation = useMutation({
@@ -134,7 +169,7 @@ function SessionsPage() {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
       toast.success('Session deleted')
     },
-    onError: () => toast.error('Failed to delete session.')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to delete session.'))
   })
 
   const handleScan = (id: string) => {
@@ -149,121 +184,216 @@ function SessionsPage() {
     setIsManageOpen(true)
   }
 
-  const getStatusColor = (status?: string) => {
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(text)
+    toast.success('Session ID copied to clipboard')
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const getStatusBadge = (status?: string) => {
     const s = (status || 'unknown').toLowerCase()
     switch (s) {
       case 'connected':
       case 'authenticated':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800 font-semibold'
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800/60">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            Connected
+          </span>
+        )
       case 'connecting':
       case 'starting':
       case 'initializing':
-        return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-800 font-semibold'
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200/60 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800/60">
+            <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+            Connecting
+          </span>
+        )
       case 'qr_ready':
-        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-800 font-semibold'
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200/60 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-800/60">
+            <QrCode className="w-3 h-3 text-blue-500" />
+            QR Ready
+          </span>
+        )
       case 'disconnected': 
       case 'logout': 
-        return 'bg-red-100 text-red-800 border-red-300 dark:bg-red-950/60 dark:text-red-400 dark:border-red-800 font-semibold'
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+            Disconnected
+          </span>
+        )
       default: 
-        return 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 font-semibold'
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+            {(status || 'unknown').charAt(0).toUpperCase() + (status || 'unknown').slice(1)}
+          </span>
+        )
     }
   }
 
   const selectedSession = sessions.find((s: any) => s.id === selectedSessionId)
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      {/* Sleek Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">WhatsApp Sessions</h2>
-          <p className="text-slate-500">
-            Create and scan WhatsApp sessions to connect your number.
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">WhatsApp Sessions</h2>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{stats.connected}</span> / {stats.total} Connected
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Connect your WhatsApp numbers to dispatch bulk campaign messages.
           </p>
         </div>
 
-        <Button 
-          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20"
-          onClick={() => createSessionMutation.mutate()}
-          disabled={createSessionMutation.isPending}
-        >
-          {createSessionMutation.isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Plus className="w-4 h-4 mr-2" />
-          )}
-          New Session
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-8 px-3 text-xs font-medium"
+            onClick={() => createSessionMutation.mutate()}
+            disabled={createSessionMutation.isPending}
+          >
+            {createSessionMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
+            )}
+            New Session
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {isLoading ? (
-          <div className="col-span-full py-12 flex justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
-            <Smartphone className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-              No Sessions Active
-            </h3>
-            <p className="mb-4">
-              Create your first WhatsApp session and scan the QR code to connect your number.
-            </p>
-            <Button onClick={() => createSessionMutation.mutate()} variant="outline">
-              Create Session
+      {/* Filter and View Mode Controls Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+          <Input 
+            placeholder="Search by phone number or ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 h-8 text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+          />
+        </div>
+
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors ${
+              viewMode === 'grid' 
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs' 
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" /> Grid
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors ${
+              viewMode === 'table' 
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs' 
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" /> List
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      {isLoading ? (
+        <div className="py-16 flex flex-col items-center justify-center space-y-2 text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+          <span className="text-xs">Loading sessions...</span>
+        </div>
+      ) : filteredSessions.length === 0 ? (
+        <div className="py-12 px-4 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+          <Smartphone className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {searchQuery ? 'No matching sessions found' : 'No WhatsApp Sessions Active'}
+          </h3>
+          <p className="text-xs text-slate-500 mt-1 mb-4 max-w-sm mx-auto">
+            {searchQuery ? `Try clearing your search query "${searchQuery}"` : 'Create a WhatsApp session and scan the QR code to link your number.'}
+          </p>
+          {!searchQuery && (
+            <Button onClick={() => createSessionMutation.mutate()} size="sm" variant="outline" className="h-8 text-xs">
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Create First Session
             </Button>
-          </div>
-        ) : (
-          sessions.map((session: any) => (
-            <Card key={session.id} className="overflow-hidden bg-white dark:bg-slate-900">
-              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Smartphone className="w-4 h-4" /> Session
-                    </CardTitle>
-                    <CardDescription className="mt-1 font-mono text-xs">
-                      {session.phone_number || 'No phone number'}
-                    </CardDescription>
-                  </div>
-                  <Badge variant="outline" className={getStatusColor(session.status)}>
-                    {(session.status || 'unknown').charAt(0).toUpperCase() + (session.status || 'unknown').slice(1)}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-3">
-                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-100 dark:border-slate-800 text-xs">
-                  <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                    <span className="font-medium">Session ID:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(session.session_id || session.id)
-                        toast.success('Session ID copied!')
-                      }}
-                      className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1"
-                      title="Click to copy Session ID"
-                    >
-                      {session.session_id || session.id}
-                      <Copy className="w-3 h-3 text-slate-400" />
-                    </button>
+          )}
+        </div>
+      ) : viewMode === 'grid' ? (
+        /* Sleek Grid View */
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filteredSessions.map((session: any) => {
+            const sid = session.session_id || session.id
+            const isConnected = (session.status || '').toLowerCase() === 'connected'
+
+            return (
+              <div 
+                key={session.id} 
+                className="group relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 flex flex-col justify-between space-y-3 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-md"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${isConnected ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {session.phone_number || 'Unconnected Session'}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {dayjs(session.created_at).format('MMM D, YYYY · h:mm A')}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-xs text-slate-500">
-                  Created {dayjs(session.created_at).format('MMM D, YYYY h:mm A')}
+                {/* Body info: Session ID tag */}
+                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-md border border-slate-100 dark:border-slate-800/80 text-[11px]">
+                  <span className="text-slate-400 font-medium shrink-0 mr-1.5">ID:</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(sid)}
+                    className="font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium truncate flex items-center gap-1 transition-colors"
+                    title="Click to copy Session ID"
+                  >
+                    <span className="truncate">{sid}</span>
+                    {copiedId === sid ? (
+                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-slate-400 group-hover:text-slate-500 shrink-0" />
+                    )}
+                  </button>
                 </div>
-                
-                <div className="flex justify-between items-center pt-2">
-                  <div className="flex space-x-2">
-                    {(session.status || '').toLowerCase() === 'connected' ? (
+
+                {/* Status Pill & Action Buttons Footer */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                  <div>
+                    {getStatusBadge(session.status)}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {isConnected ? (
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button 
                             variant="outline" 
-                            size="sm" 
+                            size="sm"
                             disabled={disconnectSessionMutation.isPending}
-                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 border-amber-200"
+                            className="h-7 px-2 text-[11px] font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 border-amber-200/80 dark:border-amber-900/50"
                           >
                             Disconnect
                           </Button>
@@ -277,12 +407,13 @@ function SessionsPage() {
                           </DialogHeader>
                           <DialogFooter>
                             <DialogClose asChild>
-                              <Button type="button" variant="outline">Cancel</Button>
+                              <Button type="button" variant="outline" size="sm">Cancel</Button>
                             </DialogClose>
                             <DialogClose asChild>
                               <Button 
                                 type="button"
                                 variant="destructive" 
+                                size="sm"
                                 onClick={() => disconnectSessionMutation.mutate(session.id)}
                                 className="bg-amber-600 hover:bg-amber-700 text-white"
                               >
@@ -294,99 +425,259 @@ function SessionsPage() {
                       </Dialog>
                     ) : (
                       <Button 
-                        variant="outline" 
-                        size="sm" 
+                        variant="default" 
+                        size="sm"
                         onClick={() => handleScan(session.id)}
+                        className="h-7 px-2.5 text-[11px] font-medium bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
                       >
-                        <QrCode className="w-4 h-4 mr-2" />
-                        Scan
+                        <QrCode className="w-3 h-3" />
+                        Scan QR
                       </Button>
                     )}
+
                     <Button 
                       variant="outline" 
                       size="sm" 
                       onClick={() => handleManage(session.id)}
+                      className="h-7 px-2 text-[11px] font-medium"
+                      title="Configure session settings"
                     >
-                      <Settings className="w-4 h-4 mr-2" />
-                      Manage
+                      <Settings className="w-3 h-3" />
                     </Button>
-                  </div>
-                  
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        disabled={deleteSessionMutation.isPending}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Delete Session?</DialogTitle>
-                        <DialogDescription>
-                          Are you sure you want to delete this session? This action cannot be undone.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button type="button" variant="outline">Cancel</Button>
-                        </DialogClose>
-                        <DialogClose asChild>
-                          <Button 
-                            type="button"
-                            variant="destructive" 
-                            onClick={() => deleteSessionMutation.mutate(session.id)}
-                            className="bg-red-600 hover:bg-red-700 text-white"
-                          >
-                            Delete
-                          </Button>
-                        </DialogClose>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
 
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
+                          disabled={deleteSessionMutation.isPending}
+                          title="Delete session"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Delete Session?</DialogTitle>
+                          <DialogDescription>
+                            Are you sure you want to delete this session? This action cannot be undone.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button type="button" variant="outline" size="sm">Cancel</Button>
+                          </DialogClose>
+                          <DialogClose asChild>
+                            <Button 
+                              type="button"
+                              variant="destructive" 
+                              size="sm"
+                              onClick={() => deleteSessionMutation.mutate(session.id)}
+                              className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                              Delete
+                            </Button>
+                          </DialogClose>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        /* Sleek Table / List View */
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
+          <Table>
+            <TableHeader className="bg-slate-50/70 dark:bg-slate-800/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[140px] text-xs font-semibold text-slate-500">Status</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-500">Phone Number</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-500">Session ID</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-500">Created</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-slate-500">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredSessions.map((session: any) => {
+                const sid = session.session_id || session.id
+                const isConnected = (session.status || '').toLowerCase() === 'connected'
+
+                return (
+                  <TableRow key={session.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                    <TableCell className="py-2.5">
+                      {getStatusBadge(session.status)}
+                    </TableCell>
+                    <TableCell className="py-2.5 font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      {session.phone_number || <span className="text-slate-400 italic font-sans font-normal">Unconnected</span>}
+                    </TableCell>
+                    <TableCell className="py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(sid)}
+                        className="font-mono text-xs text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded transition-colors"
+                        title="Click to copy Session ID"
+                      >
+                        <span>{sid}</span>
+                        {copiedId === sid ? (
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3 h-3 text-slate-400" />
+                        )}
+                      </button>
+                    </TableCell>
+                    <TableCell className="py-2.5 text-xs text-slate-500">
+                      {dayjs(session.created_at).format('MMM D, YYYY · h:mm A')}
+                    </TableCell>
+                    <TableCell className="py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {isConnected ? (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                disabled={disconnectSessionMutation.isPending}
+                                className="h-7 px-2 text-[11px] font-medium text-amber-600 hover:bg-amber-50 border-amber-200/80"
+                              >
+                                Disconnect
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Disconnect Session?</DialogTitle>
+                                <DialogDescription>
+                                  Are you sure you want to disconnect this session?
+                                </DialogDescription>
+                              </DialogHeader>
+                              <DialogFooter>
+                                <DialogClose asChild>
+                                  <Button type="button" variant="outline" size="sm">Cancel</Button>
+                                </DialogClose>
+                                <DialogClose asChild>
+                                  <Button 
+                                    type="button"
+                                    variant="destructive" 
+                                    size="sm"
+                                    onClick={() => disconnectSessionMutation.mutate(session.id)}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                                  >
+                                    Disconnect
+                                  </Button>
+                                </DialogClose>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        ) : (
+                          <Button 
+                            variant="default" 
+                            size="sm"
+                            onClick={() => handleScan(session.id)}
+                            className="h-7 px-2 text-[11px] font-medium bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                          >
+                            <QrCode className="w-3 h-3" />
+                            Scan QR
+                          </Button>
+                        )}
+
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleManage(session.id)}
+                          className="h-7 px-2 text-[11px] font-medium gap-1"
+                        >
+                          <Settings className="w-3 h-3" />
+                          Manage
+                        </Button>
+
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              disabled={deleteSessionMutation.isPending}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Delete Session?</DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to delete this session? This action cannot be undone.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <DialogClose asChild>
+                                <Button type="button" variant="outline" size="sm">Cancel</Button>
+                              </DialogClose>
+                              <DialogClose asChild>
+                                <Button 
+                                  type="button"
+                                  variant="destructive" 
+                                  size="sm"
+                                  onClick={() => deleteSessionMutation.mutate(session.id)}
+                                  className="bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                  Delete
+                                </Button>
+                              </DialogClose>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* QR Code Scan Modal */}
       <Dialog open={isQrOpen} onOpenChange={setIsQrOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Scan WhatsApp QR</DialogTitle>
-            <DialogDescription>
-              Open WhatsApp on your phone, go to Linked Devices, and scan this QR code.
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <QrCode className="w-4 h-4 text-emerald-600" /> Scan WhatsApp QR Code
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Open WhatsApp on your phone, navigate to <strong>Linked Devices</strong>, and scan this QR code.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 rounded-lg min-h-[300px]">
+          <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 min-h-[280px]">
             {fetchQrMutation.isPending ? (
-              <div className="text-center space-y-4">
-                <Loader2 className="w-10 h-10 animate-spin text-emerald-600 mx-auto" />
-                <p className="text-sm text-slate-500">Generating QR Code...</p>
+              <div className="text-center space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
+                <p className="text-xs text-slate-500">Generating QR Code...</p>
               </div>
             ) : qrBase64 ? (
-              <div className="flex flex-col items-center">
-                <img 
-                  src={qrBase64.startsWith('data:image/png;base64,') ? qrBase64 : `data:image/png;base64,${qrBase64}`} 
-                  alt="WhatsApp QR Code" 
-                  className="w-64 h-64 border-4 border-white shadow-sm rounded-lg"
-                />
+              <div className="flex flex-col items-center space-y-4">
+                <div className="bg-white p-2.5 rounded-xl shadow-sm border border-slate-200/80">
+                  <img 
+                    src={qrBase64.startsWith('data:image/png;base64,') ? qrBase64 : `data:image/png;base64,${qrBase64}`} 
+                    alt="WhatsApp QR Code" 
+                    className="w-56 h-56 rounded-md"
+                  />
+                </div>
                 <Button 
                   variant="outline" 
-                  className="mt-6" 
+                  size="sm"
+                  className="text-xs h-8"
                   onClick={() => selectedSessionId && fetchQrMutation.mutate(selectedSessionId)}
                 >
                   Refresh QR Code
                 </Button>
               </div>
             ) : (
-              <div className="text-center text-red-500">
-                <p>Could not generate QR Code.</p>
-                <Button variant="outline" className="mt-4" onClick={() => selectedSessionId && fetchQrMutation.mutate(selectedSessionId)}>
+              <div className="text-center text-red-500 space-y-3">
+                <p className="text-xs font-medium">Could not generate QR Code.</p>
+                <Button variant="outline" size="sm" className="text-xs h-8" onClick={() => selectedSessionId && fetchQrMutation.mutate(selectedSessionId)}>
                   Retry
                 </Button>
               </div>
@@ -406,6 +697,7 @@ function SessionsPage() {
     </div>
   )
 }
+
 
 function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, onClose: () => void, session: any }) {
   const queryClient = useQueryClient()
@@ -454,7 +746,7 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
       toast.success('Session updated successfully')
     },
-    onError: () => toast.error('Failed to update session')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to update session'))
   })
 
   const createAgentMutation = useMutation({
@@ -464,7 +756,7 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
       setNewAgentPhone('')
       toast.success('Agent phone number added')
     },
-    onError: () => toast.error('Failed to add agent phone number')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to add agent phone number'))
   })
 
   const deleteAgentMutation = useMutation({
@@ -473,7 +765,7 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
       queryClient.invalidateQueries({ queryKey: ['agent-phone-numbers', session.id] })
       toast.success('Agent removed')
     },
-    onError: () => toast.error('Failed to remove agent')
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to remove agent'))
   })
 
   const handleUpdateSession = () => {

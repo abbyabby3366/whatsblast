@@ -33,5 +33,5 @@ export async function uploadToS3(
 
   await s3Client.send(command);
 
-  return `https://${bucket}.${endpoint}/${key}`;
+  return `https://${endpoint}/${bucket}/${key}`;
 }

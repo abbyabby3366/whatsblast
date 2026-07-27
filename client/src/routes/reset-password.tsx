@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Loader2, Megaphone } from 'lucide-react'
-import { baseInstance } from '@/lib/api'
+import { baseInstance, getErrorMessage } from '@/lib/api'
 
 export const Route = createFileRoute('/reset-password')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -65,7 +65,8 @@ function ResetPasswordPage() {
       navigate({ to: '/login', replace: true })
     } catch (err) {
       console.error(err)
-      toast.error('Unable to reset password. The OTP may be invalid or expired.')
+      const msg = await getErrorMessage(err, 'Unable to reset password. The OTP may be invalid or expired.')
+      toast.error(msg)
     } finally {
       setIsLoading(false)
     }

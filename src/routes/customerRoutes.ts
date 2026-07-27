@@ -143,4 +143,49 @@ const deleteCustomer = async (req: AuthRequest, res: Response) => {
 
 router.delete('/customers/:id', deleteCustomer);
 
+const updateCustomer = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { phone_number, name, label, notes, custom_data } = req.body;
+
+  const existing = await Customer.findOne({ _id: id, merchant: req.user?._id });
+  if (!existing) {
+    return res.status(404).json({ error: 'Customer not found' });
+  }
+
+  const updateFields: any = {};
+  if (name !== undefined) updateFields.name = name;
+  if (label !== undefined) updateFields.label = label;
+  if (notes !== undefined) updateFields.notes = notes;
+  if (custom_data !== undefined) updateFields.custom_data = custom_data;
+
+  if (phone_number !== undefined) {
+    const cleanPhone = String(phone_number).replace(/[^0-9]/g, '');
+    if (!cleanPhone) {
+      return res.status(400).json({ error: 'phone_number cannot be empty' });
+    }
+
+    const duplicate = await Customer.findOne({
+      merchant: req.user?._id,
+      phone_number: cleanPhone,
+      _id: { $ne: id },
+    });
+    if (duplicate) {
+      return res.status(400).json({ error: 'Phone number already exists for another customer' });
+    }
+    updateFields.phone_number = cleanPhone;
+  }
+
+  const updatedCustomer = await Customer.findOneAndUpdate(
+    { _id: id, merchant: req.user?._id },
+    { $set: updateFields },
+    { new: true }
+  );
+
+  return res.json(formatCustomer(updatedCustomer));
+};
+
+router.put('/customers/:id', updateCustomer);
+router.patch('/customers/:id', updateCustomer);
+
 export default router;
+

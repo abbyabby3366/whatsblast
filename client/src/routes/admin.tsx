@@ -12,7 +12,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Store, LogOut, Megaphone, Smartphone, Shield } from 'lucide-react'
+import { LayoutDashboard, Store, LogOut, Megaphone, Smartphone } from 'lucide-react'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -92,14 +92,14 @@ function AdminLayout() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-slate-50 dark:bg-slate-950">
         <Sidebar className="border-r border-slate-200 dark:border-slate-800">
-          <SidebarHeader className="h-16 flex flex-row items-center border-b border-slate-200 dark:border-slate-800 px-4">
+          <SidebarHeader className="h-14 flex flex-row items-center border-b border-slate-200 dark:border-slate-800 px-4">
             <div className="flex items-center gap-2.5 text-lg font-bold">
-              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
+              <img src="/futuristic-whatsapp-logo.png" alt="WhatsBlast Logo" className="w-7 h-7 object-contain rounded-lg shadow-sm" />
               <span className="tracking-tight text-slate-900 dark:text-white"><span className="text-emerald-600 dark:text-emerald-400">Super</span>Admin</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup className="px-3 py-3">
+            <SidebarGroup className="px-3 py-2">
               <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Management</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu className="space-y-1">
@@ -141,10 +141,10 @@ function AdminLayout() {
           </SidebarContent>
         </Sidebar>
         <main className="flex flex-1 flex-col overflow-hidden">
-          <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center gap-2.5">
               <HeaderIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+              <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
                 {headerInfo.title}
               </h1>
             </div>
@@ -163,7 +163,7 @@ function AdminLayout() {
               </DropdownMenuContent>
             </DropdownMenu>
           </header>
-          <div className="flex-1 overflow-auto p-6">
+          <div className="flex-1 overflow-auto p-4 sm:p-4.5">
             <Outlet />
           </div>
         </main>

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Loader2, Megaphone } from 'lucide-react'
-import { baseInstance } from '@/lib/api'
+import { baseInstance, parseApiError } from '@/lib/api'
 
 export const Route = createFileRoute('/forgot-password')({
   component: ForgotPasswordPage,
@@ -45,14 +45,10 @@ function ForgotPasswordPage() {
       navigate({ to: '/reset-password', search: { phone_number: normalizedPhone } as never })
     } catch (err: any) {
       console.error(err)
-      let message = 'Unable to request password reset. Please try again.'
-      try {
-        const body = await err.response?.json()
-        const retryAfter = Number(body?.retry_after_seconds ?? 0)
-        if (retryAfter > 0) setOtpCooldown(retryAfter)
-        message = body?.phone_number?.[0] || body?.detail || body?.error || message
-      } catch {}
-      toast.error(message)
+      const parsed = await parseApiError(err, 'Unable to request password reset. Please try again.')
+      const retryAfter = Number(parsed.data?.retry_after_seconds ?? 0)
+      if (retryAfter > 0) setOtpCooldown(retryAfter)
+      toast.error(parsed.message)
     } finally {
       setIsLoading(false)
     }

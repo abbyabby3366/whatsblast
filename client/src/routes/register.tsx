@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
-import { baseInstance } from '@/lib/api'
+import { baseInstance, parseApiError } from '@/lib/api'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 
 export const Route = createFileRoute('/register')({
@@ -56,17 +56,13 @@ function RegisterPage() {
       setOtp('')
       setOtpSentTo(normalizedPhone)
       setOtpCooldown(120)
-      toast.success(res.detail ?? 'OTP has been sent to your WhatsApp')
+      toast.success(res.detail ?? res.message ?? 'OTP has been sent to your WhatsApp')
     } catch (err: any) {
       console.error(err)
-      let message = 'Unable to send OTP. Please try again.'
-      try {
-        const body = await err.response?.json()
-        const retryAfter = Number(body?.retry_after_seconds ?? 0)
-        if (retryAfter > 0) setOtpCooldown(retryAfter)
-        message = body?.phone_number?.[0] || body?.detail || body?.error || message
-      } catch {}
-      toast.error(message)
+      const parsed = await parseApiError(err, 'Unable to send OTP. Please try again.')
+      const retryAfter = Number(parsed.data?.retry_after_seconds ?? 0)
+      if (retryAfter > 0) setOtpCooldown(retryAfter)
+      toast.error(parsed.message)
     } finally {
       setIsSendingOtp(false)
     }
@@ -104,12 +100,9 @@ function RegisterPage() {
       toast.success('Account created successfully!')
       navigate({ to: '/merchant', replace: true })
     } catch (err: any) {
-      let message = 'Registration failed. Check your OTP or phone number.'
-      try {
-        const body = await err.response?.json()
-        message = body?.otp?.[0] || body?.phone_number?.[0] || body?.non_field_errors?.[0] || body?.detail || body?.error || message
-      } catch {}
-      toast.error(message)
+      console.error(err)
+      const parsed = await parseApiError(err, 'Registration failed. Check your OTP or phone number.')
+      toast.error(parsed.message)
     } finally {
       setIsLoading(false)
     }

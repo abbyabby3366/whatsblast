@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, UserRole } from '../models/User.js';
 import { OTP, IOTP } from '../models/OTP.js';
+import { sendOtpViaMasterPhone } from '../services/otpService.js';
 
 const router = Router();
 
@@ -30,7 +31,11 @@ router.post('/register/send-otp', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Phone number is required' });
   }
 
-  const cleanPhone = String(phone_number).trim();
+  const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
+  if (!cleanPhone) {
+    return res.status(400).json({ error: 'Invalid phone number format' });
+  }
+
   const existing = await User.findOne({ phone_number: cleanPhone });
   if (existing) {
     return res.status(400).json({ error: 'Phone number already registered' });
@@ -39,10 +44,67 @@ router.post('/register/send-otp', async (req: Request, res: Response) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-  await OTP.deleteMany({ phone_number: cleanPhone });
-  await OTP.create({ phone_number: cleanPhone, code, expiresAt });
+  try {
+    await sendOtpViaMasterPhone(cleanPhone, code);
+    await OTP.deleteMany({ phone_number: cleanPhone });
+    await OTP.create({ phone_number: cleanPhone, code, expiresAt });
+    return res.json({ success: true, message: 'OTP sent successfully to your WhatsApp', debug_otp: code });
+  } catch (err: any) {
+    console.error('Failed to send OTP via WhatsApp Master account:', err);
+    return res.status(500).json({ error: err.message || 'Failed to send OTP message via WhatsApp. Please try again or contact administrator.' });
+  }
+});
 
-  return res.json({ success: true, message: 'OTP sent successfully', debug_otp: code });
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  const { phone_number } = req.body;
+  if (!phone_number) {
+    return res.status(400).json({ detail: 'Phone number is required' });
+  }
+
+  const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
+  const existing = await User.findOne({ phone_number: cleanPhone });
+  if (!existing) {
+    // For security, return success message even if account doesn't exist
+    return res.json({ detail: 'If the account exists, an OTP has been sent.' });
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  try {
+    await sendOtpViaMasterPhone(cleanPhone, code);
+    await OTP.deleteMany({ phone_number: cleanPhone });
+    await OTP.create({ phone_number: cleanPhone, code, expiresAt });
+    return res.json({ detail: 'If the account exists, an OTP has been sent.' });
+  } catch (err: any) {
+    console.error('Failed to send forgot-password OTP:', err);
+    return res.status(500).json({ detail: err.message || 'Failed to send OTP via WhatsApp.' });
+  }
+});
+
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const { phone_number, otp, password } = req.body;
+  if (!phone_number || !otp || !password) {
+    return res.status(400).json({ detail: 'Phone number, OTP, and new password are required' });
+  }
+
+  const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
+  const validOtp: IOTP | null = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
+
+  if (!validOtp || validOtp.expiresAt < new Date()) {
+    return res.status(400).json({ detail: 'Invalid or expired OTP' });
+  }
+
+  const user = await User.findOne({ phone_number: cleanPhone });
+  if (!user) {
+    return res.status(404).json({ detail: 'User not found' });
+  }
+
+  user.password = await bcrypt.hash(password, 10);
+  await user.save();
+  await OTP.deleteMany({ phone_number: cleanPhone });
+
+  return res.json({ detail: 'Password has been reset successfully.' });
 });
 
 router.post('/register', async (req: Request, res: Response) => {
@@ -52,11 +114,11 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Phone number and password are required' });
   }
 
-  const cleanPhone = String(phone_number).trim();
+  const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
 
   if (otp) {
     const validOtp: IOTP | null = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
-    if (!validOtp) {
+    if (!validOtp || validOtp.expiresAt < new Date()) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
     await OTP.deleteMany({ phone_number: cleanPhone });
@@ -79,7 +141,7 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(400).json({ detail: 'Phone number and password are required' });
   }
 
-  const cleanPhone = String(phone_number).trim();
+  const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
   const user = await User.findOne({ phone_number: cleanPhone });
 
   if (!user || !user.password) {
@@ -115,3 +177,4 @@ router.post('/token/refresh', async (req: Request, res: Response) => {
 });
 
 export default router;
+

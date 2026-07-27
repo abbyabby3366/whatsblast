@@ -234,6 +234,31 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     }
   });
 
+  sock.ev.on('messages.update', async (updates) => {
+    for (const update of updates) {
+      if (!update.key?.id) continue;
+
+      const messageId = update.key.id;
+      const updateStatus: any = update.update?.status;
+
+      let newStatus: MessageStatus | null = null;
+      if (updateStatus === 3 || updateStatus === 'DELIVERED' || updateStatus === 'DELIVERY_ACK') {
+        newStatus = MessageStatus.DELIVERED;
+      } else if (updateStatus === 4 || updateStatus === 'READ') {
+        newStatus = MessageStatus.READ;
+      } else if (updateStatus === 0 || updateStatus === 'FAILED' || updateStatus === 'ERROR') {
+        newStatus = MessageStatus.FAILED;
+      }
+
+      if (newStatus) {
+        await Message.updateOne(
+          { message_id: messageId },
+          { $set: { status: newStatus } }
+        ).catch(console.error);
+      }
+    }
+  });
+
   return sessionObj;
 }
 
@@ -275,3 +300,41 @@ export async function pickUserSession(userId: string): Promise<string> {
 
   return chosenSessionId;
 }
+
+export async function verifyAndFormatJid(
+  sock: any,
+  phone: string
+): Promise<{ jid: string; exists: boolean; cleanPhone: string }> {
+  let clean = String(phone || '').replace(/[^0-9]/g, '');
+  if (!clean) {
+    return { jid: '', exists: false, cleanPhone: '' };
+  }
+
+  // Normalize Malaysian phone number format: convert leading 0 to 60 (e.g. 01222733418 -> 601222733418)
+  if (clean.startsWith('0')) {
+    clean = '60' + clean.slice(1);
+  }
+
+  const defaultJid = `${clean}@s.whatsapp.net`;
+
+  try {
+    if (sock && typeof sock.onWhatsApp === 'function') {
+      const results = await sock.onWhatsApp(clean);
+      if (Array.isArray(results) && results.length > 0) {
+        const match = results.find((r: any) => r.exists) || results[0];
+        if (match && match.exists && match.jid) {
+          const verifiedPhone = match.jid.split('@')[0];
+          return { jid: match.jid, exists: true, cleanPhone: verifiedPhone };
+        } else {
+          return { jid: defaultJid, exists: false, cleanPhone: clean };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to query onWhatsApp for ${clean}:`, err);
+  }
+
+  // Fallback if onWhatsApp check fails to respond or is unsupported
+  return { jid: defaultJid, exists: true, cleanPhone: clean };
+}
+

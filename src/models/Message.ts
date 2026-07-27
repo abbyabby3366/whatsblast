@@ -7,6 +7,7 @@ export enum MessageDirection {
 
 export enum MessageStatus {
   QUEUED = 'queued',
+  PENDING = 'pending',
   SENT = 'sent',
   DELIVERED = 'delivered',
   READ = 'read',
@@ -29,6 +30,8 @@ export interface IMessage extends Document {
   template?: mongoose.Types.ObjectId;
   content?: Record<string, any>;
   error?: string;
+  scheduled_at?: Date;
+  sent_at?: Date;
   wa_timestamp?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -50,6 +53,8 @@ const MessageSchema = new Schema<IMessage>(
     template: { type: Schema.Types.ObjectId, ref: 'MessageTemplate' },
     content: { type: Schema.Types.Mixed, default: {} },
     error: { type: String },
+    scheduled_at: { type: Date, index: true },
+    sent_at: { type: Date },
     wa_timestamp: { type: Date },
   },
   { timestamps: true }

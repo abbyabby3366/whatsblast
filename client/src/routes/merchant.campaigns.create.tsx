@@ -17,13 +17,18 @@ import {
   Download,
   Info,
   Upload,
+  CheckCircle2,
+  ExternalLink,
+  FileText,
+  Image as ImageIcon,
+  Video as VideoIcon,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { api } from '@/lib/api'
+import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -64,12 +69,20 @@ type ButtonDraft = {
   value?: string
 }
 
+export type AttachedFile = {
+  id: string
+  url: string | null
+  name?: string
+  type?: string
+}
+
 type TemplateDraft = {
   id?: string
   messageType: string
   template: string
   footer?: string
   fileId: string
+  attachedFiles?: AttachedFile[]
   buttons: ButtonDraft[]
   buttonMediaType: string
   previewUrl: string | null
@@ -80,18 +93,21 @@ const createEmptyTemplateDraft = (): TemplateDraft => ({
   template: '',
   footer: '',
   fileId: '',
+  attachedFiles: [],
   buttons: [],
   buttonMediaType: 'none',
   previewUrl: null,
 })
 
 const filePreviewUrl = (fileObj: any, buttonImageObj?: any) =>
+  fileObj?.file_path ||
   fileObj?.file ||
   fileObj?.url ||
   fileObj?.file_url ||
   fileObj?.image ||
   fileObj?.video ||
   fileObj?.document ||
+  buttonImageObj?.file_path ||
   buttonImageObj?.file ||
   buttonImageObj?.url ||
   buttonImageObj?.file_url ||
@@ -108,13 +124,22 @@ const normalizeButtonType = (type?: string): ButtonDraft['type'] => {
 
 const buildTemplatePayload = (value: TemplateDraft) => {
   const existing = value.id ? { id: value.id } : {}
+  const fileIds = value.attachedFiles && value.attachedFiles.length > 0
+    ? value.attachedFiles.map((f) => f.id).filter(Boolean)
+    : value.fileId
+    ? [value.fileId]
+    : []
+  const primaryFileId = fileIds[0] || ''
+
   return {
     ...existing,
     text: value.template,
     footer: value.footer || '',
     type: value.messageType,
-    ...(value.fileId ? { file_id: value.fileId } : {}),
-    ...(value.buttonMediaType !== 'none' && value.fileId ? { button_image_id: value.fileId } : {}),
+    ...(primaryFileId ? { file_id: primaryFileId } : {}),
+    ...(fileIds.length > 0 ? { file_ids: fileIds } : {}),
+    ...(value.previewUrl && !value.previewUrl.startsWith('blob:') ? { file_url: value.previewUrl } : {}),
+    ...(value.buttonMediaType !== 'none' && primaryFileId ? { button_image_id: primaryFileId } : {}),
     ...(value.buttons?.length
       ? {
           buttons: value.buttons.map((b) => ({
@@ -136,7 +161,7 @@ function CreateCampaignPage() {
   const editingCampaignId = search.edit || null
   const [step, setStep] = useState<number>(() => {
     const s = parseInt(search.step || '1', 10)
-    return isNaN(s) || s < 1 || s > 3 ? 1 : s
+    return isNaN(s) || s < 1 || s > 4 ? 1 : s
   })
 
   // Wizard state
@@ -154,6 +179,18 @@ function CreateCampaignPage() {
   const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false)
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
+
+  // Fetch user files for resolving media previews
+  const { data: userFiles } = useQuery({
+    queryKey: ['files'],
+    queryFn: async () => {
+      try {
+        return await api.get('files').json<any[]>()
+      } catch {
+        return []
+      }
+    },
+  })
 
   // CSV Import State
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
@@ -237,6 +274,16 @@ function CreateCampaignPage() {
     reader.readAsBinaryString(csvFile)
   }
 
+  // User profile for account-scoped draft checking
+  const { data: userProfile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => api.get('users/me/').json<any>(),
+  })
+
+  const accountId = userProfile?.id || null
+  const draftKey = accountId ? `${DRAFT_STORAGE_KEY}_${accountId}` : null
+  const [hasAttemptedRestore, setHasAttemptedRestore] = useState(false)
+
   // Save Draft Mutation
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
@@ -257,6 +304,7 @@ function CreateCampaignPage() {
       }
     },
     onSuccess: (savedCampaign: any) => {
+      if (draftKey) localStorage.removeItem(draftKey)
       localStorage.removeItem(DRAFT_STORAGE_KEY)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
@@ -269,39 +317,53 @@ function CreateCampaignPage() {
         })
       }
     },
-    onError: () => toast.error('Failed to save draft.'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to save draft.')),
   })
 
   const handleSaveDraft = () => {
     saveDraftMutation.mutate()
   }
 
-  // Restore draft on mount if not editing
+  // Restore draft on mount if not editing and account matches
   useEffect(() => {
-    if (editingCampaignId) return
-    const saved = localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (editingCampaignId) {
+      setHasAttemptedRestore(true)
+      return
+    }
+    if (!accountId) return
+
+    const savedScoped = draftKey ? localStorage.getItem(draftKey) : null
+    const savedLegacy = localStorage.getItem(DRAFT_STORAGE_KEY)
+    const saved = savedScoped || savedLegacy
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
-        if (parsed.name) setName(parsed.name)
-        if (typeof parsed.minInterval === 'number') setMinInterval(parsed.minInterval)
-        if (typeof parsed.maxInterval === 'number') setMaxInterval(parsed.maxInterval)
-        if (typeof parsed.enableWarmup === 'boolean') setEnableWarmup(parsed.enableWarmup)
-        if (Array.isArray(parsed.templateDrafts) && parsed.templateDrafts.length > 0) {
-          setTemplateDrafts(parsed.templateDrafts)
+        if (parsed.accountId && parsed.accountId !== accountId) {
+          setIsDraftRestored(false)
+        } else {
+          if (parsed.name) setName(parsed.name)
+          if (typeof parsed.minInterval === 'number') setMinInterval(parsed.minInterval)
+          if (typeof parsed.maxInterval === 'number') setMaxInterval(parsed.maxInterval)
+          if (typeof parsed.enableWarmup === 'boolean') setEnableWarmup(parsed.enableWarmup)
+          if (Array.isArray(parsed.templateDrafts) && parsed.templateDrafts.length > 0) {
+            setTemplateDrafts(parsed.templateDrafts)
+          }
+          if (Array.isArray(parsed.recipients)) setRecipients(parsed.recipients)
+          setIsDraftRestored(true)
         }
-        if (Array.isArray(parsed.recipients)) setRecipients(parsed.recipients)
-        setIsDraftRestored(true)
       } catch (err) {
         console.error('Failed to parse campaign draft', err)
       }
     }
-  }, [editingCampaignId])
+    setHasAttemptedRestore(true)
+  }, [editingCampaignId, accountId, draftKey])
 
-  // Auto-save changes to localStorage
+  // Auto-save changes to localStorage (scoped to account)
   useEffect(() => {
-    if (editingCampaignId) return
+    if (editingCampaignId || !accountId || !draftKey || !hasAttemptedRestore) return
     const draftData = {
+      accountId,
       name,
       minInterval,
       maxInterval,
@@ -310,10 +372,11 @@ function CreateCampaignPage() {
       recipients,
       updatedAt: new Date().toISOString(),
     }
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData))
-  }, [name, minInterval, maxInterval, enableWarmup, templateDrafts, recipients, editingCampaignId])
+    localStorage.setItem(draftKey, JSON.stringify(draftData))
+  }, [name, minInterval, maxInterval, enableWarmup, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
 
   const clearDraft = () => {
+    if (draftKey) localStorage.removeItem(draftKey)
     localStorage.removeItem(DRAFT_STORAGE_KEY)
     setName('')
     setMinInterval(10)
@@ -353,21 +416,44 @@ function CreateCampaignPage() {
       setEnableWarmup(Boolean(campaign.enable_warmup))
       setRecipients(campaign.recipient_phones || [])
       if (campaign.templates?.length) {
-        setTemplateDrafts(campaign.templates.map((t: any) => ({
-          id: t.id,
-          messageType: t.type || (t.buttons?.length ? 'buttons' : t.file_id ? 'image' : 'text'),
-          template: t.text || '',
-          footer: t.footer || '',
-          fileId: t.file_id || t.file?.id || '',
-          buttons: (t.buttons || []).map((b: any) => ({
-            id: b.id || Date.now().toString(),
-            type: normalizeButtonType(b.type),
-            display_text: b.displayText || b.display_text || '',
-            value: b.value || '',
-          })),
-          buttonMediaType: t.buttons?.length && t.file_id ? 'image' : 'none',
-          previewUrl: filePreviewUrl(t.file, t.button_image),
-        })))
+        setTemplateDrafts(
+          campaign.templates.map((t: any) => {
+            const rawFileIds: string[] = Array.isArray(t.file_ids) && t.file_ids.length > 0
+              ? t.file_ids
+              : t.file_id || t.file?.id
+              ? [t.file_id || t.file?.id]
+              : []
+            const initialAttached: AttachedFile[] = Array.isArray(t.files) && t.files.length > 0
+              ? t.files.map((f: any) => ({
+                  id: f.id || f._id,
+                  url: f.file_url || f.file_path || f.url || null,
+                  name: f.file_name || 'Attached File',
+                  type: f.file_type || t.type || 'image',
+                }))
+              : rawFileIds.map((id: string) => ({
+                  id,
+                  url: id === (t.file_id || t.file?.id) ? filePreviewUrl(t.file, t.button_image) : null,
+                  type: t.type || 'image',
+                }))
+
+            return {
+              id: t.id,
+              messageType: t.type || (t.buttons?.length ? 'buttons' : rawFileIds.length > 0 ? 'image' : 'text'),
+              template: t.text || '',
+              footer: t.footer || '',
+              fileId: rawFileIds[0] || '',
+              attachedFiles: initialAttached,
+              buttons: (t.buttons || []).map((b: any) => ({
+                id: b.id || Date.now().toString(),
+                type: normalizeButtonType(b.type),
+                display_text: b.displayText || b.display_text || '',
+                value: b.value || '',
+              })),
+              buttonMediaType: t.buttons?.length && rawFileIds.length > 0 ? 'image' : 'none',
+              previewUrl: filePreviewUrl(t.file, t.button_image),
+            }
+          })
+        )
       }
       return campaign
     },
@@ -383,13 +469,13 @@ function CreateCampaignPage() {
       return api.post('files/', { body: formData }).json<any>()
     },
     onSuccess: () => toast.success('File uploaded successfully!'),
-    onError: () => toast.error('Failed to upload file.'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to upload file.')),
   })
 
   const deleteFileMutation = useMutation({
     mutationFn: (id: string) => api.delete(`files/${id}/`),
     onSuccess: () => toast.success('File deleted.'),
-    onError: () => toast.error('Failed to delete file.'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to delete file.')),
   })
 
   const handleTemplateFilesUpload = async (fileList: FileList | File[]) => {
@@ -398,13 +484,18 @@ function CreateCampaignPage() {
     const uploadType = activeTemplate.messageType === 'buttons' ? activeTemplate.buttonMediaType : activeTemplate.messageType
     if (uploadType === 'none' || uploadType === 'buttons') return
 
-    const uploadedResults: Array<{ id: string; url: string | null }> = []
+    const uploadedResults: AttachedFile[] = []
     for (const file of files) {
       const localPreview = uploadType === 'image' || uploadType === 'video' ? URL.createObjectURL(file) : null
       try {
         const res = await uploadFileMutation.mutateAsync({ file, type: uploadType })
-        const preview = res.file || res.url || res.file_url || localPreview
-        uploadedResults.push({ id: res.id, url: preview })
+        const preview = res.file_path || res.file || res.url || res.file_url || localPreview
+        uploadedResults.push({
+          id: res.id || res._id,
+          url: preview,
+          name: res.file_name || file.name,
+          type: uploadType,
+        })
       } catch (err) {
         console.error('Failed uploading media file', err)
       }
@@ -412,23 +503,21 @@ function CreateCampaignPage() {
 
     if (uploadedResults.length === 0) return
 
-    updateActiveTemplate({ fileId: uploadedResults[0].id, previewUrl: uploadedResults[0].url })
+    const currentAttached = activeTemplate.attachedFiles && activeTemplate.attachedFiles.length > 0
+      ? activeTemplate.attachedFiles
+      : activeTemplate.fileId
+      ? [{ id: activeTemplate.fileId, url: activeTemplate.previewUrl, type: uploadType }]
+      : []
 
-    if (uploadedResults.length > 1) {
-      setTemplateDrafts((prev) => {
-        const extraDrafts: TemplateDraft[] = uploadedResults.slice(1).map((item) => ({
-          ...createEmptyTemplateDraft(),
-          messageType: activeTemplate.messageType,
-          buttonMediaType: activeTemplate.buttonMediaType,
-          template: activeTemplate.template,
-          buttons: [...activeTemplate.buttons],
-          fileId: item.id,
-          previewUrl: item.url,
-        }))
-        return [...prev, ...extraDrafts]
-      })
-      toast.success(`Uploaded ${uploadedResults.length} files and created ${uploadedResults.length} templates!`)
-    }
+    const updatedAttachedFiles = [...currentAttached, ...uploadedResults]
+
+    updateActiveTemplate({
+      attachedFiles: updatedAttachedFiles,
+      fileId: updatedAttachedFiles[0]?.id || '',
+      previewUrl: updatedAttachedFiles[0]?.url || null,
+    })
+
+    toast.success(`Attached ${uploadedResults.length} file(s) to Template ${activeTemplateIndex + 1}!`)
   }
 
   // Launch Campaign mutation (runs blast directly)
@@ -447,13 +536,14 @@ function CreateCampaignPage() {
       return campaignId
     },
     onSuccess: () => {
+      if (draftKey) localStorage.removeItem(draftKey)
       localStorage.removeItem(DRAFT_STORAGE_KEY)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
       toast.success('Campaign launched! Blast execution started.')
       navigate({ to: '/merchant/campaigns' })
     },
-    onError: () => toast.error('Failed to launch campaign.'),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to launch campaign.')),
   })
 
   // Customer fetching
@@ -575,25 +665,34 @@ function CreateCampaignPage() {
     setStep(3)
   }
 
+  const handleNextStep3 = () => {
+    if (recipients.length === 0) {
+      toast.error('Please select at least one recipient.')
+      return
+    }
+    setStep(4)
+  }
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-16">
+    <div className="mx-auto max-w-5xl space-y-3.5 pb-8">
       {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-800">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2.5 dark:border-slate-800">
+        <div className="flex items-center gap-2.5">
           <Button
             type="button"
             variant="ghost"
             size="icon"
             onClick={() => navigate({ to: '/merchant/campaigns' })}
+            className="h-8 w-8"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
               {editingCampaignId ? 'Edit Campaign' : 'Create New Campaign'}
             </h1>
-            <p className="text-sm text-slate-500">
-              Set up your multi-step WhatsApp blast in 3 simple steps
+            <p className="text-xs text-slate-500">
+              Set up your multi-step WhatsApp blast in 4 simple steps
             </p>
           </div>
         </div>
@@ -611,7 +710,7 @@ function CreateCampaignPage() {
               variant="outline"
               size="sm"
               onClick={clearDraft}
-              className="text-slate-500 hover:text-slate-700"
+              className="h-8 text-xs text-slate-500 hover:text-slate-700"
               title="Reset current form"
             >
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset Form
@@ -620,12 +719,12 @@ function CreateCampaignPage() {
         </div>
       </div>
 
-      {/* 3-Step Navigation Stepper */}
-      <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/50">
+      {/* 4-Step Navigation Stepper */}
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1.5 dark:border-slate-800 dark:bg-slate-900/50 sm:grid-cols-4">
         <button
           type="button"
           onClick={() => setStep(1)}
-          className={`flex items-center justify-center gap-2 rounded-lg p-3 text-sm font-medium transition-all ${
+          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
             step === 1
               ? 'bg-emerald-600 text-white shadow-sm'
               : step > 1
@@ -633,7 +732,7 @@ function CreateCampaignPage() {
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
             1
           </span>
           <span>Campaign Name</span>
@@ -648,7 +747,7 @@ function CreateCampaignPage() {
             }
             setStep(2)
           }}
-          className={`flex items-center justify-center gap-2 rounded-lg p-3 text-sm font-medium transition-all ${
+          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
             step === 2
               ? 'bg-emerald-600 text-white shadow-sm'
               : step > 2
@@ -656,7 +755,7 @@ function CreateCampaignPage() {
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
             2
           </span>
           <span>Message Template</span>
@@ -671,24 +770,51 @@ function CreateCampaignPage() {
             }
             setStep(3)
           }}
-          className={`flex items-center justify-center gap-2 rounded-lg p-3 text-sm font-medium transition-all ${
+          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
             step === 3
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : step > 3
+              ? 'bg-white text-emerald-700 dark:bg-slate-800 dark:text-emerald-400'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+            3
+          </span>
+          <span>Recipients</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!name.trim()) {
+              toast.error('Please enter a campaign name first.')
+              return
+            }
+            if (recipients.length === 0) {
+              toast.error('Please select at least one recipient first.')
+              return
+            }
+            setStep(4)
+          }}
+          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
+            step === 4
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
-            3
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+            4
           </span>
-          <span>Recipients</span>
+          <span>Campaign Summary</span>
         </button>
       </div>
 
       {/* EDITING NOTICE BANNER */}
       {editingCampaignId && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <div className="space-y-0.5 text-sm">
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="space-y-0.5 text-xs sm:text-sm">
             <p className="font-semibold text-amber-950 dark:text-amber-100">
               Notice: Editing Queued Campaign
             </p>
@@ -703,14 +829,14 @@ function CreateCampaignPage() {
       {step === 1 && (
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader>
-            <CardTitle className="text-lg">Step 1: Campaign Details</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-base font-semibold">Step 1: Campaign Details</CardTitle>
+            <CardDescription className="text-xs">
               Give your campaign a title and set the sending interval and warmup settings.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="campaign-name" className="font-semibold">
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="campaign-name" className="text-xs font-semibold">
                 Campaign Name <span className="text-red-500">*</span>
               </Label>
               <Input
@@ -722,9 +848,9 @@ function CreateCampaignPage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="min-interval">Min Interval (minutes)</Label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="min-interval" className="text-xs font-medium">Min Interval (minutes)</Label>
                 <Input
                   id="min-interval"
                   type="number"
@@ -735,8 +861,8 @@ function CreateCampaignPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="max-interval">Max Interval (minutes)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="max-interval" className="text-xs font-medium">Max Interval (minutes)</Label>
                 <Input
                   id="max-interval"
                   type="number"
@@ -748,7 +874,7 @@ function CreateCampaignPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+            <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
               <input
                 id="enable-warmup"
                 type="checkbox"
@@ -757,7 +883,7 @@ function CreateCampaignPage() {
                 className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               />
               <div className="space-y-0.5">
-                <Label htmlFor="enable-warmup" className="cursor-pointer font-medium">
+                <Label htmlFor="enable-warmup" className="cursor-pointer text-xs font-medium">
                   Enable Account Warmup
                 </Label>
                 <p className="text-xs text-slate-500">
@@ -766,7 +892,7 @@ function CreateCampaignPage() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-4">
+            <div className="flex justify-end pt-2">
               <Button onClick={handleNextStep1} className="bg-emerald-600 text-white hover:bg-emerald-700">
                 Next: Message Template <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -784,7 +910,7 @@ function CreateCampaignPage() {
               Create text, media, or button templates for your blast sequence. Media upload is placed above text.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
             {/* Template Tabs */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
@@ -895,94 +1021,233 @@ function CreateCampaignPage() {
 
                   {(activeTemplate.messageType !== 'buttons' || activeTemplate.buttonMediaType !== 'none') && (
                     <>
-                      <Label>
-                        {activeTemplate.messageType === 'buttons' ? 'Upload Button Image' : 'Upload Media'}
-                      </Label>
-                      {!activeTemplate.fileId && (
-                        <div
-                          className="relative mt-2 cursor-pointer rounded-lg border-2 border-dashed border-slate-300 p-8 text-center transition-colors hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-900"
-                          onDragOver={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                          }}
-                          onDrop={async (e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            if (e.dataTransfer.files.length > 0) {
-                              await handleTemplateFilesUpload(e.dataTransfer.files)
-                            }
-                          }}
-                          onClick={() =>
-                            document.getElementById(`template-file-${activeTemplateIndex}`)?.click()
-                          }
-                        >
-                          <Input
-                            id={`template-file-${activeTemplateIndex}`}
-                            type="file"
-                            multiple
-                            accept={
-                              (activeTemplate.messageType === 'buttons'
-                                ? activeTemplate.buttonMediaType
-                                : activeTemplate.messageType) === 'image'
-                                ? 'image/*'
-                                : (activeTemplate.messageType === 'buttons'
-                                    ? activeTemplate.buttonMediaType
-                                    : activeTemplate.messageType) === 'video'
-                                ? 'video/*'
-                                : '.pdf,.doc,.docx,.txt'
-                            }
-                            onChange={async (e) => {
-                              if (e.target.files && e.target.files.length > 0) {
-                                await handleTemplateFilesUpload(e.target.files)
-                              }
-                            }}
-                            className="hidden"
-                          />
-                          <div className="flex flex-col items-center justify-center space-y-2">
-                            <div className="rounded-full bg-emerald-50 p-3 text-emerald-600 dark:bg-emerald-900/20">
-                              <Plus className="h-6 w-6" />
-                            </div>
-                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                              Click or drag and drop to upload (single or multiple)
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {activeTemplate.messageType === 'buttons'
-                                ? 'PNG, JPG or GIF (backend button_image field)'
-                                : activeTemplate.messageType === 'image'
-                                ? 'SVG, PNG, JPG or GIF'
-                                : activeTemplate.messageType === 'video'
-                                ? 'MP4, WebM or OGG'
-                                : 'PDF, DOC, DOCX or TXT'}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {uploadFileMutation.isPending && (
-                        <p className="mt-2 flex items-center text-sm text-emerald-600">
-                          <Loader2 className="mr-1 h-3 w-3 animate-spin" /> Uploading file(s)...
-                        </p>
-                      )}
-
-                      {activeTemplate.fileId && !uploadFileMutation.isPending && (
-                        <div className="mt-2 flex items-center justify-between rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-900 dark:bg-green-900/20">
-                          <p className="px-2 text-xs font-medium text-green-700 dark:text-green-300">
-                            Media attached successfully.
-                          </p>
+                      <div className="flex items-center justify-between">
+                        <Label>
+                          {activeTemplate.messageType === 'buttons' ? 'Upload Button Image' : 'Upload Media'}
+                        </Label>
+                        {activeTemplate.attachedFiles && activeTemplate.attachedFiles.length > 0 && (
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-red-500 hover:bg-red-50 hover:text-red-700"
+                            className="h-7 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/50"
                             onClick={() => {
-                              if (activeTemplate.fileId) deleteFileMutation.mutate(activeTemplate.fileId)
-                              updateActiveTemplate({ fileId: '', previewUrl: null })
+                              activeTemplate.attachedFiles?.forEach((f) => {
+                                if (f.id) deleteFileMutation.mutate(f.id)
+                              })
+                              updateActiveTemplate({ attachedFiles: [], fileId: '', previewUrl: null })
                             }}
                           >
-                            <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove Media
+                            <Trash2 className="mr-1 h-3.5 w-3.5" /> Clear All Media
                           </Button>
-                        </div>
-                      )}
+                        )}
+                      </div>
+
+                      {/* Hidden file input supporting multiple files */}
+                      <Input
+                        id={`template-file-${activeTemplateIndex}`}
+                        type="file"
+                        multiple
+                        accept={
+                          (activeTemplate.messageType === 'buttons'
+                            ? activeTemplate.buttonMediaType
+                            : activeTemplate.messageType) === 'image'
+                            ? 'image/*'
+                            : (activeTemplate.messageType === 'buttons'
+                                ? activeTemplate.buttonMediaType
+                                : activeTemplate.messageType) === 'video'
+                            ? 'video/*'
+                            : '.pdf,.doc,.docx,.txt'
+                        }
+                        onChange={async (e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            await handleTemplateFilesUpload(e.target.files)
+                          }
+                        }}
+                        className="hidden"
+                      />
+
+                      {/* Small Icon Previews List if files attached */}
+                      {(() => {
+                        const currentMediaType =
+                          activeTemplate.messageType === 'buttons'
+                            ? activeTemplate.buttonMediaType
+                            : activeTemplate.messageType
+
+                        const attachedList: AttachedFile[] =
+                          activeTemplate.attachedFiles && activeTemplate.attachedFiles.length > 0
+                            ? activeTemplate.attachedFiles
+                            : activeTemplate.fileId
+                            ? [
+                                {
+                                  id: activeTemplate.fileId,
+                                  url: activeTemplate.previewUrl,
+                                  type: currentMediaType,
+                                },
+                              ]
+                            : []
+
+                        const hasFiles = attachedList.length > 0
+
+                        return (
+                          <div className="space-y-3 mt-2">
+                            {hasFiles && (
+                              <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <div className="flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                    <span>
+                                      {attachedList.length} media file{attachedList.length > 1 ? 's' : ''} attached
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
+                                    Icon Preview
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                  {attachedList.map((fileItem, idx) => {
+                                    const matchedFile = userFiles?.find(
+                                      (f: any) => f.id === fileItem.id || f._id === fileItem.id
+                                    )
+                                    const resolvedUrl =
+                                      fileItem.url ||
+                                      matchedFile?.file_path ||
+                                      matchedFile?.url ||
+                                      matchedFile?.file_url ||
+                                      matchedFile?.file ||
+                                      null
+                                    const resolvedName =
+                                      fileItem.name || matchedFile?.file_name || `Media #${idx + 1}`
+
+                                    return (
+                                      <div
+                                        key={fileItem.id || idx}
+                                        className="flex items-center justify-between gap-2.5 rounded-md border border-slate-200 bg-white p-2 shadow-xs dark:border-slate-800 dark:bg-slate-900"
+                                      >
+                                        {/* Small Icon Preview Thumbnail (40px x 40px) */}
+                                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 flex items-center justify-center">
+                                          {currentMediaType === 'image' && resolvedUrl ? (
+                                            <img
+                                              src={resolvedUrl}
+                                              alt={resolvedName}
+                                              className="h-full w-full object-cover"
+                                              onError={(e) => {
+                                                e.currentTarget.style.display = 'none'
+                                              }}
+                                            />
+                                          ) : currentMediaType === 'video' ? (
+                                            <div className="flex h-full w-full items-center justify-center bg-slate-900 text-white">
+                                              <VideoIcon className="h-4 w-4" />
+                                            </div>
+                                          ) : (
+                                            <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                          )}
+                                        </div>
+
+                                        {/* File Info */}
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200" title={resolvedName}>
+                                            {resolvedName}
+                                          </p>
+                                          <p className="text-[10px] text-slate-500 capitalize">
+                                            {currentMediaType} attachment
+                                          </p>
+                                        </div>
+
+                                        {/* Action buttons */}
+                                        <div className="flex items-center space-x-0.5 shrink-0">
+                                          {resolvedUrl && (
+                                            <a
+                                              href={resolvedUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                              title="Open file in new tab"
+                                            >
+                                              <ExternalLink className="h-3.5 w-3.5" />
+                                            </a>
+                                          )}
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/50"
+                                            title="Remove attachment"
+                                            onClick={() => {
+                                              const updated = attachedList.filter((_, i) => i !== idx)
+                                              updateActiveTemplate({
+                                                attachedFiles: updated,
+                                                fileId: updated[0]?.id || '',
+                                                previewUrl: updated[0]?.url || null,
+                                              })
+                                              if (fileItem.id) deleteFileMutation.mutate(fileItem.id)
+                                            }}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Dropzone / Upload Trigger */}
+                            <div
+                              className={`relative cursor-pointer rounded-lg border-2 border-dashed border-slate-300 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-900 ${
+                                hasFiles ? 'p-3 text-center' : 'p-8 text-center'
+                              }`}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                              }}
+                              onDrop={async (e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                if (e.dataTransfer.files.length > 0) {
+                                  await handleTemplateFilesUpload(e.dataTransfer.files)
+                                }
+                              }}
+                              onClick={() =>
+                                document.getElementById(`template-file-${activeTemplateIndex}`)?.click()
+                              }
+                            >
+                              {hasFiles ? (
+                                <div className="flex items-center justify-center space-x-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                                  <Plus className="h-4 w-4 text-emerald-600" />
+                                  <span>Add more images / media to this template</span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center space-y-2">
+                                  <div className="rounded-full bg-emerald-50 p-3 text-emerald-600 dark:bg-emerald-900/20">
+                                    <Plus className="h-6 w-6" />
+                                  </div>
+                                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                    Click or drag and drop to upload (single or multiple)
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {activeTemplate.messageType === 'buttons'
+                                      ? 'PNG, JPG or GIF (backend button_image field)'
+                                      : activeTemplate.messageType === 'image'
+                                      ? 'SVG, PNG, JPG or GIF'
+                                      : activeTemplate.messageType === 'video'
+                                      ? 'MP4, WebM or OGG'
+                                      : 'PDF, DOC, DOCX or TXT'}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {uploadFileMutation.isPending && (
+                              <p className="mt-2 flex items-center text-sm text-emerald-600">
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Uploading file(s)...
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </>
                   )}
                 </div>
@@ -1129,15 +1394,15 @@ function CreateCampaignPage() {
 
       {/* STEP 3: RECIPIENT SELECTION & LAUNCH */}
       {step === 3 && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <Card className="border-slate-200 dark:border-slate-800">
             <CardHeader>
-              <CardTitle className="text-lg">Step 3: Select Recipients</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-base font-semibold">Step 3: Select Recipients</CardTitle>
+              <CardDescription className="text-xs">
                 Choose which contacts should receive this campaign. Search or select all matching.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               {/* Search & Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="relative w-full max-w-sm">
@@ -1233,29 +1498,6 @@ function CreateCampaignPage() {
                 )}
               </div>
 
-              {/* Summary Box */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-                <h4 className="font-semibold text-emerald-900 dark:text-emerald-300">Campaign Summary</h4>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-emerald-800 dark:text-emerald-400 sm:grid-cols-4">
-                  <div>
-                    <span className="text-xs text-emerald-600 dark:text-emerald-500">Name:</span>
-                    <p className="font-medium">{name || 'Untitled'}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-emerald-600 dark:text-emerald-500">Templates:</span>
-                    <p className="font-medium">{templateDrafts.length} sequence template(s)</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-emerald-600 dark:text-emerald-500">Recipients:</span>
-                    <p className="font-medium">{recipients.length} selected</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-emerald-600 dark:text-emerald-500">Interval:</span>
-                    <p className="font-medium">{minInterval} mins - {maxInterval} mins</p>
-                  </div>
-                </div>
-              </div>
-
               {/* Step 3 Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => setStep(2)}>
@@ -1278,22 +1520,176 @@ function CreateCampaignPage() {
 
                   <Button
                     type="button"
-                    onClick={handleFinalSubmit}
-                    disabled={launchCampaignMutation.isPending}
-                    className="bg-emerald-600 font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700"
+                    onClick={handleNextStep3}
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
-                    {launchCampaignMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Megaphone className="mr-2 h-4 w-4" />
-                    )}
-                    Launch Campaign
+                    Next: Campaign Summary <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* STEP 4: CAMPAIGN SUMMARY & LAUNCH */}
+      {step === 4 && (
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Step 4: Campaign Summary</CardTitle>
+            <CardDescription className="text-xs">
+              Review your campaign configuration and message sequence before launching your blast.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Overview Grid */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Campaign Name</span>
+                <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">{name || 'Untitled'}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Sending Interval</span>
+                <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
+                  {minInterval} - {maxInterval} minutes
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Warmup mode: {enableWarmup ? 'Enabled' : 'Disabled'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Target Recipients</span>
+                <p className="mt-1 text-base font-semibold text-emerald-900 dark:text-emerald-200">
+                  {recipients.length} contact(s) selected
+                </p>
+              </div>
+            </div>
+
+            {/* Sequence Templates Preview */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-slate-900 dark:text-slate-100">
+                  Message Sequence ({templateDrafts.length} template{templateDrafts.length > 1 ? 's' : ''})
+                </h4>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStep(2)}
+                  className="text-xs text-emerald-600 hover:text-emerald-700"
+                >
+                  Edit Templates
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {templateDrafts.map((tmpl, idx) => {
+                  const typeLabel =
+                    tmpl.messageType === 'text'
+                      ? 'Text Only'
+                      : tmpl.messageType === 'buttons'
+                      ? 'Interactive Buttons'
+                      : tmpl.messageType === 'image'
+                      ? 'Image'
+                      : tmpl.messageType === 'video'
+                      ? 'Video'
+                      : 'Document'
+
+                  return (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-xs text-slate-500">
+                          Template {idx + 1}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {tmpl.fileId && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                              {tmpl.messageType === 'image' || tmpl.buttonMediaType === 'image' ? (
+                                <ImageIcon className="h-3 w-3" />
+                              ) : tmpl.messageType === 'video' ? (
+                                <VideoIcon className="h-3 w-3" />
+                              ) : (
+                                <FileText className="h-3 w-3" />
+                              )}
+                              Media Attached
+                            </span>
+                          )}
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            {typeLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {tmpl.template && (
+                        <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap rounded-md bg-slate-50 p-2.5 dark:bg-slate-900/60 font-sans border border-slate-100 dark:border-slate-800">
+                          {tmpl.template}
+                        </p>
+                      )}
+
+                      {tmpl.footer && (
+                        <p className="text-xs text-slate-500 italic pl-1">
+                          Footer: {tmpl.footer}
+                        </p>
+                      )}
+
+                      {tmpl.buttons && tmpl.buttons.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {tmpl.buttons.map((b, bIdx) => (
+                            <span
+                              key={bIdx}
+                              className="inline-flex items-center text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded px-2 py-1 font-medium"
+                            >
+                              [{b.type.toUpperCase()}] {b.display_text || 'Button'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Step 4 Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <Button type="button" variant="outline" onClick={() => setStep(3)}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back: Recipients
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save as Draft
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleFinalSubmit}
+                  disabled={launchCampaignMutation.isPending}
+                  className="bg-emerald-600 font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700"
+                >
+                  {launchCampaignMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Megaphone className="mr-2 h-4 w-4" />
+                  )}
+                  {editingCampaignId ? 'Update Campaign' : 'Launch Campaign'}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* CSV Import Modal Dialog */}

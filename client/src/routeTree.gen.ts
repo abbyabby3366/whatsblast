@@ -28,6 +28,7 @@ import { Route as MerchantProfileRouteImport } from './routes/merchant.profile'
 import { Route as MerchantWhatsappSessionsRouteImport } from './routes/merchant.whatsapp-sessions'
 import { Route as MerchantCampaignsIndexRouteImport } from './routes/merchant.campaigns.index'
 import { Route as MerchantCampaignsCreateRouteImport } from './routes/merchant.campaigns.create'
+import { Route as MerchantCampaignsProgressRouteImport } from './routes/merchant.campaigns.progress'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -125,6 +126,12 @@ const MerchantCampaignsCreateRoute = MerchantCampaignsCreateRouteImport.update({
   path: '/create',
   getParentRoute: () => MerchantCampaignsRoute,
 } as any)
+const MerchantCampaignsProgressRoute =
+  MerchantCampaignsProgressRouteImport.update({
+    id: '/progress',
+    path: '/progress',
+    getParentRoute: () => MerchantCampaignsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AdminIndexRoute
   '/merchant/': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
+  '/merchant/campaigns/progress': typeof MerchantCampaignsProgressRoute
   '/merchant/campaigns/': typeof MerchantCampaignsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -163,6 +171,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/merchant': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
+  '/merchant/campaigns/progress': typeof MerchantCampaignsProgressRoute
   '/merchant/campaigns': typeof MerchantCampaignsIndexRoute
 }
 export interface FileRoutesById {
@@ -185,6 +194,7 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/merchant/': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
+  '/merchant/campaigns/progress': typeof MerchantCampaignsProgressRoute
   '/merchant/campaigns/': typeof MerchantCampaignsIndexRoute
 }
 export interface FileRouteTypes {
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/merchant/'
     | '/merchant/campaigns/create'
+    | '/merchant/campaigns/progress'
     | '/merchant/campaigns/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/merchant'
     | '/merchant/campaigns/create'
+    | '/merchant/campaigns/progress'
     | '/merchant/campaigns'
   id:
     | '__root__'
@@ -247,6 +259,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/merchant/'
     | '/merchant/campaigns/create'
+    | '/merchant/campaigns/progress'
     | '/merchant/campaigns/'
   fileRoutesById: FileRoutesById
 }
@@ -395,6 +408,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MerchantCampaignsCreateRouteImport
       parentRoute: typeof MerchantCampaignsRoute
     }
+    '/merchant/campaigns/progress': {
+      id: '/merchant/campaigns/progress'
+      path: '/progress'
+      fullPath: '/merchant/campaigns/progress'
+      preLoaderRoute: typeof MerchantCampaignsProgressRouteImport
+      parentRoute: typeof MerchantCampaignsRoute
+    }
   }
 }
 
@@ -416,11 +436,13 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface MerchantCampaignsRouteChildren {
   MerchantCampaignsCreateRoute: typeof MerchantCampaignsCreateRoute
+  MerchantCampaignsProgressRoute: typeof MerchantCampaignsProgressRoute
   MerchantCampaignsIndexRoute: typeof MerchantCampaignsIndexRoute
 }
 
 const MerchantCampaignsRouteChildren: MerchantCampaignsRouteChildren = {
   MerchantCampaignsCreateRoute: MerchantCampaignsCreateRoute,
+  MerchantCampaignsProgressRoute: MerchantCampaignsProgressRoute,
   MerchantCampaignsIndexRoute: MerchantCampaignsIndexRoute,
 }
 

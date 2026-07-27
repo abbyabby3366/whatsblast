@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
-import { getActiveSession, initWhatsAppSession } from '../services/baileysManager.js';
+import { getActiveSession, initWhatsAppSession, verifyAndFormatJid, pickUserSession } from '../services/baileysManager.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { BlastCampaign } from '../models/BlastCampaign.js';
+import { retryCampaignRecipient } from './campaignRoutes.js';
 
 const router = Router();
 
@@ -14,9 +15,14 @@ function formatMessage(m: any) {
   const { _id, __v, ...rest } = obj;
   const sessionPhone = typeof obj.session === 'object' && obj.session ? obj.session.phone_number : obj.sender_phone;
   const campaignName = typeof obj.campaign === 'object' && obj.campaign ? obj.campaign.name : null;
+  const isSentOrFailed = obj.status === MessageStatus.SENT || obj.status === MessageStatus.FAILED || obj.status === MessageStatus.DELIVERED || obj.status === MessageStatus.READ;
+
   return {
     id: _id ? _id.toString() : obj.id,
     created_at: obj.createdAt,
+    scheduled_at: obj.scheduled_at || obj.createdAt,
+    scheduled_datetime: obj.scheduled_at || obj.createdAt,
+    sent_at: obj.sent_at || (isSentOrFailed ? obj.wa_timestamp || obj.updatedAt : null),
     session_phone: sessionPhone || obj.sender_phone || 'System',
     sender_phone: sessionPhone || obj.sender_phone || 'System',
     campaign_name: campaignName || obj.campaign_name || 'Direct / Quick Send',
@@ -120,12 +126,14 @@ const sendTextMessage = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'to and text fields are required' });
   }
 
-  const cleanPhone = to.replace(/[^0-9]/g, '');
-  const targetJid = `${cleanPhone}@s.whatsapp.net`;
-
   let active = getActiveSession(sessionId);
   if (!active) {
     active = await initWhatsAppSession(sessionId);
+  }
+
+  const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(active.socket, to);
+  if (!cleanPhone || !exists) {
+    return res.status(400).json({ error: `Recipient phone number (${to}) is not registered on WhatsApp` });
   }
 
   try {
@@ -160,17 +168,32 @@ const sendImageMessage = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'to and url fields are required' });
   }
 
-  const cleanPhone = to.replace(/[^0-9]/g, '');
-  const targetJid = `${cleanPhone}@s.whatsapp.net`;
-
   let active = getActiveSession(sessionId);
   if (!active) {
     active = await initWhatsAppSession(sessionId);
   }
 
+  const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(active.socket, to);
+  if (!cleanPhone || !exists) {
+    return res.status(400).json({ error: `Recipient phone number (${to}) is not registered on WhatsApp` });
+  }
+
   try {
+    let targetUrl = url;
+    const match = targetUrl.match(/^https?:\/\/([^/]+)\.linodeobjects\.com\/(.+)$/i);
+    if (match) {
+      const hostPrefix = match[1];
+      const pathKey = match[2];
+      if (hostPrefix.includes('.')) {
+        const parts = hostPrefix.split('.');
+        const endpoint = parts.pop();
+        const bucket = parts.join('.');
+        targetUrl = `https://${endpoint}.linodeobjects.com/${bucket}/${pathKey}`;
+      }
+    }
+
     const result = await active.socket.sendMessage(targetJid, {
-      image: { url },
+      image: { url: targetUrl },
       caption: caption || '',
     });
     const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
@@ -194,5 +217,82 @@ const sendImageMessage = async (req: AuthRequest, res: Response) => {
 };
 
 router.post('/messages/:session_id/send-image', sendImageMessage);
+
+const clearMessages = async (req: AuthRequest, res: Response) => {
+  try {
+    const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
+    const sessionIds = userSessions.map((s) => s._id);
+
+    const userCampaigns = await BlastCampaign.find({ user: req.user?._id }).select('_id');
+    const campaignIds = userCampaigns.map((c) => c._id);
+
+    const filter: any = {
+      $or: [
+        { session: { $in: sessionIds } },
+        { campaign: { $in: campaignIds } },
+      ],
+    };
+
+    const result = await Message.deleteMany(filter);
+    return res.json({ success: true, message: `Successfully cleared ${result.deletedCount} messages`, deletedCount: result.deletedCount });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to clear messages' });
+  }
+};
+
+const retryMessage = async (req: AuthRequest, res: Response) => {
+  try {
+    const msg = await Message.findById(req.params.id);
+    if (!msg) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
+    if (!recipientPhone) {
+      return res.status(400).json({ error: 'Message has no recipient phone number' });
+    }
+
+    if (msg.campaign) {
+      req.params.id = msg.campaign.toString();
+      req.body = { ...req.body, phone: recipientPhone };
+      return retryCampaignRecipient(req, res);
+    }
+
+    // Direct message retry
+    let sessionId: string;
+    if (msg.session) {
+      const sDoc = await WhatsAppSession.findById(msg.session);
+      sessionId = sDoc?.session_id || await pickUserSession(req.user?._id?.toString() || '');
+    } else {
+      sessionId = await pickUserSession(req.user?._id?.toString() || '');
+    }
+
+    let activeSession = getActiveSession(sessionId);
+    if (!activeSession) {
+      activeSession = await initWhatsAppSession(sessionId);
+    }
+
+    const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
+    const targetJid = `${cleanPhone}@s.whatsapp.net`;
+
+    const textContent = msg.content?.text || msg.content?.caption || 'Hello';
+    const result = await activeSession.socket.sendMessage(targetJid, { text: textContent });
+
+    msg.status = MessageStatus.SENT;
+    msg.sent_at = new Date();
+    msg.wa_timestamp = new Date();
+    msg.message_id = result?.key?.id || msg.message_id;
+    msg.error = undefined;
+    await msg.save();
+
+    return res.json({ success: true, message: `Successfully retried message to ${cleanPhone}` });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to retry message' });
+  }
+};
+
+router.post('/messages/:id/retry', retryMessage);
+router.delete('/messages', clearMessages);
+router.delete('/messages/clear-all', clearMessages);
 
 export default router;

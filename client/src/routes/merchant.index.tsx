@@ -80,10 +80,10 @@ function MerchantDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Overview</h2>
-        <p className="text-slate-500 dark:text-slate-400">Here's what's happening with your WhatsBlast campaigns today.</p>
+        <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Overview</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Here's what's happening with your WhatsBlast campaigns today.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -194,33 +194,36 @@ function MerchantDashboard() {
             <CardDescription>Your most recently created blasts.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-8">
-              {campaigns.slice(0, 5).map((campaign: any) => (
-                <div key={campaign.id} className="flex items-center">
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">{campaign.name}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      {campaign.recipients?.length || 0} recipients • {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY')}
-                    </p>
+            <div className="space-y-3.5">
+              {campaigns.slice(0, 5).map((campaign: any) => {
+                const cStatus = (campaign.status || 'draft').toLowerCase()
+                return (
+                  <div key={campaign.id} className="flex items-center">
+                    <div className="ml-4 space-y-1">
+                      <p className="text-sm font-medium leading-none">{campaign.name}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {campaign.recipients?.length || campaign.recipient_phones?.length || 0} recipients • {dayjs(campaign.created_at || campaign.createdAt).format('MMM D, YYYY')}
+                      </p>
+                      {campaign.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
+                        <p className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px]" title={campaign.error_message}>
+                          ⚠️ {campaign.error_message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="ml-auto font-medium">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border
+                        ${cStatus === 'completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold' : 
+                          cStatus === 'scheduled' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800' : 
+                          cStatus === 'running' ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800' :
+                          cStatus === 'paused' ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800' :
+                          cStatus === 'failed' ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800' :
+                          'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'}`}>
+                        {cStatus.toUpperCase()}
+                      </span>
+                    </div>
                   </div>
-                  <div className="ml-auto font-medium">
-                    {(() => {
-                      const cStatus = (campaign.status || 'draft').toLowerCase()
-                      return (
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border
-                          ${cStatus === 'completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold' : 
-                            cStatus === 'scheduled' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800' : 
-                            cStatus === 'running' ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800' :
-                            cStatus === 'paused' ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800' :
-                            cStatus === 'failed' ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800' :
-                            'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'}`}>
-                          {cStatus.toUpperCase()}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
               {campaigns.length === 0 && (
                 <p className="text-sm text-slate-500 text-center py-4">No campaigns yet. Go create one!</p>
               )}

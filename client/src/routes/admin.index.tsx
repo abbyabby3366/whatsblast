@@ -38,7 +38,7 @@ function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-slate-500 text-sm">Global metrics across merchants, campaigns, and WhatsApp sessions.</p>
         <Button asChild>

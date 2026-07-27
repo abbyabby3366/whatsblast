@@ -3,7 +3,7 @@ import { MessageTemplate } from '../models/MessageTemplate.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { FileModel } from '../models/File.js';
-import { getActiveSession, pickUserSession, initWhatsAppSession } from './baileysManager.js';
+import { getActiveSession, pickUserSession, initWhatsAppSession, verifyAndFormatJid } from './baileysManager.js';
 import dayjs from 'dayjs';
 
 let runnerInterval: NodeJS.Timeout | null = null;
@@ -21,31 +21,49 @@ export function stopBlastRunner(): void {
   }
 }
 
-async function getFileUrl(fileIdOrObj: any): Promise<{ url: string; type: string; filename?: string } | null> {
+function normalizeMediaUrl(rawUrl: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+  const match = rawUrl.match(/^https?:\/\/([^/]+)\.linodeobjects\.com\/(.+)$/i);
+  if (match) {
+    const hostPrefix = match[1];
+    const pathKey = match[2];
+    if (hostPrefix.includes('.')) {
+      const parts = hostPrefix.split('.');
+      const endpoint = parts.pop();
+      const bucket = parts.join('.');
+      return `https://${endpoint}.linodeobjects.com/${bucket}/${pathKey}`;
+    }
+  }
+  return rawUrl;
+}
+
+async function getFileUrl(fileIdOrObj: any): Promise<{ url: string; type: string; filename?: string; mimetype?: string } | null> {
   if (!fileIdOrObj) return null;
 
   if (typeof fileIdOrObj === 'object') {
     const url = fileIdOrObj.file_path || fileIdOrObj.file_url || fileIdOrObj.url;
     if (url) {
       return {
-        url,
+        url: normalizeMediaUrl(url),
         type: fileIdOrObj.file_type || fileIdOrObj.type || 'image',
         filename: fileIdOrObj.file_name || fileIdOrObj.fileName,
+        mimetype: fileIdOrObj.mimetype,
       };
     }
   }
 
   if (typeof fileIdOrObj === 'string' && fileIdOrObj.trim().length > 0) {
     if (fileIdOrObj.startsWith('http://') || fileIdOrObj.startsWith('https://')) {
-      return { url: fileIdOrObj, type: 'image' };
+      return { url: normalizeMediaUrl(fileIdOrObj), type: 'image' };
     }
     try {
       const fileDoc = await FileModel.findById(fileIdOrObj);
       if (fileDoc && fileDoc.file_path) {
         return {
-          url: fileDoc.file_path,
+          url: normalizeMediaUrl(fileDoc.file_path),
           type: fileDoc.file_type || 'image',
           filename: fileDoc.file_name,
+          mimetype: fileDoc.mimetype,
         };
       }
     } catch (_) {}
@@ -107,79 +125,151 @@ export async function sendBaileysTemplateMessage(
 
   const mediaType = tplItem.messageType || tplItem.type || 'text';
   const fileId = tplItem.file_id || tplItem.fileId || tplItem.file;
+  const rawFileIds = tplItem.file_ids || tplItem.fileIds || tplItem.files;
   const buttonMediaId = tplItem.button_image_id || tplItem.buttonImageId || tplItem.button_image;
 
-  const mainMedia = await getFileUrl(fileId);
+  let fileIdList: any[] = [];
+  if (Array.isArray(rawFileIds) && rawFileIds.length > 0) {
+    fileIdList = rawFileIds;
+  } else if (fileId) {
+    fileIdList = [fileId];
+  }
+
+  const allMedia: any[] = [];
+  for (const fid of fileIdList) {
+    const sId = typeof fid === 'string' ? fid : fid?.id || fid?._id || fid?.file_id;
+    if (sId) {
+      const mediaObj = await getFileUrl(sId);
+      if (mediaObj?.url) allMedia.push(mediaObj);
+    }
+  }
+
   const buttonMedia = await getFileUrl(buttonMediaId);
+  const mainMedia = allMedia[0] || null;
 
   const buttons = Array.isArray(tplItem.buttons) ? tplItem.buttons : [];
+  const customFooter = tplItem.footer !== undefined && tplItem.footer !== null ? String(tplItem.footer).trim() : '';
 
-  // Interactive buttons handler
-  if (buttons.length > 0 || mediaType === 'buttons') {
+  const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
+  let primarySendResult: any = null;
+
+  // Interactive buttons / footer handler matching reference Whats-Blasting-Server
+  if (buttons.length > 0 || mediaType === 'buttons' || customFooter) {
     const interactiveButtons = normalizeInteractiveButtons(buttons);
-
-    const hasMedia = Boolean(
-      (buttonMedia && buttonMedia.url) ||
-      (mainMedia && mainMedia.url && (mediaType === 'image' || mainMedia.type === 'image'))
-    );
-
-    const customFooter = tplItem.footer !== undefined ? tplItem.footer : 'WhatsBlast';
+    const hasMedia = Boolean(activeMedia && activeMedia.url);
 
     const interactivePayload: any = {
-      text: messageText,
-      footer: customFooter,
+      title: tplItem.title || undefined,
+      subtitle: tplItem.subtitle || undefined,
+      footer: customFooter || undefined,
       interactiveButtons,
       hasMediaAttachment: hasMedia,
     };
 
-    if (buttonMedia && buttonMedia.url) {
-      interactivePayload.image = { url: buttonMedia.url };
-      interactivePayload.caption = messageText;
-      delete interactivePayload.text;
-    } else if (mainMedia && mainMedia.url && (mediaType === 'image' || mainMedia.type === 'image')) {
-      interactivePayload.image = { url: mainMedia.url };
-      interactivePayload.caption = messageText;
-      delete interactivePayload.text;
+    if (activeMedia && activeMedia.url) {
+      const isImg = mediaType === 'image' || activeMedia.type === 'image';
+      const isVid = mediaType === 'video' || activeMedia.type === 'video';
+      const isDoc = mediaType === 'document' || activeMedia.type === 'document';
+
+      if (isImg) {
+        interactivePayload.image = { url: activeMedia.url };
+        interactivePayload.caption = messageText;
+      } else if (isVid) {
+        interactivePayload.video = { url: activeMedia.url };
+        interactivePayload.caption = messageText;
+      } else if (isDoc) {
+        interactivePayload.document = { url: activeMedia.url };
+        interactivePayload.fileName = activeMedia.filename || 'Attachment';
+        interactivePayload.caption = messageText;
+        interactivePayload.mimetype = activeMedia.mimetype || 'application/pdf';
+      } else {
+        interactivePayload.image = { url: activeMedia.url };
+        interactivePayload.caption = messageText;
+      }
+    } else {
+      interactivePayload.text = messageText;
     }
 
     try {
-      console.log(`🚀 Sending interactive buttons payload to ${targetJid}:`, JSON.stringify(interactiveButtons));
-      return await sock.sendMessage(targetJid, interactivePayload);
+      console.log(`🚀 Sending interactive message payload to ${targetJid}:`, JSON.stringify(interactivePayload));
+      primarySendResult = await sock.sendMessage(targetJid, interactivePayload);
     } catch (err: any) {
-      console.warn('⚠️ interactiveButtons payload failed:', err.message || err);
-      return await sock.sendMessage(targetJid, { text: messageText });
+      console.warn('⚠️ Interactive message payload failed, falling back to standard media/text:', err.message || err);
     }
   }
 
-  // Media Attachments (Image, Video, Document)
-  if (mainMedia && mainMedia.url) {
-    const isImg = mediaType === 'image' || mainMedia.type === 'image';
-    const isVid = mediaType === 'video' || mainMedia.type === 'video';
-    const isDoc = mediaType === 'document' || mainMedia.type === 'document';
+  // Fallback / Standard Media Attachments (Image, Video, Document)
+  if (!primarySendResult && activeMedia && activeMedia.url) {
+    const isImg = mediaType === 'image' || activeMedia.type === 'image';
+    const isVid = mediaType === 'video' || activeMedia.type === 'video';
+    const isDoc = mediaType === 'document' || activeMedia.type === 'document';
 
     if (isImg) {
-      return await sock.sendMessage(targetJid, {
-        image: { url: mainMedia.url },
+      primarySendResult = await sock.sendMessage(targetJid, {
+        image: { url: activeMedia.url },
         caption: messageText,
+        footer: customFooter || undefined,
+        mimetype: activeMedia.mimetype || 'image/jpeg',
       });
-    }
-    if (isVid) {
-      return await sock.sendMessage(targetJid, {
-        video: { url: mainMedia.url },
+    } else if (isVid) {
+      primarySendResult = await sock.sendMessage(targetJid, {
+        video: { url: activeMedia.url },
         caption: messageText,
+        footer: customFooter || undefined,
+        mimetype: activeMedia.mimetype || 'video/mp4',
       });
-    }
-    if (isDoc) {
-      return await sock.sendMessage(targetJid, {
-        document: { url: mainMedia.url },
-        fileName: mainMedia.filename || 'Attachment',
+    } else if (isDoc) {
+      primarySendResult = await sock.sendMessage(targetJid, {
+        document: { url: activeMedia.url },
+        fileName: activeMedia.filename || 'Attachment',
         caption: messageText,
+        footer: customFooter || undefined,
+        mimetype: activeMedia.mimetype || 'application/pdf',
       });
     }
   }
 
-  // Default Text Message
-  return await sock.sendMessage(targetJid, { text: messageText });
+  // Default Text Message if no media sent yet
+  if (!primarySendResult) {
+    primarySendResult = await sock.sendMessage(targetJid, {
+      text: messageText,
+      footer: customFooter || undefined,
+    });
+  }
+
+  // Send additional media files sequentially if multiple images/files attached
+  if (allMedia.length > 1) {
+    for (const extraMedia of allMedia.slice(1)) {
+      try {
+        await new Promise((res) => setTimeout(res, 800));
+        const isImg = extraMedia.type === 'image' || mediaType === 'image';
+        const isVid = extraMedia.type === 'video' || mediaType === 'video';
+        const isDoc = extraMedia.type === 'document' || mediaType === 'document';
+
+        if (isImg) {
+          await sock.sendMessage(targetJid, {
+            image: { url: extraMedia.url },
+            mimetype: extraMedia.mimetype || 'image/jpeg',
+          });
+        } else if (isVid) {
+          await sock.sendMessage(targetJid, {
+            video: { url: extraMedia.url },
+            mimetype: extraMedia.mimetype || 'video/mp4',
+          });
+        } else if (isDoc) {
+          await sock.sendMessage(targetJid, {
+            document: { url: extraMedia.url },
+            fileName: extraMedia.filename || 'Attachment',
+            mimetype: extraMedia.mimetype || 'application/pdf',
+          });
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Failed sending additional media item:', err.message || err);
+      }
+    }
+  }
+
+  return primarySendResult;
 }
 
 const activeCampaigns = new Set<string>();
@@ -195,6 +285,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       if (campaign.current_index >= campaign.contacts.length) {
         campaign.status = CampaignStatus.COMPLETED;
         campaign.completed_at = new Date();
+        campaign.error_message = undefined;
         await campaign.save();
         console.log(`🎉 Campaign "${campaign.name}" completed!`);
         break;
@@ -211,8 +302,10 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       try {
         sessionId = await pickUserSession(campaign.user.toString());
       } catch (err: any) {
-        console.warn(`⚠️ Campaign "${campaign.name}" paused: ${err.message || 'No available session'}`);
+        const errorMsg = err.message || 'No connected WhatsApp session available';
+        console.warn(`⚠️ Campaign "${campaign.name}" paused: ${errorMsg}`);
         campaign.status = CampaignStatus.PAUSED;
+        campaign.error_message = errorMsg;
         await campaign.save();
         break;
       }
@@ -231,8 +324,10 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         }
 
         if (sessionDoc.current_message_count >= sessionDoc.max_message_count_per_day) {
-          console.log(`⚠️ Session ${sessionId} reached daily limit (${sessionDoc.max_message_count_per_day}). Pausing campaign "${campaign.name}".`);
+          const errorMsg = `Session ${sessionId} reached daily message limit (${sessionDoc.max_message_count_per_day})`;
+          console.log(`⚠️ ${errorMsg}. Pausing campaign "${campaign.name}".`);
           campaign.status = CampaignStatus.PAUSED;
+          campaign.error_message = errorMsg;
           await campaign.save();
           break;
         }
@@ -251,15 +346,68 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         }
 
         if (!isWithinActiveHours) {
-          console.log(`⏰ Session ${sessionId} is outside active sending window (${startTime} - ${endTime}). Current time: ${currentTime}. Pausing campaign "${campaign.name}".`);
+          const errorMsg = `Outside active sending window (${startTime} - ${endTime})`;
+          console.log(`⏰ ${errorMsg}. Pausing campaign "${campaign.name}".`);
           campaign.status = CampaignStatus.PAUSED;
+          campaign.error_message = errorMsg;
           await campaign.save();
           break;
         }
       }
 
-      const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
-      const targetJid = `${cleanPhone}@s.whatsapp.net`;
+      // Verify recipient on WhatsApp & format phone number / JID
+      const rawPhone = recipientPhone;
+      const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(activeSession.socket, rawPhone);
+
+      if (!exists) {
+        const errorMsg = `Phone number ${rawPhone} is not registered on WhatsApp`;
+        console.warn(`❌ ${errorMsg} for campaign "${campaign.name}"`);
+
+        const targetPhone = cleanPhone || rawPhone;
+        const now = new Date();
+        const updatedMsg = await Message.findOneAndUpdate(
+          { campaign: campaign._id, recipient_phone: targetPhone, status: MessageStatus.PENDING },
+          {
+            session: sessionDoc?._id,
+            status: MessageStatus.FAILED,
+            error: errorMsg,
+            content: { text: 'Send Failed: Recipient not registered on WhatsApp' },
+            sent_at: now,
+            wa_timestamp: now,
+          },
+          { new: true }
+        );
+
+        if (!updatedMsg) {
+          await Message.create({
+            session: sessionDoc?._id,
+            campaign: campaign._id,
+            direction: MessageDirection.OUTBOUND,
+            type: 'text',
+            status: MessageStatus.FAILED,
+            recipient_phone: targetPhone,
+            to_jid: targetJid || `${rawPhone}@s.whatsapp.net`,
+            error: errorMsg,
+            content: { text: 'Send Failed: Recipient not registered on WhatsApp' },
+            sent_at: now,
+            wa_timestamp: now,
+          });
+        }
+
+        campaign.stats.failed += 1;
+        campaign.current_index += 1;
+        await campaign.save();
+
+        console.log(`❌ Campaign "${campaign.name}": Failed to send to ${rawPhone} (Not on WhatsApp) (${campaign.current_index}/${campaign.contacts.length})`);
+
+        const minIntervalSec = sessionDoc?.min_interval_seconds ?? campaign.min_interval_seconds ?? 10;
+        const maxIntervalSec = sessionDoc?.max_interval_seconds ?? campaign.max_interval_seconds ?? 15;
+        const minDelay = minIntervalSec * 1000;
+        const maxDelay = maxIntervalSec * 1000;
+        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        await new Promise((res) => setTimeout(res, randomDelay));
+        continue;
+      }
 
       // Resolve templates to send
       let templatesToSend: any[] = [];
@@ -272,6 +420,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
       if (templatesToSend.length === 0) {
         campaign.status = CampaignStatus.FAILED;
+        campaign.error_message = 'No templates found for this campaign';
         await campaign.save();
         console.error(`Campaign ${campaign._id} failed: No templates found`);
         break;
@@ -288,20 +437,57 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
             await sessionDoc.save();
           }
 
-          // Log message sending
-          await Message.create({
-            session: sessionDoc?._id,
-            campaign: campaign._id,
-            direction: MessageDirection.OUTBOUND,
-            type: tplItem.messageType || tplItem.type || 'text',
-            status: MessageStatus.SENT,
-            recipient_phone: cleanPhone,
-            to_jid: targetJid,
-            template: campaign.template || null,
-            content: { text: tplItem.text || tplItem.template, buttons: tplItem.buttons },
-            message_id: result?.key?.id || '',
-            wa_timestamp: new Date(),
-          });
+          const fileId = tplItem.file_id || tplItem.fileId || tplItem.file;
+          const buttonMediaId = tplItem.button_image_id || tplItem.buttonImageId || tplItem.button_image;
+          const mainMedia = await getFileUrl(fileId);
+          const buttonMedia = await getFileUrl(buttonMediaId);
+          const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
+
+          const fullContent = {
+            text: tplItem.text || tplItem.template || '',
+            buttons: tplItem.buttons || [],
+            footer: tplItem.footer || '',
+            title: tplItem.title || '',
+            subtitle: tplItem.subtitle || '',
+            file: activeMedia?.url || mainMedia?.url || null,
+            file_type: activeMedia?.type || tplItem.messageType || tplItem.type || 'text',
+            file_name: activeMedia?.filename || null,
+            button_image: buttonMedia?.url || null,
+          };
+
+          const now = new Date();
+          const updatedMsg = await Message.findOneAndUpdate(
+            { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+            {
+              session: sessionDoc?._id,
+              type: tplItem.messageType || tplItem.type || 'text',
+              status: MessageStatus.SENT,
+              to_jid: targetJid,
+              template: campaign.template || null,
+              content: fullContent,
+              message_id: result?.key?.id || '',
+              sent_at: now,
+              wa_timestamp: now,
+            },
+            { new: true }
+          );
+
+          if (!updatedMsg) {
+            await Message.create({
+              session: sessionDoc?._id,
+              campaign: campaign._id,
+              direction: MessageDirection.OUTBOUND,
+              type: tplItem.messageType || tplItem.type || 'text',
+              status: MessageStatus.SENT,
+              recipient_phone: cleanPhone,
+              to_jid: targetJid,
+              template: campaign.template || null,
+              content: fullContent,
+              message_id: result?.key?.id || '',
+              sent_at: now,
+              wa_timestamp: now,
+            });
+          }
 
           if (i < templatesToSend.length - 1) {
             await new Promise((res) => setTimeout(res, 1000));
@@ -316,18 +502,36 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       } catch (err: any) {
         console.error(`❌ Error sending message for campaign ${campaign.name}:`, err.message || err);
         try {
-          await Message.create({
-            session: sessionDoc?._id,
-            campaign: campaign._id,
-            direction: MessageDirection.OUTBOUND,
-            type: 'text',
-            status: MessageStatus.FAILED,
-            recipient_phone: cleanPhone,
-            to_jid: targetJid,
-            error: err.message || String(err),
-            content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
-            wa_timestamp: new Date(),
-          });
+          const now = new Date();
+          const updatedMsg = await Message.findOneAndUpdate(
+            { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+            {
+              session: sessionDoc?._id,
+              status: MessageStatus.FAILED,
+              to_jid: targetJid,
+              error: err.message || String(err),
+              content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
+              sent_at: now,
+              wa_timestamp: now,
+            },
+            { new: true }
+          );
+
+          if (!updatedMsg) {
+            await Message.create({
+              session: sessionDoc?._id,
+              campaign: campaign._id,
+              direction: MessageDirection.OUTBOUND,
+              type: 'text',
+              status: MessageStatus.FAILED,
+              recipient_phone: cleanPhone,
+              to_jid: targetJid,
+              error: err.message || String(err),
+              content: { text: templatesToSend[0]?.text || templatesToSend[0]?.template || 'Send Failed' },
+              sent_at: now,
+              wa_timestamp: now,
+            });
+          }
         } catch (mErr) {
           console.error('Failed to log failed message:', mErr);
         }

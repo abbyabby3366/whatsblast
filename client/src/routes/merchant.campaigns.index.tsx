@@ -11,24 +11,27 @@ import {
   Trash2,
   FileText,
   Activity,
-  BarChart3,
-  Sparkles,
   LayoutGrid,
   List,
   AlertCircle,
-  RefreshCw,
   ArrowLeft,
   User,
   MoreVertical,
   CheckCheck,
   Mic,
+  RotateCcw,
+  Video as VideoIcon,
+  Search,
+  Users,
+  X,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { api } from '@/lib/api'
+import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogClose,
@@ -62,8 +65,34 @@ export const Route = createFileRoute('/merchant/campaigns/')({
 function CampaignsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [selectedProgressCampaign, setSelectedProgressCampaign] = useState<any>(null)
   const [selectedPreviewCampaign, setSelectedPreviewCampaign] = useState<any>(null)
+  const [selectedCustomerListCampaign, setSelectedCustomerListCampaign] = useState<any>(null)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<'ALL' | 'SENT' | 'FAILED' | 'PENDING'>('ALL')
+
+  const retryRecipientMutation = useMutation({
+    mutationFn: ({ cId, phone }: { cId: string | number; phone: string }) =>
+      api.post(`blast-campaigns/${cId}/retry-recipient/`, { json: { phone } }).json<any>(),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-list-logs', selectedCustomerListCampaign?.id] })
+      toast.success(data?.message || 'Message retried successfully!')
+    },
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to retry message.'))
+    },
+  })
+
+  const { data: customerLogsData, isLoading: isLoadingCustomerLogs } = useQuery({
+    queryKey: ['customer-list-logs', selectedCustomerListCampaign?.id],
+    queryFn: () =>
+      api
+        .get('messages/', {
+          searchParams: { campaign_id: selectedCustomerListCampaign.id, page_size: '200' },
+        })
+        .json<any>(),
+    enabled: Boolean(selectedCustomerListCampaign?.id),
+  })
 
   const getCampaignTemplates = (campaign: any) => {
     if (Array.isArray(campaign?.templates) && campaign.templates.length > 0) {
@@ -75,16 +104,52 @@ function CampaignsPage() {
     return []
   }
 
-  // Fetch campaign execution logs when view progress modal is open
-  const { data: campaignLogsData, isLoading: isLoadingLogs, refetch: refetchLogs } = useQuery({
-    queryKey: ['campaign-logs', selectedProgressCampaign?.id],
-    queryFn: () =>
-      selectedProgressCampaign
-        ? api.get('messages/', { searchParams: { campaign_id: selectedProgressCampaign.id, page_size: '100' } }).json<any>()
-        : Promise.resolve({ count: 0, results: [] }),
-    enabled: Boolean(selectedProgressCampaign?.id),
-    refetchInterval: (selectedProgressCampaign?.status || '').toLowerCase() === 'running' ? 3000 : false,
-  })
+  const resolveTemplateMediaList = (template: any) => {
+    const list: Array<{ url: string; type: string; name?: string }> = []
+
+    if (Array.isArray(template.files) && template.files.length > 0) {
+      template.files.forEach((f: any) => {
+        const url = typeof f === 'string' ? f : f?.file_url || f?.file_path || f?.url || f?.file || null
+        const type = typeof f === 'object' ? f?.file_type || 'image' : 'image'
+        const name = typeof f === 'object' ? f?.file_name : undefined
+        if (url) list.push({ url, type: String(type).toLowerCase(), name })
+      })
+    }
+
+    if (list.length === 0 && Array.isArray(template.attachedFiles) && template.attachedFiles.length > 0) {
+      template.attachedFiles.forEach((f: any) => {
+        const url = f?.url || f?.file_url || f?.file_path || null
+        const type = f?.type || 'image'
+        const name = f?.name
+        if (url) list.push({ url, type: String(type).toLowerCase(), name })
+      })
+    }
+
+    if (list.length === 0) {
+      const fileObj = typeof template.file === 'object' ? template.file : {}
+      const buttonImgObj = typeof template.button_image === 'object' ? template.button_image : {}
+      const mediaUrl =
+        fileObj.file_url ||
+        fileObj.file_path ||
+        fileObj.url ||
+        buttonImgObj.file_url ||
+        buttonImgObj.file_path ||
+        buttonImgObj.url ||
+        template.file_url ||
+        template.button_image_url ||
+        template.previewUrl ||
+        (typeof template.file === 'string' && (template.file.startsWith('http') || template.file.startsWith('/'))
+          ? template.file
+          : '')
+      const rawType = fileObj.file_type || template.type || template.messageType || (mediaUrl ? 'image' : 'text')
+      const fileType = String(rawType).toLowerCase()
+      if (mediaUrl) {
+        list.push({ url: mediaUrl, type: fileType, name: fileObj.file_name })
+      }
+    }
+
+    return list
+  }
 
   // Fetch campaigns
   const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
@@ -96,34 +161,14 @@ function CampaignsPage() {
     ? campaignsResponse
     : campaignsResponse?.results || []
 
-  const runCampaignMutation = useMutation({
-    mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/run/`).json<any>(),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      if (data?.status === 'no_session') {
-        toast.error(data.message || 'No connected WhatsApp sessions. Connect a session before starting this campaign.')
-        return
-      }
-      if (data?.status === 'skipped') {
-        toast.info(data.message || 'Campaign skipped.')
-        return
-      }
-      toast.success(data?.message || 'Campaign scheduled!')
-    },
-    onError: async (error: any) => {
-      const response = await error?.response?.json?.().catch(() => null)
-      toast.error(response?.message || response?.error || 'Failed to schedule campaign.')
-    },
-  })
-
   const pauseCampaignMutation = useMutation({
     mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/pause/`).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast.success('Campaign paused.')
     },
-    onError: () => {
-      toast.error('Failed to pause campaign.')
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to pause campaign.'))
     },
   })
 
@@ -133,8 +178,8 @@ function CampaignsPage() {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast.success('Campaign resumed.')
     },
-    onError: () => {
-      toast.error('Failed to resume campaign.')
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to resume campaign.'))
     },
   })
 
@@ -144,10 +189,23 @@ function CampaignsPage() {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast.success('Campaign deleted successfully!')
     },
-    onError: () => {
-      toast.error('Failed to delete campaign.')
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to delete campaign.'))
     },
   })
+
+  const retryFailedMutation = useMutation({
+    mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/retry-failed/`).json<any>(),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['campaign-logs'] })
+      toast.success(data?.message || 'Retrying failed campaign messages...')
+    },
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to retry campaign.'))
+    },
+  })
+
 
   const handleEdit = (campaign: any) => {
     navigate({ to: '/merchant/campaigns/create', search: { edit: campaign.id } })
@@ -164,13 +222,10 @@ function CampaignsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Campaigns</h2>
-          <p className="text-slate-500">
-            Create and manage your WhatsApp blasting campaigns.
-          </p>
+          <h2 className="text-xl font-bold tracking-tight">Campaigns</h2>
         </div>
 
         <div className="flex items-center gap-3">
@@ -266,32 +321,40 @@ function CampaignsPage() {
                         {campaign.name}
                       </TableCell>
                       <TableCell>
-                        <span
-                          className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            cStatus === 'completed'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                              : cStatus === 'scheduled'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                              : cStatus === 'running'
-                              ? 'bg-teal-100 text-teal-800 border border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800'
-                              : cStatus === 'paused'
-                              ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
-                              : cStatus === 'failed'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                              : cStatus === 'cancelled'
-                              ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                              : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
-                          }`}
-                        >
-                          {cStatus.toUpperCase()}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                              cStatus === 'completed'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                : cStatus === 'scheduled'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                : cStatus === 'running'
+                                ? 'bg-teal-100 text-teal-800 border border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800'
+                                : cStatus === 'paused'
+                                ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
+                                : cStatus === 'failed'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                                : cStatus === 'cancelled'
+                                ? 'bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                                : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
+                            }`}
+                          >
+                            {cStatus.toUpperCase()}
+                          </span>
+                          {campaign.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
+                            <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[220px] leading-tight" title={campaign.error_message}>
+                              <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
+                              <span className="truncate">{campaign.error_message}</span>
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm font-medium">
                         <button
                           type="button"
-                          onClick={() => setSelectedProgressCampaign(campaign)}
+                          onClick={() => setSelectedCustomerListCampaign(campaign)}
                           className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-                          title="Click to view customer list and delivery status"
+                          title="Click to view customer list"
                         >
                           {total} customers
                         </button>
@@ -339,39 +402,78 @@ function CampaignsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {cStatus === 'paused' && (
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              className="h-8 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                              disabled={resumeCampaignMutation.isPending}
+                              onClick={() => resumeCampaignMutation.mutate(campaign.id)}
+                            >
+                              {resumeCampaignMutation.isPending && resumeCampaignMutation.variables === campaign.id ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Play className="mr-1 h-3.5 w-3.5 fill-current" />
+                              )}
+                              Resume
+                            </Button>
+                          )}
+                          {cStatus === 'running' && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50 font-medium dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-950/40"
+                              disabled={pauseCampaignMutation.isPending}
+                              onClick={() => pauseCampaignMutation.mutate(campaign.id)}
+                            >
+                              {pauseCampaignMutation.isPending && pauseCampaignMutation.variables === campaign.id ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Pause className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              Pause
+                            </Button>
+                          )}
                           {cStatus !== 'draft' && (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 px-2.5 text-xs border-amber-300 bg-amber-50/70 text-amber-800 hover:bg-amber-100 hover:text-amber-900 font-medium dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
-                              onClick={() => setSelectedProgressCampaign(campaign)}
+                              className="h-8 px-2.5 text-xs"
+                              onClick={() => navigate({ to: '/merchant/campaigns/progress', search: { id: campaign.id } })}
                             >
-                              <Activity className="mr-1 h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                              <Activity className="mr-1 h-3.5 w-3.5" />
                               Progress
                             </Button>
                           )}
-                          {cStatus === 'draft' ? (
+                          {Boolean(campaign.stats?.failed) && (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 px-2.5 text-xs"
-                              onClick={() => handleEdit(campaign)}
+                              className="h-8 px-2.5 text-xs border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300 font-medium"
+                              disabled={retryFailedMutation.isPending}
+                              onClick={() => retryFailedMutation.mutate(campaign.id)}
                             >
-                              Edit Draft
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2.5 text-xs"
-                              onClick={() => handleEdit(campaign)}
-                            >
-                              Edit Unsent
+                              {retryFailedMutation.isPending && retryFailedMutation.variables === campaign.id ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="mr-1 h-3.5 w-3.5 text-rose-600" />
+                              )}
+                              Retry ({campaign.stats.failed})
                             </Button>
                           )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs"
+                            onClick={() => handleEdit(campaign)}
+                          >
+                            {cStatus === 'draft' ? 'Edit Draft' : 'Edit'}
+                          </Button>
                           <Dialog>
                             <DialogTrigger asChild>
                               <Button
@@ -537,15 +639,24 @@ function CampaignsPage() {
               </CardHeader>
               <CardContent className="pt-4">
                 <div className="space-y-4">
+                  {campaign.error_message && ((campaign.status || '').toLowerCase() === 'paused' || (campaign.status || '').toLowerCase() === 'failed') && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-semibold">Paused Reason:</span> {campaign.error_message}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <p className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
                       Recipients
                     </p>
                     <button
                       type="button"
-                      onClick={() => setSelectedProgressCampaign(campaign)}
+                      onClick={() => setSelectedCustomerListCampaign(campaign)}
                       className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-                      title="Click to view customer list and delivery status"
+                      title="Click to view customer list"
                     >
                       {campaign.recipient_phones?.length || 0} customers
                     </button>
@@ -568,48 +679,79 @@ function CampaignsPage() {
                         </Button>
                       </div>
                       <div className="space-y-3">
-                        {campaign.templates.map((template: any, templateIndex: number) => (
-                          <div key={template.id || templateIndex} className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="mb-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                              Template {templateIndex + 1}
-                            </p>
-                            {template.file?.file_type === 'document' && (
-                              <a
-                                href={template.file.file_url || template.file.document || '#'}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mb-2 flex items-center gap-3 rounded-md border border-slate-200 bg-white p-3 text-sm hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-                              >
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-100 text-red-600 dark:bg-red-950/40">
-                                  <FileText className="h-5 w-5" />
+                        {campaign.templates.map((template: any, templateIndex: number) => {
+                          const mediaList = resolveTemplateMediaList(template)
+
+                          return (
+                            <div key={template.id || templateIndex} className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                              <p className="mb-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                                Template {templateIndex + 1}
+                              </p>
+
+                              {mediaList.length > 0 && (
+                                <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                                  {mediaList.map((item, mIdx) => {
+                                    if (item.type === 'document') {
+                                      return (
+                                        <a
+                                          key={mIdx}
+                                          href={item.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800"
+                                        >
+                                          <FileText className="h-4 w-4 text-red-500 shrink-0" />
+                                          <span className="truncate max-w-[150px] font-medium text-slate-700 dark:text-slate-200">
+                                            {item.name || 'Document'}
+                                          </span>
+                                        </a>
+                                      )
+                                    }
+
+                                    return (
+                                      <a
+                                        key={mIdx}
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="group relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 flex items-center justify-center hover:border-emerald-500 transition-colors"
+                                        title={item.name || `Media #${mIdx + 1}`}
+                                      >
+                                        {item.type === 'video' ? (
+                                          <div className="flex h-full w-full items-center justify-center bg-slate-900 text-white">
+                                            <VideoIcon className="h-4 w-4" />
+                                          </div>
+                                        ) : (
+                                          <img
+                                            src={item.url}
+                                            alt={item.name || `Media ${mIdx + 1}`}
+                                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                          />
+                                        )}
+                                      </a>
+                                    )
+                                  })}
                                 </div>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-slate-800 dark:text-slate-200">Document attachment</p>
-                                  <p className="truncate text-xs text-slate-500">{template.file.file_name || template.file.file_url || template.file.document}</p>
+                              )}
+
+                              <p className="line-clamp-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
+                                {template.text || template.template || 'No text'}
+                              </p>
+                              {template.footer ? (
+                                <p className="mt-1 text-xs italic text-slate-500 dark:text-slate-400">{template.footer}</p>
+                              ) : null}
+                              {template.buttons?.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {template.buttons.map((button: any, index: number) => (
+                                    <span key={button.id || index} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+                                      {button.displayText || button.display_text || button.text || button.title || button.value || 'Button'}
+                                    </span>
+                                  ))}
                                 </div>
-                              </a>
-                            )}
-                            {template.file?.file_type !== 'document' && (template.file?.file_url || template.button_image?.file_url) && (
-                              <img
-                                src={template.file?.file_url || template.button_image?.file_url}
-                                alt={`Campaign media template ${templateIndex + 1}`}
-                                className="mb-2 max-h-36 w-full rounded-md bg-white object-contain dark:bg-slate-900"
-                              />
-                            )}
-                            <p className="line-clamp-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
-                              {template.text || 'No text'}
-                            </p>
-                            {template.buttons?.length ? (
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {template.buttons.map((button: any, index: number) => (
-                                  <span key={button.id || index} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
-                                    {button.displayText || button.display_text || button.value || 'Button'}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
+                              ) : null}
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   ) : null}
@@ -632,10 +774,10 @@ function CampaignsPage() {
                         <Button
                           type="button"
                           variant="outline"
-                          className="w-full flex items-center justify-center gap-2 border-amber-300 bg-amber-50/70 text-amber-800 hover:bg-amber-100 hover:text-amber-900 font-medium dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
-                          onClick={() => setSelectedProgressCampaign(campaign)}
+                          className="w-full flex items-center justify-center gap-2"
+                          onClick={() => navigate({ to: '/merchant/campaigns/progress', search: { id: campaign.id } })}
                         >
-                          <Activity className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          <Activity className="h-4 w-4" />
                           View Progress
                         </Button>
                       )}
@@ -675,7 +817,7 @@ function CampaignsPage() {
                             className="w-full"
                             onClick={() => handleEdit(campaign)}
                           >
-                            Edit unsent queued messages
+                            Edit
                           </Button>
                         </div>
                       )}
@@ -699,236 +841,6 @@ function CampaignsPage() {
         )}
       </div>
       )}
-
-      {/* CAMPAIGN PROGRESS & DETAILED BLAST REPORT MODAL */}
-      <Dialog
-        open={Boolean(selectedProgressCampaign)}
-        onOpenChange={(open) => !open && setSelectedProgressCampaign(null)}
-      >
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <Activity className="h-5 w-5 text-emerald-600" />
-              Campaign Blast Execution Report
-            </DialogTitle>
-            <DialogDescription>
-              Detailed real-time delivery report for {selectedProgressCampaign?.name}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedProgressCampaign && (() => {
-            const stats = selectedProgressCampaign.stats || {}
-            const total = stats.total || selectedProgressCampaign.recipient_phones?.length || selectedProgressCampaign.contacts?.length || 0
-            const sent = stats.sent || selectedProgressCampaign.current_index || 0
-            const failed = stats.failed || 0
-            const pending = Math.max(0, total - sent - failed)
-            const percent = total > 0 ? Math.min(100, Math.round(((sent + failed) / total) * 100)) : 0
-            const cStatus = (selectedProgressCampaign.status || 'draft').toUpperCase()
-
-            const logs: any[] = campaignLogsData?.results || []
-            const recipientPhones: string[] = selectedProgressCampaign.recipient_phones || selectedProgressCampaign.contacts?.map((c: any) => typeof c === 'string' ? c : c.phone || c.recipient_phone) || []
-
-            // Generate detailed report rows
-            const reportRows = recipientPhones.length > 0
-              ? recipientPhones.map((phone, idx) => {
-                  const cleanP = phone.replace(/[^0-9]/g, '')
-                  const matchedLog = logs.find((l) => l.recipient_phone?.replace(/[^0-9]/g, '') === cleanP || l.to_jid?.includes(cleanP))
-                  
-                  if (matchedLog) {
-                    return {
-                      phone: phone,
-                      status: matchedLog.status || 'sent',
-                      time: matchedLog.created_at || matchedLog.wa_timestamp || matchedLog.createdAt,
-                      error: matchedLog.error || null,
-                      message: matchedLog.content?.text || 'Template message sent',
-                    }
-                  }
-
-                  if (idx < (selectedProgressCampaign.current_index || 0)) {
-                    return {
-                      phone: phone,
-                      status: 'failed',
-                      time: null,
-                      error: 'Send failed during execution',
-                      message: 'Template message failed',
-                    }
-                  }
-
-                  return {
-                    phone: phone,
-                    status: 'pending',
-                    time: null,
-                    error: null,
-                    message: 'Scheduled in queue',
-                  }
-                })
-              : logs.map((l) => ({
-                  phone: l.recipient_phone || l.to_jid || 'Recipient',
-                  status: l.status || 'sent',
-                  time: l.created_at || l.wa_timestamp,
-                  error: l.error || null,
-                  message: l.content?.text || 'Message',
-                }))
-
-            return (
-              <div className="space-y-6 py-2">
-                {/* Header overview badge */}
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900">
-                  <div>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100">{selectedProgressCampaign.name}</h3>
-                    <p className="text-xs text-slate-500">
-                      Created: {dayjs(selectedProgressCampaign.created_at || selectedProgressCampaign.createdAt).format('MMM D, YYYY h:mm A')}
-                    </p>
-                  </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold border ${
-                      cStatus === 'COMPLETED' || cStatus === 'completed'
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 font-bold'
-                        : cStatus === 'RUNNING' || cStatus === 'running'
-                        ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800 animate-pulse'
-                        : cStatus === 'PAUSED' || cStatus === 'paused'
-                        ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
-                        : cStatus === 'SCHEDULED' || cStatus === 'scheduled'
-                        ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                        : cStatus === 'FAILED' || cStatus === 'failed'
-                        ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                        : 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
-                    }`}
-                  >
-                    {cStatus.toUpperCase()}
-                  </span>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm font-medium">
-                    <span className="text-slate-700 dark:text-slate-300">Blast Progress</span>
-                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}% ({sent + failed}/{total})</span>
-                  </div>
-                  <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Metrics Breakdown */}
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-3 text-center dark:border-slate-800 dark:bg-slate-900">
-                    <p className="min-h-[2.25rem] text-xs font-medium text-slate-500 flex items-center justify-center text-center leading-tight">Total Recipients</p>
-                    <p className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">{total}</p>
-                  </div>
-
-                  <div className="flex flex-col justify-between rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                    <p className="min-h-[2.25rem] text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center justify-center text-center leading-tight">Success / Sent</p>
-                    <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">{sent}</p>
-                  </div>
-
-                  <div className="flex flex-col justify-between rounded-lg border border-rose-200 bg-rose-50/50 p-3 text-center dark:border-rose-900/40 dark:bg-rose-950/20">
-                    <p className="min-h-[2.25rem] text-xs font-medium text-rose-700 dark:text-rose-400 flex items-center justify-center text-center leading-tight">Failed</p>
-                    <p className="mt-1 text-xl font-bold text-rose-600 dark:text-rose-400">{failed}</p>
-                  </div>
-
-                  <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-900">
-                    <p className="min-h-[2.25rem] text-xs font-medium text-slate-500 flex items-center justify-center text-center leading-tight">Pending</p>
-                    <p className="mt-1 text-xl font-bold text-slate-700 dark:text-slate-300">{pending}</p>
-                  </div>
-                </div>
-
-                {/* Detailed WhatsApp Blast Report Table */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                      Recipient Delivery Log ({reportRows.length})
-                    </h4>
-                    {isLoadingLogs && <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />}
-                  </div>
-
-                  <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                    <Table>
-                      <TableHeader className="bg-slate-50 dark:bg-slate-800/60 sticky top-0">
-                        <TableRow>
-                          <TableHead className="text-xs">Recipient Phone</TableHead>
-                          <TableHead className="text-xs">Status</TableHead>
-                          <TableHead className="text-xs">Time</TableHead>
-                          <TableHead className="text-xs">Message Preview</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {reportRows.map((row, idx) => {
-                          const st = (row.status || 'pending').toLowerCase()
-                          const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
-                          const isFailed = st === 'failed' || st === 'error'
-
-                          return (
-                            <TableRow key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 text-xs">
-                              <TableCell className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                                {row.phone}
-                              </TableCell>
-                              <TableCell>
-                                <span
-                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                                    isSuccess
-                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                                      : isFailed
-                                      ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                                      : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                                  }`}
-                                >
-                                  {isSuccess && <CheckCircle2 className="h-3 w-3" />}
-                                  {isFailed && <AlertCircle className="h-3 w-3" />}
-                                  {row.status ? row.status.toUpperCase() : 'PENDING'}
-                                </span>
-                                {row.error && (
-                                  <p className="mt-0.5 text-[10px] text-rose-600 dark:text-rose-400 font-normal">
-                                    {row.error}
-                                  </p>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-slate-500 whitespace-nowrap">
-                                {row.time ? dayjs(row.time).format('MMM D, YYYY h:mm:ss A') : '-'}
-                              </TableCell>
-                              <TableCell className="text-slate-600 dark:text-slate-400 max-w-xs truncate">
-                                {row.message}
-                              </TableCell>
-                            </TableRow>
-                          )
-                        })}
-
-                        {reportRows.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={4} className="py-6 text-center text-slate-500">
-                              No log records found for this campaign.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-                      refetchLogs()
-                    }}
-                  >
-                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                    Refresh Report
-                  </Button>
-                  <Button type="button" onClick={() => setSelectedProgressCampaign(null)}>
-                    Close Report
-                  </Button>
-                </div>
-              </div>
-            )
-          })()}
-        </DialogContent>
-      </Dialog>
 
       {/* WHATSAPP MESSAGE PREVIEW MODAL */}
       <Dialog
@@ -989,11 +901,8 @@ function CampaignsPage() {
                 const displayTemplates = templates.length > 0 ? templates : [{ text: 'No template content' }]
 
                 return displayTemplates.map((template: any, idx: number) => {
-                  const fileObj = template.file || {}
-                  const buttonImgObj = template.button_image || {}
-                  const mediaUrl = fileObj.file_url || fileObj.url || fileObj.image || fileObj.file || buttonImgObj.file_url || buttonImgObj.url || buttonImgObj.image || buttonImgObj.file || template.file_url || template.button_image_url
-                  const fileType = fileObj.file_type || template.type || 'text'
-                  const hasMedia = Boolean(mediaUrl || fileObj.file_type || buttonImgObj.file_url)
+                  const mediaList = resolveTemplateMediaList(template)
+                  const hasMedia = mediaList.length > 0
 
                   return (
                     <div key={idx} className="space-y-1">
@@ -1004,54 +913,78 @@ function CampaignsPage() {
                       )}
                       <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2 max-w-[85%] self-end relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">
                         {hasMedia && (
-                          <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 flex flex-col">
-                            {buttonImgObj && (buttonImgObj.file_url || buttonImgObj.image || buttonImgObj.file || buttonImgObj.url) && (
-                              <img
-                                src={buttonImgObj.file_url || buttonImgObj.image || buttonImgObj.file || buttonImgObj.url}
-                                alt="Button media"
-                                className="w-full h-auto max-h-64 object-cover"
-                              />
-                            )}
-                            {fileType === 'image' && mediaUrl && (
-                              <img src={mediaUrl} alt="Media" className="w-full h-auto max-h-64 object-cover" />
-                            )}
-                            {fileType === 'video' && mediaUrl && (
-                              <video src={mediaUrl} controls className="w-full h-auto max-h-64 bg-black" />
-                            )}
-                            {fileType === 'audio' && mediaUrl && (
-                              <audio src={mediaUrl} controls className="w-full max-w-full h-10 mt-1 mb-1" />
-                            )}
-                            {fileType === 'document' && (
-                              <div className="flex items-center gap-2 p-3 bg-black/5 dark:bg-white/5">
-                                <div className="w-10 h-10 rounded bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-xs shadow-sm">FILE</div>
-                                <span className="text-sm truncate font-medium flex-1">{fileObj.file_name || 'Document Attachment'}</span>
-                              </div>
-                            )}
-                            {fileType === 'sticker' && mediaUrl && (
-                              <img src={mediaUrl} alt="Sticker" className="w-24 h-24 object-contain bg-transparent m-2" />
-                            )}
+                          <div className="mb-1 rounded-md overflow-hidden bg-black/5 dark:bg-white/5 p-1 flex flex-wrap gap-1">
+                            {mediaList.map((item, mIdx) => {
+                              if (item.type === 'video') {
+                                return <video key={mIdx} src={item.url} controls className="w-full h-auto max-h-48 bg-black rounded" />
+                              }
+                              if (item.type === 'audio') {
+                                return <audio key={mIdx} src={item.url} controls className="w-full max-w-full h-10 my-1" />
+                              }
+                              if (item.type === 'document') {
+                                return (
+                                  <div key={mIdx} className="flex items-center gap-2 p-2 bg-black/5 dark:bg-white/5 rounded w-full">
+                                    <div className="w-8 h-8 rounded bg-red-500 text-white flex items-center justify-center shrink-0 font-bold text-[10px] shadow-sm">FILE</div>
+                                    <span className="text-xs truncate font-medium flex-1">{item.name || 'Document Attachment'}</span>
+                                  </div>
+                                )
+                              }
+                              if (mediaList.length === 1) {
+                                return (
+                                  <img
+                                    key={mIdx}
+                                    src={item.url}
+                                    alt="Media attachment"
+                                    className="w-full h-auto max-h-48 object-cover rounded"
+                                  />
+                                )
+                              }
+                              return (
+                                <img
+                                  key={mIdx}
+                                  src={item.url}
+                                  alt={`Media ${mIdx + 1}`}
+                                  className="h-16 w-16 object-cover rounded border border-black/10 dark:border-white/10"
+                                />
+                              )
+                            })}
                           </div>
                         )}
                         
-                        <div className="mb-3">
-                          {template.text || template.template || `[${fileType} message]`}
+                        <div className="mb-2 font-normal">
+                          {template.text || template.template || (hasMedia ? '' : `[message]`)}
                         </div>
 
+                        {/* Footer */}
+                        {template.footer ? (
+                          <div className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-1 italic border-t border-black/5 dark:border-white/5 pt-1">
+                            {template.footer}
+                          </div>
+                        ) : null}
+
+                        {/* Interactive Buttons */}
                         {template.buttons?.length ? (
                           <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
-                            {template.buttons.map((button: any, bIdx: number) => (
-                              <div
-                                key={button.id || bIdx}
-                                className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-sm dark:bg-[#111b21]/50 dark:text-[#53bdeb]"
-                              >
-                                {button.displayText || button.display_text || button.value || 'Button'}
-                              </div>
-                            ))}
+                            {template.buttons.map((button: any, bIdx: number) => {
+                              const label = button.displayText || button.display_text || button.text || button.title || button.value || `Button ${bIdx + 1}`
+                              const val = button.value || button.url || button.phone_number || button.copy_code || ''
+                              return (
+                                <div
+                                  key={button.id || bIdx}
+                                  className="rounded-md bg-white/70 px-3 py-2 text-center text-sm font-medium text-[#027eb5] shadow-sm dark:bg-[#111b21]/50 dark:text-[#53bdeb] flex flex-col items-center justify-center"
+                                >
+                                  <span>{label}</span>
+                                  {val && val !== label && (
+                                    <span className="text-[10px] opacity-75 truncate max-w-full font-normal">{val}</span>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
                         ) : null}
                         
                         {/* Meta row: Time and Ticks */}
-                        <div className="flex justify-end items-center gap-1 float-right mt-[-10px] ml-2">
+                        <div className="flex justify-end items-center gap-1 float-right mt-1 ml-2">
                           <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
                             12:00
                           </span>
@@ -1081,6 +1014,341 @@ function CampaignsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* CUSTOMER LIST MODAL */}
+      {(() => {
+        const recipientPhones: string[] =
+          selectedCustomerListCampaign?.recipient_phones ||
+          selectedCustomerListCampaign?.contacts?.map((c: any) =>
+            typeof c === 'string' ? c : c.phone || c.recipient_phone || c.name || c
+          ) ||
+          []
+
+        const logs: any[] = customerLogsData?.results || []
+
+        const customerRows =
+          recipientPhones.length > 0
+            ? recipientPhones.map((phone, idx) => {
+                const cleanP = String(phone).replace(/[^0-9]/g, '')
+                const matchedLog = logs.find(
+                  (l) =>
+                    String(l.recipient_phone || '').replace(/[^0-9]/g, '') === cleanP ||
+                    String(l.to_jid || '').includes(cleanP)
+                )
+
+                if (matchedLog) {
+                  return {
+                    phone,
+                    status: (matchedLog.status || 'sent').toLowerCase(),
+                    time: matchedLog.created_at || matchedLog.wa_timestamp || matchedLog.createdAt,
+                    error: matchedLog.error || null,
+                    message: matchedLog.content?.text || 'Template message sent',
+                  }
+                }
+
+                if (idx < (selectedCustomerListCampaign?.current_index || 0)) {
+                  return {
+                    phone,
+                    status: 'failed',
+                    time: null,
+                    error: 'Send failed during execution',
+                    message: 'Template message failed',
+                  }
+                }
+
+                return {
+                  phone,
+                  status: 'pending',
+                  time: null,
+                  error: null,
+                  message: 'Scheduled in queue',
+                }
+              })
+            : logs.map((l) => ({
+                phone: l.recipient_phone || l.to_jid || 'Recipient',
+                status: (l.status || 'sent').toLowerCase(),
+                time: l.created_at || l.wa_timestamp,
+                error: l.error || null,
+                message: l.content?.text || 'Message',
+              }))
+
+        const sentCount = customerRows.filter(
+          (r) => r.status === 'sent' || r.status === 'delivered' || r.status === 'read'
+        ).length
+        const failedCount = customerRows.filter(
+          (r) => r.status === 'failed' || r.status === 'error'
+        ).length
+        const pendingCount = customerRows.filter(
+          (r) => r.status === 'pending' || r.status === 'queued'
+        ).length
+
+        const filteredCustomerRows = customerRows.filter((row) => {
+          const matchesSearch =
+            !customerSearch || row.phone.toLowerCase().includes(customerSearch.toLowerCase())
+          let matchesStatus = true
+          if (customerStatusFilter === 'SENT') {
+            matchesStatus =
+              row.status === 'sent' || row.status === 'delivered' || row.status === 'read'
+          } else if (customerStatusFilter === 'FAILED') {
+            matchesStatus = row.status === 'failed' || row.status === 'error'
+          } else if (customerStatusFilter === 'PENDING') {
+            matchesStatus = row.status === 'pending' || row.status === 'queued'
+          }
+          return matchesSearch && matchesStatus
+        })
+
+        return (
+          <Dialog
+            open={Boolean(selectedCustomerListCampaign)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setSelectedCustomerListCampaign(null)
+                setCustomerSearch('')
+                setCustomerStatusFilter('ALL')
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-4xl max-h-[85vh] flex flex-col p-6">
+              <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                        Customer List
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                        {selectedCustomerListCampaign?.name} &bull; {customerRows.length} total customer(s)
+                      </DialogDescription>
+                    </div>
+                  </div>
+
+                  {failedCount > 0 && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="h-8 px-3 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-xs"
+                      disabled={retryFailedMutation.isPending}
+                      onClick={() => {
+                        if (selectedCustomerListCampaign) {
+                          retryFailedMutation.mutate(selectedCustomerListCampaign.id)
+                        }
+                      }}
+                    >
+                      {retryFailedMutation.isPending ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      Retry All Failed ({failedCount})
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 mt-3 text-xs">
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    Sent: {sentCount}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1 font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                    Failed: {failedCount}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    Pending: {pendingCount}
+                  </span>
+                </div>
+              </DialogHeader>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search customer phone number..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="pl-9 h-9 text-sm"
+                  />
+                  {customerSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSearch('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setCustomerStatusFilter('ALL')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                      customerStatusFilter === 'ALL'
+                        ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    All ({customerRows.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerStatusFilter('SENT')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                      customerStatusFilter === 'SENT'
+                        ? 'bg-white text-emerald-700 shadow-xs dark:bg-slate-800 dark:text-emerald-400'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    Sent ({sentCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerStatusFilter('FAILED')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                      customerStatusFilter === 'FAILED'
+                        ? 'bg-white text-rose-700 shadow-xs dark:bg-slate-800 dark:text-rose-400'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    Failed ({failedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerStatusFilter('PENDING')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                      customerStatusFilter === 'PENDING'
+                        ? 'bg-white text-amber-700 shadow-xs dark:bg-slate-800 dark:text-amber-400'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    Pending ({pendingCount})
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto min-h-[250px] border border-slate-200 rounded-lg dark:border-slate-800 my-2">
+                {isLoadingCustomerLogs ? (
+                  <div className="flex justify-center items-center py-16">
+                    <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
+                  </div>
+                ) : filteredCustomerRows.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 text-sm">
+                    No matching customers found.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50/80 dark:bg-slate-900/60 text-xs">
+                        <TableHead className="w-[50px]">#</TableHead>
+                        <TableHead>Customer Phone</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Info / Details</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredCustomerRows.map((row, idx) => {
+                        const isFailed = row.status === 'failed' || row.status === 'error'
+                        const isSent =
+                          row.status === 'sent' || row.status === 'delivered' || row.status === 'read'
+
+                        return (
+                          <TableRow key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50 text-xs">
+                            <TableCell className="text-slate-400 font-medium">{idx + 1}</TableCell>
+                            <TableCell className="font-semibold text-emerald-600 dark:text-emerald-400">
+                              {row.phone}
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                                  isSent
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                    : isFailed
+                                    ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                                    : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                }`}
+                              >
+                                {row.status.toUpperCase()}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-slate-500 whitespace-nowrap">
+                              {row.time ? dayjs(row.time).format('MMM D, YYYY h:mm:ss A') : '-'}
+                            </TableCell>
+                            <TableCell className="text-slate-600 dark:text-slate-400 max-w-[200px] truncate" title={row.error || row.message}>
+                              {row.error ? (
+                                <span className="text-rose-600 dark:text-rose-400 font-medium">{row.error}</span>
+                              ) : (
+                                <span>{row.message}</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                type="button"
+                                variant={isFailed ? "destructive" : "outline"}
+                                size="sm"
+                                className={`h-7 px-2.5 text-xs font-medium ${
+                                  isFailed
+                                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900 border-slate-200'
+                                }`}
+                                disabled={retryRecipientMutation.isPending}
+                                onClick={() =>
+                                  selectedCustomerListCampaign &&
+                                  retryRecipientMutation.mutate({
+                                    cId: selectedCustomerListCampaign.id,
+                                    phone: row.phone,
+                                  })
+                                }
+                                title="Retry message for this customer"
+                              >
+                                {retryRecipientMutation.isPending &&
+                                retryRecipientMutation.variables?.phone === row.phone ? (
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="mr-1 h-3 w-3" />
+                                )}
+                                Retry
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              <DialogFooter className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300"
+                  onClick={() => {
+                    if (selectedCustomerListCampaign) {
+                      const id = selectedCustomerListCampaign.id
+                      setSelectedCustomerListCampaign(null)
+                      navigate({ to: '/merchant/campaigns/progress', search: { id } })
+                    }
+                  }}
+                >
+                  <Activity className="mr-1.5 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  View Full Progress Page
+                </Button>
+
+                <DialogClose asChild>
+                  <Button type="button" variant="secondary">
+                    Close
+                  </Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
     </div>
   )
 }
