@@ -269,16 +269,23 @@ export async function restoreAllSessions(): Promise<void> {
   }
 }
 
-export async function pickUserSession(userId: string): Promise<string> {
+export async function pickUserSession(userId: string, allowedSessionIds?: string[]): Promise<string> {
   const user = await User.findById(userId);
   if (!user) throw new Error('User not found');
 
-  const connectedSessions = await WhatsAppSession.find({
+  let connectedSessions = await WhatsAppSession.find({
     user: userId,
     status: SessionStatus.CONNECTED,
   }).sort({ createdAt: 1 });
 
+  if (allowedSessionIds && allowedSessionIds.length > 0) {
+    connectedSessions = connectedSessions.filter((s) => allowedSessionIds.includes(s.session_id));
+  }
+
   if (connectedSessions.length === 0) {
+    if (allowedSessionIds && allowedSessionIds.length > 0) {
+      throw new Error('None of the selected WhatsApp sessions for this campaign are connected');
+    }
     throw new Error('No connected WhatsApp session available');
   }
 

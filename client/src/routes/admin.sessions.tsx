@@ -15,6 +15,7 @@ import {
   HelpCircle,
   Send,
   Shuffle,
+  Tag,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
@@ -47,6 +48,8 @@ type Session = {
   id: string
   session_id?: string
   phone_number?: string
+  alias?: string
+  labels?: string[]
   status?: string
   user?: string | User
   warmup_schedule?: number[]
@@ -374,11 +377,11 @@ function AdminSessionsPage() {
           {/* Filters Bar */}
           <div className="mb-4 grid gap-3 md:grid-cols-4">
             <Input
-              placeholder="Search session/phone/merchant"
+              placeholder="Search session / alias / label / phone / merchant..."
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-            />
-            <Select value={filters.status} onValueChange={(status) => setFilters({ ...filters, status })}>
+              className="md:max-w-xs"
+            /><Select value={filters.status} onValueChange={(status) => setFilters({ ...filters, status })}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -442,18 +445,35 @@ function AdminSessionsPage() {
                   {sessions.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell>
-                        <div className="font-medium font-mono text-xs flex items-center gap-1">
-                          {s.session_id || 'Unnamed session'}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(s.session_id || s.id)
-                              toast.success('Session ID copied!')
-                            }}
-                            title="Copy Session ID"
-                          >
-                            <Copy className="h-3 w-3 text-slate-400 hover:text-slate-600" />
-                          </button>
+                        <div className="space-y-1">
+                          {s.alias && (
+                            <div className="font-semibold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              <Tag className="h-3 w-3 text-emerald-600 shrink-0" />
+                              {s.alias}
+                            </div>
+                          )}
+                          <div className="font-medium font-mono text-xs flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                            {s.session_id || 'Unnamed session'}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(s.session_id || s.id)
+                                toast.success('Session ID copied!')
+                              }}
+                              title="Copy Session ID"
+                            >
+                              <Copy className="h-3 w-3 text-slate-400 hover:text-slate-600" />
+                            </button>
+                          </div>
+                          {s.labels && s.labels.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {s.labels.map((lbl) => (
+                                <Badge key={lbl} variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                  {lbl}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-sm">{s.phone_number || '-'}</TableCell>
@@ -650,6 +670,8 @@ function ManageAdminSessionDialog({
 }) {
   const queryClient = useQueryClient()
   const [selectedUser, setSelectedUser] = useState(ownerId(session.user))
+  const [alias, setAlias] = useState(session.alias || '')
+  const [labelsStr, setLabelsStr] = useState(session.labels?.join(', ') || '')
   const [maxMessages, setMaxMessages] = useState<number>(session.max_message_count_per_day ?? 50)
   const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
   const [minInterval, setMinInterval] = useState<number>(session.min_interval_seconds ?? 10)
@@ -664,6 +686,8 @@ function ManageAdminSessionDialog({
   useEffect(() => {
     if (isOpen) {
       setSelectedUser(ownerId(session.user))
+      setAlias(session.alias || '')
+      setLabelsStr(session.labels?.join(', ') || '')
       setMaxMessages(session.max_message_count_per_day ?? 50)
       setWarmup(session.warmup_schedule?.join(', ') || '')
       setMinInterval(session.min_interval_seconds ?? 10)
@@ -719,6 +743,8 @@ function ManageAdminSessionDialog({
     if (selectedUser) {
       patchData.user = selectedUser
     }
+    patchData.alias = alias.trim()
+    patchData.labels = labelsStr.split(',').map((s) => s.trim()).filter(Boolean)
     patchData.max_message_count_per_day = Number(maxMessages) || 50
     patchData.min_interval_seconds = Number(minInterval) || 10
     patchData.max_interval_seconds = Number(maxInterval) || 15
@@ -872,6 +898,25 @@ function ManageAdminSessionDialog({
 
             {/* TAB 1: Session Settings */}
             <TabsContent value="settings" className="space-y-4 pt-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Session Alias (Friendly Name)</Label>
+                  <Input
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value)}
+                    placeholder="e.g. Marketing Line 1"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Labels / Tags (comma-separated)</Label>
+                  <Input
+                    value={labelsStr}
+                    onChange={(e) => setLabelsStr(e.target.value)}
+                    placeholder="e.g. marketing, primary, cs"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5">
                   <UserCheck className="h-4 w-4 text-slate-500" /> Assign Merchant / Owner

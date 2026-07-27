@@ -16,11 +16,15 @@ import {
   LayoutGrid, 
   List, 
   Search,
-  Check
+  Check,
+  Tag,
+  RefreshCw,
+  LogOut,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 
 import { api, getErrorMessage } from '@/lib/api'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -74,6 +78,8 @@ function SessionsPage() {
     return sessions.filter((s: any) => 
       (s.phone_number || '').toLowerCase().includes(query) ||
       (s.session_id || s.id || '').toLowerCase().includes(query) ||
+      (s.alias || '').toLowerCase().includes(query) ||
+      (s.labels || []).some((lbl: string) => lbl.toLowerCase().includes(query)) ||
       (s.status || '').toLowerCase().includes(query)
     )
   }, [sessions, searchQuery])
@@ -152,6 +158,15 @@ function SessionsPage() {
       }
     },
     onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to fetch QR. Try again.'))
+  })
+
+  const reconnectSessionMutation = useMutation({
+    mutationFn: (id: string) => api.post(`whatsapp-sessions/${id}/reconnect/`).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
+      toast.success('Reconnecting session...')
+    },
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to reconnect session.'))
   })
 
   const disconnectSessionMutation = useMutation({
@@ -350,7 +365,13 @@ function SessionsPage() {
                     <div className={`p-2 rounded-lg shrink-0 ${isConnected ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                       <Smartphone className="w-4 h-4" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-0.5">
+                      {session.alias && (
+                        <div className="font-semibold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate">
+                          <Tag className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span className="truncate">{session.alias}</span>
+                        </div>
+                      )}
                       <div className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
                         {session.phone_number || 'Unconnected Session'}
                       </div>
@@ -361,22 +382,33 @@ function SessionsPage() {
                   </div>
                 </div>
 
-                {/* Body info: Session ID tag */}
-                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-md border border-slate-100 dark:border-slate-800/80 text-[11px]">
-                  <span className="text-slate-400 font-medium shrink-0 mr-1.5">ID:</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(sid)}
-                    className="font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium truncate flex items-center gap-1 transition-colors"
-                    title="Click to copy Session ID"
-                  >
-                    <span className="truncate">{sid}</span>
-                    {copiedId === sid ? (
-                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                    ) : (
-                      <Copy className="w-3 h-3 text-slate-400 group-hover:text-slate-500 shrink-0" />
-                    )}
-                  </button>
+                {/* Body info: Session ID tag & Labels */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-md border border-slate-100 dark:border-slate-800/80 text-[11px]">
+                    <span className="text-slate-400 font-medium shrink-0 mr-1.5">ID:</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(sid)}
+                      className="font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium truncate flex items-center gap-1 transition-colors"
+                      title="Click to copy Session ID"
+                    >
+                      <span className="truncate">{sid}</span>
+                      {copiedId === sid ? (
+                        <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                      ) : (
+                        <Copy className="w-3 h-3 text-slate-400 group-hover:text-slate-500 shrink-0" />
+                      )}
+                    </button>
+                  </div>
+                  {session.labels && session.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {session.labels.map((lbl: string) => (
+                        <Badge key={lbl} variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {lbl}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Status Pill & Action Buttons Footer */}
@@ -386,102 +418,16 @@ function SessionsPage() {
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    {isConnected ? (
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            disabled={disconnectSessionMutation.isPending}
-                            className="h-7 px-2 text-[11px] font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 border-amber-200/80 dark:border-amber-900/50"
-                          >
-                            Disconnect
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Disconnect Session?</DialogTitle>
-                            <DialogDescription>
-                              Are you sure you want to disconnect this session?
-                            </DialogDescription>
-                          </DialogHeader>
-                          <DialogFooter>
-                            <DialogClose asChild>
-                              <Button type="button" variant="outline" size="sm">Cancel</Button>
-                            </DialogClose>
-                            <DialogClose asChild>
-                              <Button 
-                                type="button"
-                                variant="destructive" 
-                                size="sm"
-                                onClick={() => disconnectSessionMutation.mutate(session.id)}
-                                className="bg-amber-600 hover:bg-amber-700 text-white"
-                              >
-                                Disconnect
-                              </Button>
-                            </DialogClose>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    ) : (
-                      <Button 
-                        variant="default" 
-                        size="sm"
-                        onClick={() => handleScan(session.id)}
-                        className="h-7 px-2.5 text-[11px] font-medium bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                      >
-                        <QrCode className="w-3 h-3" />
-                        Scan QR
-                      </Button>
-                    )}
-
                     <Button 
                       variant="outline" 
                       size="sm" 
                       onClick={() => handleManage(session.id)}
-                      className="h-7 px-2 text-[11px] font-medium"
-                      title="Configure session settings"
+                      className="h-7 px-2.5 text-[11px] font-medium gap-1"
+                      title="Manage session settings"
                     >
-                      <Settings className="w-3 h-3" />
+                      <Settings className="w-3.5 h-3.5" />
+                      Manage
                     </Button>
-
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
-                          disabled={deleteSessionMutation.isPending}
-                          title="Delete session"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Delete Session?</DialogTitle>
-                          <DialogDescription>
-                            Are you sure you want to delete this session? This action cannot be undone.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <DialogFooter>
-                          <DialogClose asChild>
-                            <Button type="button" variant="outline" size="sm">Cancel</Button>
-                          </DialogClose>
-                          <DialogClose asChild>
-                            <Button 
-                              type="button"
-                              variant="destructive" 
-                              size="sm"
-                              onClick={() => deleteSessionMutation.mutate(session.id)}
-                              className="bg-red-600 hover:bg-red-700 text-white"
-                            >
-                              Delete
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
                   </div>
                 </div>
               </div>
@@ -512,124 +458,57 @@ function SessionsPage() {
                       {getStatusBadge(session.status)}
                     </TableCell>
                     <TableCell className="py-2.5 font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
-                      {session.phone_number || <span className="text-slate-400 italic font-sans font-normal">Unconnected</span>}
+                      {session.alias ? (
+                        <div>
+                          <div className="font-semibold font-sans text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1">
+                            <Tag className="w-3 h-3 text-emerald-600 shrink-0" />
+                            {session.alias}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono">{session.phone_number || 'Unconnected'}</div>
+                        </div>
+                      ) : (
+                        session.phone_number || <span className="text-slate-400 italic font-sans font-normal">Unconnected</span>
+                      )}
                     </TableCell>
                     <TableCell className="py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(sid)}
-                        className="font-mono text-xs text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded transition-colors"
-                        title="Click to copy Session ID"
-                      >
-                        <span>{sid}</span>
-                        {copiedId === sid ? (
-                          <Check className="w-3 h-3 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3 h-3 text-slate-400" />
+                      <div className="space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(sid)}
+                          className="font-mono text-xs text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded transition-colors"
+                          title="Click to copy Session ID"
+                        >
+                          <span>{sid}</span>
+                          {copiedId === sid ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-slate-400" />
+                          )}
+                        </button>
+                        {session.labels && session.labels.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {session.labels.map((lbl: string) => (
+                              <Badge key={lbl} variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                {lbl}
+                              </Badge>
+                            ))}
+                          </div>
                         )}
-                      </button>
+                      </div>
                     </TableCell>
                     <TableCell className="py-2.5 text-xs text-slate-500">
                       {dayjs(session.created_at).format('MMM D, YYYY · h:mm A')}
                     </TableCell>
                     <TableCell className="py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {isConnected ? (
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                disabled={disconnectSessionMutation.isPending}
-                                className="h-7 px-2 text-[11px] font-medium text-amber-600 hover:bg-amber-50 border-amber-200/80"
-                              >
-                                Disconnect
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Disconnect Session?</DialogTitle>
-                                <DialogDescription>
-                                  Are you sure you want to disconnect this session?
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <DialogClose asChild>
-                                  <Button type="button" variant="outline" size="sm">Cancel</Button>
-                                </DialogClose>
-                                <DialogClose asChild>
-                                  <Button 
-                                    type="button"
-                                    variant="destructive" 
-                                    size="sm"
-                                    onClick={() => disconnectSessionMutation.mutate(session.id)}
-                                    className="bg-amber-600 hover:bg-amber-700 text-white"
-                                  >
-                                    Disconnect
-                                  </Button>
-                                </DialogClose>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        ) : (
-                          <Button 
-                            variant="default" 
-                            size="sm"
-                            onClick={() => handleScan(session.id)}
-                            className="h-7 px-2 text-[11px] font-medium bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                          >
-                            <QrCode className="w-3 h-3" />
-                            Scan QR
-                          </Button>
-                        )}
-
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleManage(session.id)}
-                          className="h-7 px-2 text-[11px] font-medium gap-1"
-                        >
-                          <Settings className="w-3 h-3" />
-                          Manage
-                        </Button>
-
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                              disabled={deleteSessionMutation.isPending}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Delete Session?</DialogTitle>
-                              <DialogDescription>
-                                Are you sure you want to delete this session? This action cannot be undone.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                              <DialogClose asChild>
-                                <Button type="button" variant="outline" size="sm">Cancel</Button>
-                              </DialogClose>
-                              <DialogClose asChild>
-                                <Button 
-                                  type="button"
-                                  variant="destructive" 
-                                  size="sm"
-                                  onClick={() => deleteSessionMutation.mutate(session.id)}
-                                  className="bg-red-600 hover:bg-red-700 text-white"
-                                >
-                                  Delete
-                                </Button>
-                              </DialogClose>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleManage(session.id)}
+                        className="h-7 px-2.5 text-[11px] font-medium gap-1"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        Manage
+                      </Button>
                     </TableCell>
                   </TableRow>
                 )
@@ -691,7 +570,12 @@ function SessionsPage() {
         <ManageSessionDialog 
           isOpen={isManageOpen} 
           onClose={() => setIsManageOpen(false)} 
-          session={selectedSession} 
+          session={selectedSession}
+          onScan={() => selectedSessionId && handleScan(selectedSessionId)}
+          onReconnect={() => selectedSessionId && reconnectSessionMutation.mutate(selectedSessionId)}
+          onDisconnect={() => selectedSessionId && disconnectSessionMutation.mutate(selectedSessionId)}
+          onDelete={() => selectedSessionId && deleteSessionMutation.mutate(selectedSessionId)}
+          isReconnecting={reconnectSessionMutation.isPending}
         />
       )}
     </div>
@@ -699,8 +583,28 @@ function SessionsPage() {
 }
 
 
-function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, onClose: () => void, session: any }) {
+function ManageSessionDialog({ 
+  isOpen, 
+  onClose, 
+  session,
+  onScan,
+  onReconnect,
+  onDisconnect,
+  onDelete,
+  isReconnecting,
+}: { 
+  isOpen: boolean
+  onClose: () => void
+  session: any
+  onScan: () => void
+  onReconnect: () => void
+  onDisconnect: () => void
+  onDelete: () => void
+  isReconnecting: boolean
+}) {
   const queryClient = useQueryClient()
+  const [alias, setAlias] = useState(session.alias || '')
+  const [labelsStr, setLabelsStr] = useState(session.labels?.join(', ') || '')
   const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
   const [minInterval, setMinInterval] = useState<number>(session.min_interval_seconds ?? 10)
   const [maxInterval, setMaxInterval] = useState<number>(session.max_interval_seconds ?? 15)
@@ -713,6 +617,8 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
 
   useEffect(() => {
     if (isOpen) {
+      setAlias(session.alias || '')
+      setLabelsStr(session.labels?.join(', ') || '')
       setWarmup(session.warmup_schedule?.join(', ') || '')
       setMinInterval(session.min_interval_seconds ?? 10)
       setMaxInterval(session.max_interval_seconds ?? 15)
@@ -771,6 +677,9 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
   const handleUpdateSession = () => {
     const data: any = {}
     
+    data.alias = alias.trim()
+    data.labels = labelsStr.split(',').map((s: string) => s.trim()).filter(Boolean)
+
     // Parse warmup string to array of ints
     if (warmup.trim()) {
       const parts = warmup.split(',').map((s: string) => parseInt(s.trim()))
@@ -839,34 +748,91 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+          {/* Key Info & Quick Actions Banner */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-500 font-medium">Session ID:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(session.session_id || session.id)
-                  toast.success('Session ID copied!')
-                }}
-                className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1"
-              >
-                {session.session_id || session.id}
-                <Copy className="w-3 h-3 text-slate-400" />
-              </button>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium">Session ID:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(session.session_id || session.id)
+                      toast.success('Session ID copied!')
+                    }}
+                    className="font-mono text-slate-800 dark:text-slate-200 font-semibold hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1"
+                  >
+                    {session.session_id || session.id}
+                    <Copy className="w-3 h-3 text-slate-400" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium">Phone:</span>
+                  <span className="font-mono">{session.phone_number || 'Not connected yet'}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {(session.status || '').toLowerCase() === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">Connected</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Disconnected</span>
+                )}
+              </div>
             </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-500 font-medium">Redis Auth Key:</span>
-              <button
-                type="button"
+
+            {/* Quick Actions */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t text-xs">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => {
-                  navigator.clipboard.writeText(`wa_session:${session.session_id || session.id}`)
-                  toast.success('Redis key prefix copied!')
+                  onClose()
+                  onScan()
                 }}
-                className="font-mono text-xs bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center gap-1"
+                className="h-7 text-xs gap-1.5"
               >
-                wa_session:{session.session_id || session.id}
-                <Copy className="w-3 h-3 opacity-70" />
-              </button>
+                <QrCode className="h-3.5 w-3.5" />
+                Scan QR
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onReconnect()}
+                disabled={isReconnecting}
+                className="h-7 text-xs gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 dark:border-blue-800"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
+                Reconnect
+              </Button>
+
+              {(session.status || '').toLowerCase() === 'connected' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onClose()
+                    onDisconnect()
+                  }}
+                  className="h-7 text-xs gap-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 border-amber-200 dark:border-amber-800"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Logout
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onClose()
+                  onDelete()
+                }}
+                className="h-7 text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 dark:border-red-800 ml-auto"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete Session
+              </Button>
             </div>
           </div>
 
@@ -879,6 +845,24 @@ function ManageSessionDialog({ isOpen, onClose, session }: { isOpen: boolean, on
 
             {/* TAB 1: Session Settings */}
             <TabsContent value="settings" className="space-y-4 pt-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Session Alias (Friendly Name)</Label>
+                  <Input 
+                    value={alias} 
+                    onChange={(e) => setAlias(e.target.value)} 
+                    placeholder="e.g. Main Store WhatsApp"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Labels / Tags (comma-separated)</Label>
+                  <Input 
+                    value={labelsStr} 
+                    onChange={(e) => setLabelsStr(e.target.value)} 
+                    placeholder="e.g. marketing, sales, promo"
+                  />
+                </div>
+              </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5">
                   <Label>Warmup Schedule (Messages per day)</Label>

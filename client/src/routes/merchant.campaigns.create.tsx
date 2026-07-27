@@ -27,6 +27,8 @@ import {
   User,
   MoreVertical,
   Mic,
+  Layers,
+  Smartphone,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
@@ -206,7 +208,7 @@ function CreateCampaignPage() {
   const editingCampaignId = search.edit || null
   const [step, setStep] = useState<number>(() => {
     const s = parseInt(search.step || '1', 10)
-    return isNaN(s) || s < 1 || s > 4 ? 1 : s
+    return isNaN(s) || s < 1 || s > 5 ? 1 : s
   })
 
   // Wizard state
@@ -214,6 +216,8 @@ function CreateCampaignPage() {
   const [minInterval, setMinInterval] = useState(10)
   const [maxInterval, setMaxInterval] = useState(15)
   const [enableWarmup, setEnableWarmup] = useState(true)
+  const [sessionMode, setSessionMode] = useState<'ALL' | 'SPECIFIC'>('ALL')
+  const [selectedSessions, setSelectedSessions] = useState<string[]>([])
   const [templateDrafts, setTemplateDrafts] = useState<TemplateDraft[]>([createEmptyTemplateDraft()])
   const [activeTemplateIndex, setActiveTemplateIndex] = useState(0)
   const [recipients, setRecipients] = useState<string[]>([])
@@ -232,6 +236,18 @@ function CreateCampaignPage() {
     queryFn: async () => {
       try {
         return await api.get('files').json<any[]>()
+      } catch {
+        return []
+      }
+    },
+  })
+
+  // Fetch user WhatsApp sessions
+  const { data: availableSessions = [], isLoading: isLoadingSessions } = useQuery({
+    queryKey: ['whatsapp-sessions'],
+    queryFn: async () => {
+      try {
+        return await api.get('whatsapp-sessions/').json<any[]>()
       } catch {
         return []
       }
@@ -339,6 +355,8 @@ function CreateCampaignPage() {
         min_interval_seconds: minInterval,
         max_interval_seconds: maxInterval,
         enable_warmup: enableWarmup,
+        session_mode: sessionMode,
+        selected_sessions: selectedSessions,
         recipient_phones: recipients,
         templates: templateDrafts.map(buildTemplatePayload),
       }
@@ -400,19 +418,34 @@ function CreateCampaignPage() {
         if (parsed.accountId && parsed.accountId !== accountId) {
           setIsDraftRestored(false)
         } else {
-          if (parsed.name) setName(parsed.name)
-          if (typeof parsed.minInterval === 'number') setMinInterval(parsed.minInterval)
-          if (typeof parsed.maxInterval === 'number') setMaxInterval(parsed.maxInterval)
-          if (typeof parsed.enableWarmup === 'boolean') setEnableWarmup(parsed.enableWarmup)
-          if (Array.isArray(parsed.templateDrafts) && parsed.templateDrafts.length > 0) {
-            setTemplateDrafts(parsed.templateDrafts)
+          const hasContent = Boolean(
+            parsed.name?.trim() ||
+            (Array.isArray(parsed.recipients) && parsed.recipients.length > 0) ||
+            (Array.isArray(parsed.templateDrafts) && parsed.templateDrafts.some((t: any) => t.template?.trim())) ||
+            (Array.isArray(parsed.selectedSessions) && parsed.selectedSessions.length > 0)
+          )
+
+          if (hasContent) {
+            if (parsed.name) setName(parsed.name)
+            if (typeof parsed.minInterval === 'number') setMinInterval(parsed.minInterval)
+            if (typeof parsed.maxInterval === 'number') setMaxInterval(parsed.maxInterval)
+            if (typeof parsed.enableWarmup === 'boolean') setEnableWarmup(parsed.enableWarmup)
+            if (parsed.sessionMode === 'ALL' || parsed.sessionMode === 'SPECIFIC') setSessionMode(parsed.sessionMode)
+            if (Array.isArray(parsed.selectedSessions)) setSelectedSessions(parsed.selectedSessions)
+            if (Array.isArray(parsed.templateDrafts) && parsed.templateDrafts.length > 0) {
+              setTemplateDrafts(parsed.templateDrafts)
+            }
+            if (Array.isArray(parsed.recipients)) setRecipients(parsed.recipients)
+            setIsDraftRestored(true)
+          } else {
+            setIsDraftRestored(false)
           }
-          if (Array.isArray(parsed.recipients)) setRecipients(parsed.recipients)
-          setIsDraftRestored(true)
         }
       } catch (err) {
         console.error('Failed to parse campaign draft', err)
       }
+    } else {
+      setIsDraftRestored(false)
     }
     setHasAttemptedRestore(true)
   }, [editingCampaignId, accountId, draftKey])
@@ -420,18 +453,28 @@ function CreateCampaignPage() {
   // Auto-save changes to localStorage (scoped to account)
   useEffect(() => {
     if (editingCampaignId || !accountId || !draftKey || !hasAttemptedRestore) return
+    const hasContent = Boolean(
+      name.trim() ||
+      recipients.length > 0 ||
+      templateDrafts.some((t) => t.template.trim()) ||
+      selectedSessions.length > 0
+    )
+    if (!hasContent) return
+
     const draftData = {
       accountId,
       name,
       minInterval,
       maxInterval,
       enableWarmup,
+      sessionMode,
+      selectedSessions,
       templateDrafts,
       recipients,
       updatedAt: new Date().toISOString(),
     }
     localStorage.setItem(draftKey, JSON.stringify(draftData))
-  }, [name, minInterval, maxInterval, enableWarmup, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
+  }, [name, minInterval, maxInterval, enableWarmup, sessionMode, selectedSessions, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
 
   const clearDraft = () => {
     if (draftKey) localStorage.removeItem(draftKey)
@@ -440,6 +483,8 @@ function CreateCampaignPage() {
     setMinInterval(10)
     setMaxInterval(15)
     setEnableWarmup(true)
+    setSessionMode('ALL')
+    setSelectedSessions([])
     setTemplateDrafts([createEmptyTemplateDraft()])
     setActiveTemplateIndex(0)
     setRecipients([])
@@ -472,6 +517,8 @@ function CreateCampaignPage() {
       setMinInterval(campaign.min_interval_seconds || 10)
       setMaxInterval(campaign.max_interval_seconds || 15)
       setEnableWarmup(Boolean(campaign.enable_warmup))
+      setSessionMode(campaign.session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL')
+      setSelectedSessions(campaign.selected_sessions || [])
       setRecipients(campaign.recipient_phones || [])
       if (campaign.templates?.length) {
         setTemplateDrafts(
@@ -659,8 +706,14 @@ function CreateCampaignPage() {
       return
     }
 
-    if (recipients.length === 0) {
+    if (sessionMode === 'SPECIFIC' && selectedSessions.length === 0) {
       setStep(3)
+      toast.error('Please select at least one sending session.')
+      return
+    }
+
+    if (recipients.length === 0) {
+      setStep(4)
       toast.error('Please select at least one recipient.')
       return
     }
@@ -693,6 +746,8 @@ function CreateCampaignPage() {
       min_interval_seconds: minInterval,
       max_interval_seconds: maxInterval,
       enable_warmup: enableWarmup,
+      session_mode: sessionMode,
+      selected_sessions: selectedSessions,
       recipient_phones: recipients,
       templates: templateDrafts.map(buildTemplatePayload),
     }
@@ -734,11 +789,19 @@ function CreateCampaignPage() {
   }
 
   const handleNextStep3 = () => {
+    if (sessionMode === 'SPECIFIC' && selectedSessions.length === 0) {
+      toast.error('Please select at least one sending session.')
+      return
+    }
+    setStep(4)
+  }
+
+  const handleNextStep4 = () => {
     if (recipients.length === 0) {
       toast.error('Please select at least one recipient.')
       return
     }
-    setStep(4)
+    setStep(5)
   }
 
   return (
@@ -760,14 +823,14 @@ function CreateCampaignPage() {
               {editingCampaignId ? 'Edit Campaign' : 'Create New Campaign'}
             </h1>
             <p className="text-xs text-slate-500">
-              Set up your multi-step WhatsApp blast in 4 simple steps
+              Set up your multi-step WhatsApp blast in 5 simple steps
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {isDraftRestored && !editingCampaignId && (
-            <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex dark:text-emerald-400">
+            <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex dark:text-emerald-400 font-medium">
               <Sparkles className="h-3.5 w-3.5" /> Auto-Saved Draft
             </span>
           )}
@@ -827,12 +890,12 @@ function CreateCampaignPage() {
         </div>
       </div>
 
-      {/* 4-Step Navigation Stepper */}
-      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1.5 dark:border-slate-800 dark:bg-slate-900/50 sm:grid-cols-4">
+      {/* 5-Step Navigation Stepper */}
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1.5 dark:border-slate-800 dark:bg-slate-900/50 sm:grid-cols-5">
         <button
           type="button"
           onClick={() => setStep(1)}
-          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-2 text-xs font-medium transition-all sm:text-xs md:text-sm ${
             step === 1
               ? 'bg-emerald-600 text-white shadow-sm'
               : step > 1
@@ -840,10 +903,10 @@ function CreateCampaignPage() {
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
             1
           </span>
-          <span>Campaign Name</span>
+          <span className="truncate">Campaign Name</span>
         </button>
 
         <button
@@ -855,7 +918,7 @@ function CreateCampaignPage() {
             }
             setStep(2)
           }}
-          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-2 text-xs font-medium transition-all sm:text-xs md:text-sm ${
             step === 2
               ? 'bg-emerald-600 text-white shadow-sm'
               : step > 2
@@ -863,10 +926,10 @@ function CreateCampaignPage() {
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
             2
           </span>
-          <span>Message Template</span>
+          <span className="truncate">Message Template</span>
         </button>
 
         <button
@@ -878,7 +941,7 @@ function CreateCampaignPage() {
             }
             setStep(3)
           }}
-          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-2 text-xs font-medium transition-all sm:text-xs md:text-sm ${
             step === 3
               ? 'bg-emerald-600 text-white shadow-sm'
               : step > 3
@@ -886,10 +949,10 @@ function CreateCampaignPage() {
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
             3
           </span>
-          <span>Recipients</span>
+          <span className="truncate">Sending Sessions</span>
         </button>
 
         <button
@@ -899,22 +962,53 @@ function CreateCampaignPage() {
               toast.error('Please enter a campaign name first.')
               return
             }
-            if (recipients.length === 0) {
-              toast.error('Please select at least one recipient first.')
+            if (sessionMode === 'SPECIFIC' && selectedSessions.length === 0) {
+              toast.error('Please select at least one sending session first.')
               return
             }
             setStep(4)
           }}
-          className={`flex items-center justify-center gap-2 rounded-lg py-2 px-3 text-xs font-medium transition-all sm:text-sm ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-2 text-xs font-medium transition-all sm:text-xs md:text-sm ${
             step === 4
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : step > 4
+              ? 'bg-white text-emerald-700 dark:bg-slate-800 dark:text-emerald-400'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+            4
+          </span>
+          <span className="truncate">Recipients</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!name.trim()) {
+              toast.error('Please enter a campaign name first.')
+              return
+            }
+            if (sessionMode === 'SPECIFIC' && selectedSessions.length === 0) {
+              toast.error('Please select at least one sending session first.')
+              return
+            }
+            if (recipients.length === 0) {
+              toast.error('Please select at least one recipient first.')
+              return
+            }
+            setStep(5)
+          }}
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-2 text-xs font-medium transition-all sm:text-xs md:text-sm ${
+            step === 5
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
-            4
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
+            5
           </span>
-          <span>Campaign Summary</span>
+          <span className="truncate">Campaign Summary</span>
         </button>
       </div>
 
@@ -1497,6 +1591,202 @@ function CreateCampaignPage() {
                   Save as Draft
                 </Button>
                 <Button onClick={handleNextStep2} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                  Next: Sending Sessions <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* STEP 3: SENDING SESSIONS */}
+      {step === 3 && (
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Step 3: Sending Sessions</CardTitle>
+            <CardDescription className="text-xs">
+              Choose which WhatsApp session(s) should be used to send messages for this campaign.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Session Mode Selector Cards */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div
+                onClick={() => setSessionMode('ALL')}
+                className={`group relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
+                  sessionMode === 'ALL'
+                    ? 'border-emerald-600 bg-emerald-50/50 dark:border-emerald-500 dark:bg-emerald-950/30'
+                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`rounded-lg p-2.5 ${sessionMode === 'ALL' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                      <Layers className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">All Connected Sessions</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Automatically rotate through all active WhatsApp sessions in your account</p>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="session_mode"
+                    checked={sessionMode === 'ALL'}
+                    onChange={() => setSessionMode('ALL')}
+                    className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div
+                onClick={() => setSessionMode('SPECIFIC')}
+                className={`group relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
+                  sessionMode === 'SPECIFIC'
+                    ? 'border-emerald-600 bg-emerald-50/50 dark:border-emerald-500 dark:bg-emerald-950/30'
+                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`rounded-lg p-2.5 ${sessionMode === 'SPECIFIC' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                      <Smartphone className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Specific Sessions</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Select individual connected session(s) specifically for this blast</p>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="session_mode"
+                    checked={sessionMode === 'SPECIFIC'}
+                    onChange={() => setSessionMode('SPECIFIC')}
+                    className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Session Selection Grid when Mode is SPECIFIC */}
+            {sessionMode === 'SPECIFIC' && (
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Select WhatsApp Sessions ({selectedSessions.length} selected)
+                    </h4>
+                    <p className="text-xs text-slate-500">Only messages sent via selected sessions will be processed.</p>
+                  </div>
+                  {availableSessions.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const allIds = availableSessions.map((s: any) => s.session_id)
+                          setSelectedSessions(allIds)
+                        }}
+                        className="h-7 text-xs text-emerald-600 hover:text-emerald-700"
+                      >
+                        Select All
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedSessions([])}
+                        className="h-7 text-xs text-slate-500 hover:text-slate-700"
+                      >
+                        Deselect All
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {isLoadingSessions ? (
+                  <div className="p-6 text-center text-slate-500">
+                    <Loader2 className="mx-auto h-5 w-5 animate-spin text-emerald-600" />
+                    <p className="mt-2 text-xs">Loading available WhatsApp sessions...</p>
+                  </div>
+                ) : availableSessions.length === 0 ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                    No WhatsApp sessions found in your account. Please add and connect a session first.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    {availableSessions.map((sess: any) => {
+                      const sId = sess.session_id
+                      const isSelected = selectedSessions.includes(sId)
+                      const isConnected = sess.status === 'CONNECTED'
+
+                      return (
+                        <div
+                          key={sId}
+                          onClick={() => {
+                            setSelectedSessions((prev) =>
+                              isSelected ? prev.filter((id) => id !== sId) : [...prev, sId]
+                            )
+                          }}
+                          className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all ${
+                            isSelected
+                              ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-600 dark:bg-emerald-950/40 shadow-xs'
+                              : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`h-9 w-9 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${isConnected ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                              <Smartphone className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                {sess.push_name || sess.phone_number || sId}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
+                                <span className="truncate">{sess.phone_number || sId}</span>
+                                <span>•</span>
+                                <span className={`font-medium shrink-0 ${isConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                  {sess.status || 'OFFLINE'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 3 Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <Button type="button" variant="outline" onClick={() => setStep(2)}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back: Message Template
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save as Draft
+                </Button>
+                <Button onClick={handleNextStep3} className="bg-emerald-600 text-white hover:bg-emerald-700">
                   Next: Select Recipients <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>
@@ -1505,12 +1795,12 @@ function CreateCampaignPage() {
         </Card>
       )}
 
-      {/* STEP 3: RECIPIENT SELECTION & LAUNCH */}
-      {step === 3 && (
+      {/* STEP 4: RECIPIENT SELECTION */}
+      {step === 4 && (
         <div className="space-y-4">
           <Card className="border-slate-200 dark:border-slate-800">
             <CardHeader>
-              <CardTitle className="text-base font-semibold">Step 3: Select Recipients</CardTitle>
+              <CardTitle className="text-base font-semibold">Step 4: Select Recipients</CardTitle>
               <CardDescription className="text-xs">
                 Choose which contacts should receive this campaign. Search or select all matching.
               </CardDescription>
@@ -1611,10 +1901,10 @@ function CreateCampaignPage() {
                 )}
               </div>
 
-              {/* Step 3 Actions */}
+              {/* Step 4 Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => setStep(2)}>
-                  <ArrowLeft className="mr-2 h-4 w-4" /> Back: Message Template
+                <Button type="button" variant="outline" onClick={() => setStep(3)}>
+                  <ArrowLeft className="mr-2 h-4 w-4" /> Back: Sending Sessions
                 </Button>
                 <div className="flex items-center gap-2">
                   <Button
@@ -1633,7 +1923,7 @@ function CreateCampaignPage() {
 
                   <Button
                     type="button"
-                    onClick={handleNextStep3}
+                    onClick={handleNextStep4}
                     className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
                     Next: Campaign Summary <ArrowRight className="ml-2 h-4 w-4" />
@@ -1645,18 +1935,18 @@ function CreateCampaignPage() {
         </div>
       )}
 
-      {/* STEP 4: CAMPAIGN SUMMARY & LAUNCH */}
-      {step === 4 && (
+      {/* STEP 5: CAMPAIGN SUMMARY & LAUNCH */}
+      {step === 5 && (
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader>
-            <CardTitle className="text-base font-semibold">Step 4: Campaign Summary</CardTitle>
+            <CardTitle className="text-base font-semibold">Step 5: Campaign Summary</CardTitle>
             <CardDescription className="text-xs">
               Review your campaign configuration and message sequence before launching your blast.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Overview Grid */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
               <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
                 <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Campaign Name</span>
                 <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">{name || 'Untitled'}</p>
@@ -1664,16 +1954,25 @@ function CreateCampaignPage() {
               <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
                 <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Sending Interval</span>
                 <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
-                  {minInterval} - {maxInterval} minutes
+                  {minInterval} - {maxInterval} mins
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Warmup mode: {enableWarmup ? 'Enabled' : 'Disabled'}
+                  Warmup: {enableWarmup ? 'Enabled' : 'Disabled'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Sending Sessions</span>
+                <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
+                  {sessionMode === 'ALL' ? 'All Sessions' : `${selectedSessions.length} Selected`}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Mode: {sessionMode === 'ALL' ? 'Auto-Rotate' : 'Specific Sessions'}
                 </p>
               </div>
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
                 <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Target Recipients</span>
                 <p className="mt-1 text-base font-semibold text-emerald-900 dark:text-emerald-200">
-                  {recipients.length} contact(s) selected
+                  {recipients.length} contact(s)
                 </p>
               </div>
             </div>
@@ -1834,9 +2133,9 @@ function CreateCampaignPage() {
               </div>
             </div>
 
-            {/* Step 4 Actions */}
+            {/* Step 5 Actions */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <Button type="button" variant="outline" onClick={() => setStep(3)}>
+              <Button type="button" variant="outline" onClick={() => setStep(4)}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back: Recipients
               </Button>
               <div className="flex items-center gap-2">

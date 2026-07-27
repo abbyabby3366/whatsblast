@@ -19,6 +19,8 @@ export interface IWhatsAppSession extends Document {
   qr_code?: string;
   phone_number?: string;
   push_name?: string;
+  alias?: string;
+  labels?: string[];
   max_message_count_per_day: number;
   current_message_count: number;
   current_day?: string;
@@ -45,6 +47,8 @@ const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
     qr_code: { type: String },
     phone_number: { type: String },
     push_name: { type: String },
+    alias: { type: String, default: '' },
+    labels: [{ type: String }],
     max_message_count_per_day: { type: Number, default: 50 },
     current_message_count: { type: Number, default: 0 },
     current_day: { type: String },

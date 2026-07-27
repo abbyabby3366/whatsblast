@@ -20,6 +20,8 @@ export interface IBlastCampaign extends Document {
   min_interval_seconds: number;
   max_interval_seconds: number;
   enable_warmup: boolean;
+  session_mode?: 'ALL' | 'SPECIFIC';
+  selected_sessions?: string[];
   scheduled_at?: Date;
   started_at?: Date;
   completed_at?: Date;
@@ -46,6 +48,8 @@ const BlastCampaignSchema = new Schema<IBlastCampaign>(
     min_interval_seconds: { type: Number, default: 10 },
     max_interval_seconds: { type: Number, default: 15 },
     enable_warmup: { type: Boolean, default: true },
+    session_mode: { type: String, enum: ['ALL', 'SPECIFIC'], default: 'ALL' },
+    selected_sessions: [{ type: String }],
     scheduled_at: { type: Date },
     started_at: { type: Date },
     completed_at: { type: Date },

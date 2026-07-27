@@ -28,11 +28,13 @@ const getSessions = async (req: AuthRequest, res: Response) => {
     filter.user = req.user?._id;
   }
 
-  const { search, status, user: userId, ordering } = req.query;
+  const { search, status, user: userId, ordering, label } = req.query;
   if (search) {
     filter.$or = [
       { session_id: { $regex: String(search), $options: 'i' } },
       { phone_number: { $regex: String(search), $options: 'i' } },
+      { alias: { $regex: String(search), $options: 'i' } },
+      { labels: { $regex: String(search), $options: 'i' } },
     ];
   }
   if (status && status !== 'all') {
@@ -40,6 +42,9 @@ const getSessions = async (req: AuthRequest, res: Response) => {
   }
   if (userId && userId !== 'all') {
     filter.user = userId;
+  }
+  if (label && label !== 'all') {
+    filter.labels = label;
   }
 
   let query = WhatsAppSession.find(filter).populate('user', 'phone_number role');
@@ -131,6 +136,8 @@ const patchSession = async (req: AuthRequest, res: Response) => {
 
   const {
     status,
+    alias,
+    labels,
     max_message_count_per_day,
     warmup_schedule,
     min_interval_seconds,
@@ -140,6 +147,12 @@ const patchSession = async (req: AuthRequest, res: Response) => {
     user: userId,
   } = req.body;
   if (status) session.status = status;
+  if (alias !== undefined) session.alias = String(alias).trim();
+  if (labels !== undefined) {
+    session.labels = Array.isArray(labels)
+      ? labels.map((l: any) => String(l).trim()).filter(Boolean)
+      : String(labels).split(',').map((s: string) => s.trim()).filter(Boolean);
+  }
   if (max_message_count_per_day !== undefined) session.max_message_count_per_day = max_message_count_per_day;
   if (warmup_schedule !== undefined) session.warmup_schedule = warmup_schedule;
   if (min_interval_seconds !== undefined) session.min_interval_seconds = Number(min_interval_seconds);

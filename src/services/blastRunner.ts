@@ -300,7 +300,8 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
       let sessionId: string;
       try {
-        sessionId = await pickUserSession(campaign.user.toString());
+        const allowedSessions = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
+        sessionId = await pickUserSession(campaign.user.toString(), allowedSessions);
       } catch (err: any) {
         const errorMsg = err.message || 'No connected WhatsApp session available';
         console.warn(`⚠️ Campaign "${campaign.name}" paused: ${errorMsg}`);
