@@ -82,7 +82,19 @@ function SessionsPage() {
     const total = sessions.length
     const connected = sessions.filter((s: any) => (s.status || '').toLowerCase() === 'connected').length
     const disconnected = total - connected
-    return { total, connected, disconnected }
+
+    const now = dayjs()
+    const phoneActive = sessions.filter((s: any) => {
+      if (!s.last_phone_activity_at) return false
+      return now.diff(dayjs(s.last_phone_activity_at), 'day', true) <= 3
+    }).length
+
+    const lastMessageActive = sessions.filter((s: any) => {
+      if (!s.last_physical_phone_sent_message_at) return false
+      return now.diff(dayjs(s.last_physical_phone_sent_message_at), 'day', true) <= 14
+    }).length
+
+    return { total, connected, disconnected, phoneActive, lastMessageActive }
   }, [sessions])
 
   // Periodically query QR & status while QR modal is open
@@ -224,18 +236,32 @@ function SessionsPage() {
       </div>
 
       {/* Stats Summary Bar */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 p-3 shadow-xs">
-          <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Total Sessions</span>
-          <div className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">{stats.total}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200/80 dark:border-slate-800 px-3 py-1.5 flex items-center justify-between shadow-2xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sessions</span>
+          <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">{stats.total}</span>
         </div>
-        <div className="bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40 p-3 shadow-xs">
-          <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Active & Connected</span>
-          <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">{stats.connected}</div>
+        <div className="bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200/60 dark:border-emerald-900/40 px-3 py-1.5 flex items-center justify-between shadow-2xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Active & Connected</span>
+          <span className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-300">{stats.connected}</span>
         </div>
-        <div className="bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800 p-3 shadow-xs">
-          <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Disconnected</span>
-          <div className="text-xl font-bold text-slate-600 dark:text-slate-400 mt-0.5">{stats.disconnected}</div>
+        <div className="bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200/80 dark:border-slate-800 px-3 py-1.5 flex items-center justify-between shadow-2xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Disconnected</span>
+          <span className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-400">{stats.disconnected}</span>
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200/80 dark:border-slate-800 px-3 py-1.5 flex items-center justify-between shadow-2xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-0.5">
+            Phone Active
+            <PhoneActiveTooltip />
+          </span>
+          <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">{stats.phoneActive}</span>
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200/80 dark:border-slate-800 px-3 py-1.5 flex items-center justify-between shadow-2xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-0.5">
+            Last Message
+            <LastSentMessageTooltip />
+          </span>
+          <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">{stats.lastMessageActive}</span>
         </div>
       </div>
 
@@ -375,7 +401,7 @@ function SessionsPage() {
                       <Clock className="w-3 h-3 text-slate-400" /> Interval:
                     </span>
                     <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
-                      {session.min_interval_seconds ?? 10}s - {session.max_interval_seconds ?? 15}s
+                      {session.min_interval_seconds ?? 10}m - {session.max_interval_seconds ?? 15}m
                     </span>
                   </div>
 
@@ -516,7 +542,7 @@ function SessionsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                      {session.min_interval_seconds ?? 10}s - {session.max_interval_seconds ?? 15}s
+                      {session.min_interval_seconds ?? 10}m - {session.max_interval_seconds ?? 15}m
                     </TableCell>
                     <TableCell className="py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
                       {session.active_start_time || '00:00'} - {session.active_end_time || '23:59'}

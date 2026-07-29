@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Eye,
   Store,
+  Send,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -50,6 +51,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
+import { TestSendMessageModal } from './TestSendMessageModal'
 import type { Message } from './types'
 
 export interface MessagesViewProps {
@@ -72,6 +74,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
 
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false)
+  const [isTestSendOpen, setIsTestSendOpen] = useState(false)
 
   // Fetch users for admin merchant filter & display
   const { data: usersData } = useQuery({
@@ -411,9 +414,18 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto pb-10">
-      {/* Header */}
-      {isAdmin && (
-        <div className="flex justify-end border-b border-slate-200 dark:border-slate-800 pb-3">
+      {/* Header / Actions Bar */}
+      <div className="flex items-center justify-end gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsTestSendOpen(true)}
+          className="text-emerald-600 border-emerald-200 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-400 text-xs font-medium gap-1.5"
+        >
+          <Send className="w-3.5 h-3.5" /> Test Send Message
+        </Button>
+
+        {isAdmin && (
           <Button
             variant="outline"
             size="sm"
@@ -422,8 +434,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           >
             <Trash2 className="w-3.5 h-3.5" /> Clear All Messages
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Filter Bar */}
       <div className="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center gap-3">
@@ -759,6 +771,11 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Test Send Message Modal */}
+      <TestSendMessageModal
+        isOpen={isTestSendOpen}
+        onClose={() => setIsTestSendOpen(false)}
+      />
     </div>
   )
 }
