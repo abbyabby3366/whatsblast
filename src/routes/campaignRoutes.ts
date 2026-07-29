@@ -504,7 +504,7 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
       const fullContent = {
         text: tplItem.text || tplItem.template || '',
         buttons: tplItem.buttons || [],
-        footer: tplItem.footer || '',
+        footer: tplItem.footer || tplItem.footer_text || '',
         file: activeMedia?.url || mainMedia?.url || (typeof tplItem.file === 'string' ? tplItem.file : null),
         file_type: activeMedia?.type || tplItem.messageType || tplItem.type || 'text',
         file_name: activeMedia?.filename || null,

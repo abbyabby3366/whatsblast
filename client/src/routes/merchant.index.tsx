@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { safeText } from '@/lib/utils'
-import { Users, Megaphone, CheckCircle2, Clock, Loader2, ChevronRight } from 'lucide-react'
+import { Users, Megaphone, CheckCircle2, Clock, Loader2, ChevronRight, AlertCircle } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -194,7 +194,8 @@ function MerchantDashboard() {
                           className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px] hover:underline cursor-pointer flex items-center gap-1 mt-0.5"
                           title="Failed to connect. Click to redirect to Connect WhatsApp page"
                         >
-                          ⚠️ <span className="truncate">{safeText(campaign.error_message)}</span>
+                          <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
+                          <span className="truncate">{safeText(campaign.error_message)}</span>
                         </Link>
                       )}
                     </div>

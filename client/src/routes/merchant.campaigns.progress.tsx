@@ -307,8 +307,8 @@ function CampaignProgressPage() {
 
         {/* Error message notice if any */}
         {campaign.error_message && (
-          <div
-            onClick={() => navigate({ to: '/merchant/whatsapp-sessions' })}
+          <Link
+            to="/merchant/whatsapp-sessions"
             className="flex items-center justify-between gap-2.5 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200 cursor-pointer hover:bg-rose-100/80 dark:hover:bg-rose-900/60 transition-all shadow-xs group"
             title="Click to redirect to Connect WhatsApp Sessions page"
           >
@@ -322,7 +322,7 @@ function CampaignProgressPage() {
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300 underline shrink-0 group-hover:text-rose-800 dark:group-hover:text-rose-200">
               Connect WhatsApp <ExternalLink className="w-3 h-3" />
             </span>
-          </div>
+          </Link>
         )}
 
         {/* Blast Progress Bar */}

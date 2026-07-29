@@ -43,6 +43,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
 import type { Message } from './types'
 
@@ -161,6 +167,19 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           return <span className="font-mono font-medium text-slate-900 dark:text-slate-100">{val}</span>
         },
       }),
+      columnHelper.accessor('sender_phone', {
+        header: 'Sending Phone',
+        cell: (info) => {
+          const row = info.row.original
+          const val =
+            info.getValue() ||
+            row.session_phone ||
+            row.session?.phone_number ||
+            (row.from_jid ? row.from_jid.split('@')[0] : null) ||
+            '-'
+          return <span className="font-mono font-medium text-slate-700 dark:text-slate-300">{val}</span>
+        },
+      }),
       columnHelper.accessor('template', {
         header: 'Message Content',
         cell: (info) => {
@@ -209,19 +228,50 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         header: 'Status',
         cell: (info) => {
           const st = (info.getValue() || 'sent').toLowerCase()
-          return (
+          const msg = info.row.original
+          const isFailed = st === 'failed'
+          const failedReason =
+            msg.error ||
+            msg.error_message ||
+            msg.failed_reason ||
+            msg.failure_reason ||
+            msg.reason ||
+            msg.status_reason ||
+            (typeof msg.content === 'object' && msg.content?.error) ||
+            (typeof msg.content === 'object' && typeof msg.content?.text === 'string' && msg.content.text.startsWith('Send Failed') ? msg.content.text : null) ||
+            'Message delivery failed'
+
+          const badge = (
             <span
               className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium uppercase ${
                 st === 'delivered' || st === 'sent' || st === 'read'
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
                   : st === 'pending' || st === 'queued'
                   ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
-                  : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800 cursor-pointer'
               }`}
             >
               {st}
             </span>
           )
+
+          if (isFailed) {
+            return (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {badge}
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs text-xs bg-slate-900 text-slate-100 shadow-md">
+                    <p className="font-semibold text-rose-400 mb-0.5">Failed Reason:</p>
+                    <p className="break-words">{failedReason}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )
+          }
+
+          return badge
         },
       }),
       columnHelper.accessor('created_at', {
@@ -248,8 +298,19 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
 
           if (!targetTime) return <span className="text-slate-400">-</span>
 
-          return (
-            <div className="flex flex-col">
+          const failedReason =
+            msg.error ||
+            msg.error_message ||
+            msg.failed_reason ||
+            msg.failure_reason ||
+            msg.reason ||
+            msg.status_reason ||
+            (typeof msg.content === 'object' && msg.content?.error) ||
+            (typeof msg.content === 'object' && typeof msg.content?.text === 'string' && msg.content.text.startsWith('Send Failed') ? msg.content.text : null) ||
+            'Message delivery failed'
+
+          const content = (
+            <div className={`flex flex-col ${isFailed ? 'cursor-pointer' : ''}`}>
               <span
                 className={`font-mono text-xs font-medium ${
                   isSent
@@ -266,6 +327,24 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               </span>
             </div>
           )
+
+          if (isFailed) {
+            return (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {content}
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs text-xs bg-slate-900 text-slate-100 shadow-md">
+                    <p className="font-semibold text-rose-400 mb-0.5">Failed Reason:</p>
+                    <p className="break-words">{failedReason}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )
+          }
+
+          return content
         },
       }),
     ]
@@ -576,66 +655,91 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         <WhatsAppPhonePreviewModal
           isOpen={Boolean(selectedMessage)}
           onClose={() => setSelectedMessage(null)}
-          title={selectedMessage.recipient_phone || 'Preview'}
-          templates={[
-            (() => {
-              const msg = selectedMessage
-              const tmplObj: any = typeof msg.template === 'object' && msg.template !== null ? msg.template : {}
-              let contentObj: any = typeof msg.content === 'object' && msg.content !== null ? msg.content : {}
-              if (typeof msg.content === 'string' && msg.content.trim().startsWith('{')) {
-                try {
-                  contentObj = JSON.parse(msg.content.trim())
-                } catch {
-                  // ignore JSON parse error
-                }
-              }
+          title={selectedMessage.recipient_phone || selectedMessage.campaign?.name || 'Preview'}
+          campaign={
+            selectedMessage.campaign &&
+            ((Array.isArray(selectedMessage.campaign.templates) && selectedMessage.campaign.templates.length > 0) ||
+              selectedMessage.campaign.template)
+              ? selectedMessage.campaign
+              : undefined
+          }
+          templates={
+            selectedMessage.campaign &&
+            ((Array.isArray(selectedMessage.campaign.templates) && selectedMessage.campaign.templates.length > 0) ||
+              selectedMessage.campaign.template)
+              ? Array.isArray(selectedMessage.campaign.templates) && selectedMessage.campaign.templates.length > 0
+                ? selectedMessage.campaign.templates
+                : [selectedMessage.campaign.template]
+              : [
+                  (() => {
+                    const msg = selectedMessage
+                    const tmplObj: any = typeof msg.template === 'object' && msg.template !== null ? msg.template : {}
+                    let contentObj: any = typeof msg.content === 'object' && msg.content !== null ? msg.content : {}
+                    if (typeof msg.content === 'string' && msg.content.trim().startsWith('{')) {
+                      try {
+                        contentObj = JSON.parse(msg.content.trim())
+                      } catch {
+                        // ignore JSON parse error
+                      }
+                    }
 
-              const text =
-                contentObj.text ||
-                tmplObj.text ||
-                (typeof msg.content === 'string' && !msg.content.trim().startsWith('{') ? msg.content : '') ||
-                msg.body ||
-                ''
-              const footer =
-                contentObj.footer ||
-                contentObj.footer_text ||
-                tmplObj.footer ||
-                tmplObj.footer_text ||
-                tmplObj.payload?.footer ||
-                msg.footer ||
-                msg.footer_text ||
-                ''
-              const buttons =
-                contentObj.buttons ||
-                tmplObj.buttons ||
-                tmplObj.payload?.buttons ||
-                msg.buttons ||
-                []
-              const file =
-                contentObj.file ||
-                tmplObj.file ||
-                tmplObj.payload?.file ||
-                msg.file ||
-                msg.file_url ||
-                null
-              const button_image =
-                contentObj.button_image ||
-                tmplObj.button_image ||
-                tmplObj.payload?.button_image ||
-                msg.button_image ||
-                null
+                    const text =
+                      contentObj.text ||
+                      contentObj.template ||
+                      tmplObj.text ||
+                      tmplObj.template ||
+                      (typeof msg.content === 'string' && !msg.content.trim().startsWith('{') ? msg.content : '') ||
+                      msg.body ||
+                      ''
+                    const footer =
+                      contentObj.footer ||
+                      contentObj.footer_text ||
+                      contentObj.footerText ||
+                      tmplObj.footer ||
+                      tmplObj.footer_text ||
+                      tmplObj.footerText ||
+                      tmplObj.payload?.footer ||
+                      msg.footer ||
+                      msg.footer_text ||
+                      ''
+                    const buttons =
+                      contentObj.buttons ||
+                      tmplObj.buttons ||
+                      tmplObj.payload?.buttons ||
+                      msg.buttons ||
+                      []
+                    const file =
+                      contentObj.file ||
+                      contentObj.file_url ||
+                      contentObj.media_url ||
+                      contentObj.image_url ||
+                      tmplObj.file ||
+                      tmplObj.file_url ||
+                      tmplObj.payload?.file ||
+                      msg.file ||
+                      msg.file_url ||
+                      null
+                    const button_image =
+                      contentObj.button_image ||
+                      contentObj.button_image_url ||
+                      tmplObj.button_image ||
+                      tmplObj.button_image_url ||
+                      tmplObj.payload?.button_image ||
+                      msg.button_image ||
+                      null
 
-              return {
-                ...tmplObj,
-                ...contentObj,
-                text,
-                footer,
-                buttons,
-                file,
-                button_image,
-              }
-            })()
-          ]}
+                    return {
+                      ...tmplObj,
+                      ...contentObj,
+                      text,
+                      footer,
+                      buttons,
+                      file,
+                      button_image,
+                    }
+                  })(),
+                ]
+          }
         />
       )}
 

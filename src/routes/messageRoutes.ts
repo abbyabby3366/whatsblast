@@ -5,6 +5,7 @@ import { getActiveSession, initWhatsAppSession, verifyAndFormatJid, pickUserSess
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { BlastCampaign } from '../models/BlastCampaign.js';
 import { User } from '../models/User.js';
+import { FileModel } from '../models/File.js';
 import { retryCampaignRecipient } from './campaignRoutes.js';
 
 const router = Router();
@@ -153,7 +154,6 @@ const getMessages = async (req: AuthRequest, res: Response) => {
       filter.$and = filter.$and || [];
       filter.$and.push({
         $or: [
-          { createdAt: dateCond },
           { scheduled_at: dateCond },
           { sent_at: dateCond },
           { wa_timestamp: dateCond },
@@ -177,13 +177,79 @@ const getMessages = async (req: AuthRequest, res: Response) => {
       .populate('template')
       .populate({
         path: 'campaign',
-        select: 'name user',
+        select: 'name user templates template',
         populate: { path: 'user', select: 'phone_number role' },
       })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(pageSize),
   ]);
+
+  // Resolve file IDs in campaign templates to actual URLs (same logic as formatCampaign)
+  const fileIdsToFetch = new Set<string>();
+  for (const msg of messages) {
+    const camp = msg.campaign as any;
+    if (camp && Array.isArray(camp.templates)) {
+      for (const tpl of camp.templates) {
+        const fId = tpl.file_id || tpl.fileId || (typeof tpl.file === 'string' ? tpl.file : undefined);
+        const bId = tpl.button_image_id || tpl.buttonImageId || (typeof tpl.button_image === 'string' ? tpl.button_image : undefined);
+        if (typeof fId === 'string' && fId.match(/^[0-9a-fA-F]{24}$/)) fileIdsToFetch.add(fId);
+        if (typeof bId === 'string' && bId.match(/^[0-9a-fA-F]{24}$/)) fileIdsToFetch.add(bId);
+        const fIds = tpl.file_ids || tpl.fileIds;
+        if (Array.isArray(fIds)) {
+          fIds.forEach((id: any) => {
+            const sId = typeof id === 'string' ? id : id?.id || id?._id;
+            if (typeof sId === 'string' && sId.match(/^[0-9a-fA-F]{24}$/)) fileIdsToFetch.add(sId);
+          });
+        }
+      }
+    }
+  }
+
+  const filesMap = new Map<string, any>();
+  if (fileIdsToFetch.size > 0) {
+    try {
+      const fileDocs = await FileModel.find({ _id: { $in: Array.from(fileIdsToFetch) } });
+      fileDocs.forEach((fDoc) => {
+        filesMap.set(fDoc._id.toString(), {
+          id: fDoc._id.toString(),
+          file_name: fDoc.file_name,
+          file_type: fDoc.file_type,
+          file_path: fDoc.file_path,
+          file_url: fDoc.file_path,
+        });
+      });
+    } catch (_) {}
+  }
+
+  if (filesMap.size > 0) {
+    for (const msg of messages) {
+      const camp = msg.campaign as any;
+      if (camp && Array.isArray(camp.templates)) {
+        camp.templates = camp.templates.map((tpl: any) => {
+          const fId = tpl.file_id || tpl.fileId || (typeof tpl.file === 'string' ? tpl.file : undefined);
+          const bId = tpl.button_image_id || tpl.buttonImageId || (typeof tpl.button_image === 'string' ? tpl.button_image : undefined);
+          const fObj = typeof fId === 'string' ? filesMap.get(fId) : tpl.file;
+          const bObj = typeof bId === 'string' ? filesMap.get(bId) : tpl.button_image;
+          const fIds = tpl.file_ids || tpl.fileIds;
+          const resolvedFilesList = Array.isArray(fIds) && fIds.length > 0
+            ? fIds.map((id: any) => {
+                const sId = typeof id === 'string' ? id : id?.id || id?._id;
+                return filesMap.get(sId) || (typeof id === 'object' ? id : { id: sId });
+              }).filter(Boolean)
+            : (fObj ? [fObj] : []);
+
+          return {
+            ...tpl,
+            file: fObj || (typeof tpl.file === 'object' ? tpl.file : undefined),
+            file_url: tpl.file_url || fObj?.file_url || fObj?.file_path,
+            files: resolvedFilesList,
+            button_image: bObj || (typeof tpl.button_image === 'object' ? tpl.button_image : undefined),
+          };
+        });
+      }
+    }
+  }
 
   const formattedMessages = messages.map(formatMessage);
 

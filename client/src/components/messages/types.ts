@@ -19,5 +19,8 @@ export type Message = {
   sent_at?: string | null
   status: string
   session_phone?: string | null
+  error?: string | null
+  error_message?: string | null
+  failed_reason?: string | null
   [key: string]: any
 }

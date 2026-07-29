@@ -36,6 +36,13 @@ const resolveTemplateMediaList = (template: any) => {
 
   const addMedia = (rawUrl: any, rawType?: any, name?: string) => {
     if (!rawUrl) return
+    if (typeof rawUrl === 'object' && rawUrl !== null) {
+      const u = rawUrl.file_url || rawUrl.file_path || rawUrl.url || rawUrl.file || rawUrl.previewUrl
+      const t = rawUrl.file_type || rawUrl.type || rawType || 'image'
+      const n = rawUrl.file_name || rawUrl.name || name
+      if (u) addMedia(u, t, n)
+      return
+    }
     const url = formatMediaUrl(rawUrl)
     if (url && !seenUrls.has(url)) {
       seenUrls.add(url)
@@ -44,38 +51,36 @@ const resolveTemplateMediaList = (template: any) => {
     }
   }
 
-  // 1. Array properties: files, attachedFiles, media, attachments
+  // 1. Inspect template.content if present
+  if (template.content && typeof template.content === 'object') {
+    const cnt = template.content
+    if (Array.isArray(cnt.files)) cnt.files.forEach((f: any) => addMedia(f))
+    if (Array.isArray(cnt.attachedFiles)) cnt.attachedFiles.forEach((f: any) => addMedia(f))
+    if (Array.isArray(cnt.mediaList)) cnt.mediaList.forEach((f: any) => addMedia(f))
+    addMedia(cnt.file, cnt.file_type || cnt.type)
+    addMedia(cnt.button_image, 'image')
+    addMedia(cnt.file_url, cnt.file_type || cnt.type)
+    addMedia(cnt.media_url, cnt.file_type || cnt.type)
+    addMedia(cnt.image_url, cnt.file_type || cnt.type)
+  }
+
+  // 2. Array properties: files, attachedFiles, media, attachments
   if (Array.isArray(template.files)) {
-    template.files.forEach((f: any) => {
-      if (typeof f === 'string') addMedia(f, 'image')
-      else if (f && typeof f === 'object') {
-        addMedia(f.file_url || f.file_path || f.url || f.file, f.file_type || f.type || 'image', f.file_name || f.name)
-      }
-    })
+    template.files.forEach((f: any) => addMedia(f))
   }
 
   if (Array.isArray(template.attachedFiles)) {
-    template.attachedFiles.forEach((f: any) => {
-      if (typeof f === 'string') addMedia(f, 'image')
-      else if (f && typeof f === 'object') {
-        addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
-      }
-    })
+    template.attachedFiles.forEach((f: any) => addMedia(f))
   }
 
   if (Array.isArray(template.mediaList)) {
-    template.mediaList.forEach((f: any) => {
-      if (typeof f === 'string') addMedia(f, 'image')
-      else if (f && typeof f === 'object') {
-        addMedia(f.url || f.file_url || f.file_path || f.file, f.type || f.file_type || 'image', f.name || f.file_name)
-      }
-    })
+    template.mediaList.forEach((f: any) => addMedia(f))
   }
 
-  // 2. Objects containing media array
+  // 3. Objects containing media array
   if (template.media && typeof template.media === 'object') {
     if (Array.isArray(template.media.files)) {
-      template.media.files.forEach((f: any) => addMedia(f.url || f.file_path || f, f.type || 'image', f.name))
+      template.media.files.forEach((f: any) => addMedia(f))
     }
   }
 
@@ -84,22 +89,16 @@ const resolveTemplateMediaList = (template: any) => {
     addMedia(c.url, c.file_type || c.type || template.type)
   }
 
-  // 3. Single objects or strings on template
+  // 4. Single objects or strings on template
   if (template.file) {
-    if (typeof template.file === 'string') addMedia(template.file, template.type || template.messageType)
-    else if (typeof template.file === 'object') {
-      addMedia(template.file.file_url || template.file.file_path || template.file.url || template.file.file, template.file.file_type || template.file.type || template.type, template.file.file_name)
-    }
+    addMedia(template.file, template.type || template.messageType)
   }
 
   if (template.button_image) {
-    if (typeof template.button_image === 'string') addMedia(template.button_image, 'image')
-    else if (typeof template.button_image === 'object') {
-      addMedia(template.button_image.file_url || template.button_image.file_path || template.button_image.url, 'image', template.button_image.file_name)
-    }
+    addMedia(template.button_image, 'image')
   }
 
-  // 4. Direct properties on template
+  // 5. Direct properties on template
   addMedia(template.file_url, template.type || template.messageType)
   addMedia(template.media_url, template.type || template.messageType)
   addMedia(template.image_url, template.type || template.messageType)
@@ -248,8 +247,24 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
                       {buttons?.length ? (
                         <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
                           {buttons.map((button: any, bIdx: number) => {
-                            const label = typeof button === 'string' ? button : safeText(button?.displayText || button?.display_text || button?.text || button?.title || button?.label || button?.value, `Button ${bIdx + 1}`)
-                            const val = typeof button === 'object' && button !== null ? safeText(button.value || button.url || button.phone_number || button.copy_code, '') : ''
+                            let parsedParams: any = {}
+                            if (typeof button === 'object' && button !== null && typeof button.buttonParamsJson === 'string') {
+                              try {
+                                parsedParams = JSON.parse(button.buttonParamsJson)
+                              } catch (_) {}
+                            }
+                            const label = typeof button === 'string'
+                              ? button
+                              : safeText(
+                                  button?.displayText || button?.display_text || button?.text || button?.title || button?.label || parsedParams?.display_text || button?.value,
+                                  `Button ${bIdx + 1}`
+                                )
+                            const val = typeof button === 'object' && button !== null
+                              ? safeText(
+                                  button.value || button.url || button.phone_number || button.copy_code || parsedParams.url || parsedParams.phone_number || parsedParams.copy_code,
+                                  ''
+                                )
+                              : ''
                             return (
                               <div
                                 key={button?.id || bIdx}

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -347,10 +347,14 @@ function AdminCampaignsPage() {
                               {cStatus.toUpperCase()}
                             </span>
                             {c.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
-                              <div className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight" title={safeText(c.error_message)}>
+                              <Link
+                                to="/admin/sessions"
+                                className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight hover:underline cursor-pointer transition-colors"
+                                title="Failed to connect. Click to redirect to WhatsApp Sessions page"
+                              >
                                 <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
                                 <span className="truncate">{safeText(c.error_message)}</span>
-                              </div>
+                              </Link>
                             )}
                           </div>
                         </TableCell>

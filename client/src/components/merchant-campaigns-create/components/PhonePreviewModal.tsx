@@ -30,6 +30,7 @@ export function PhonePreviewModal({
       message_type: tmpl.messageType,
       template: tmpl.template,
       text: tmpl.template,
+      footer: tmpl.footer,
       footer_text: tmpl.footer,
       buttons: tmpl.buttons,
       mediaList,

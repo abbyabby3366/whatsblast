@@ -13,7 +13,6 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
-  Info,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -189,173 +188,143 @@ export function Step2MessageTemplates({
 
   return (
     <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
-      <CardContent className="p-6 space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center justify-center font-bold">
+      <CardContent className="p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center justify-center font-bold text-sm">
               2
             </div>
             <div>
-              <h3 className="font-semibold text-lg text-slate-900 dark:text-slate-100">Message Templates</h3>
-              <p className="text-xs text-slate-500">Configure message variants for sequence blasting.</p>
+              <h3 className="font-semibold text-base text-slate-900 dark:text-slate-100">Message Templates</h3>
+              <p className="text-[11px] text-slate-500">Configure message content for sequence blasting.</p>
             </div>
           </div>
 
           {onPreview && (
-            <Button type="button" variant="outline" size="sm" onClick={onPreview} className="text-xs gap-1.5">
+            <Button type="button" variant="outline" size="sm" onClick={onPreview} className="h-7 text-xs gap-1.5 px-2.5">
               <Eye className="w-3.5 h-3.5" /> Preview WhatsApp View
             </Button>
           )}
         </div>
 
         {/* Template Tabs */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
           {templatesList.map((tmpl, idx) => (
             <div key={idx} className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setActiveIdxFn(idx)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                   safeActiveIndex === idx
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
-                Variant #{idx + 1} ({tmpl.messageType || 'text'})
+                Content #{idx + 1} ({tmpl.messageType || 'text'})
               </button>
               {templatesList.length > 1 && (
                 <button
                   type="button"
                   onClick={() => handleRemoveTemplate(idx)}
-                  className="text-slate-400 hover:text-red-500 p-1"
-                  title="Remove Variant"
+                  className="text-slate-400 hover:text-red-500 p-0.5"
+                  title="Remove Content"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3" />
                 </button>
               )}
             </div>
           ))}
-          <Button type="button" variant="outline" size="sm" onClick={handleAddTemplate} className="h-8 text-xs gap-1">
-            <Plus className="w-3.5 h-3.5" /> Add Variant
+          <Button type="button" variant="outline" size="sm" onClick={handleAddTemplate} className="h-7 text-xs gap-1 px-2.5">
+            <Plus className="w-3 h-3" /> Add Content
           </Button>
         </div>
 
         {/* Template Editor */}
-        <div className="space-y-5 max-w-2xl">
-          <div className="space-y-2">
-            <Label className="text-xs font-medium">Message Type</Label>
-            <Select
-              value={currentTmpl.messageType || 'text'}
-              onValueChange={(val) => handleUpdateCurrent({ messageType: val })}
-            >
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="text">Text Only</SelectItem>
-                <SelectItem value="image">Image</SelectItem>
-                <SelectItem value="video">Video</SelectItem>
-                <SelectItem value="document">Document</SelectItem>
-                <SelectItem value="buttons">Interactive Buttons</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {currentTmpl.messageType === 'buttons' && (
-            <div className="space-y-2">
-              <Label className="text-xs font-medium">Header Media Type (Optional)</Label>
+        <div className="space-y-3.5 max-w-2xl">
+          <div className={`grid gap-3 ${currentTmpl.messageType === 'buttons' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Message Type</Label>
               <Select
-                value={currentTmpl.buttonMediaType || 'none'}
-                onValueChange={(val) => handleUpdateCurrent({ buttonMediaType: val })}
+                value={currentTmpl.messageType || 'text'}
+                onValueChange={(val) => handleUpdateCurrent({ messageType: val })}
               >
-                <SelectTrigger className="h-9 text-xs">
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No Header Media (Text Only)</SelectItem>
-                  <SelectItem value="image">Image Header</SelectItem>
-                  <SelectItem value="video">Video Header</SelectItem>
-                  <SelectItem value="document">Document Header</SelectItem>
+                  <SelectItem value="text">Text Only</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                  <SelectItem value="video">Video</SelectItem>
+                  <SelectItem value="document">Document</SelectItem>
+                  <SelectItem value="buttons">Interactive Buttons</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
+
+            {currentTmpl.messageType === 'buttons' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Header Media Type (Optional)</Label>
+                <Select
+                  value={currentTmpl.buttonMediaType || 'none'}
+                  onValueChange={(val) => handleUpdateCurrent({ buttonMediaType: val })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Header Media (Text Only)</SelectItem>
+                    <SelectItem value="image">Image Header</SelectItem>
+                    <SelectItem value="video">Video Header</SelectItem>
+                    <SelectItem value="document">Document Header</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
 
           {/* Media Requirements & Upload Section */}
           {isMediaActive && mediaReq && (
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {currentMediaType === 'image' && <FileImage className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-                  {currentMediaType === 'video' && <Film className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
-                  {currentMediaType === 'document' && <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />}
-                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">{mediaReq.title}</h4>
+            <div className="p-3 rounded-lg bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+              {/* One-liner requirement bar */}
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-1.5 rounded-md bg-white dark:bg-slate-950 border border-slate-200/70 dark:border-slate-800 text-[11px]">
+                <div className="flex flex-wrap items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
+                  {currentMediaType === 'image' && <FileImage className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                  {currentMediaType === 'video' && <Film className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                  {currentMediaType === 'document' && <FileText className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />}
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{mediaReq.title}:</span>
+                  <span className="text-slate-600 dark:text-slate-400">{mediaReq.formats}</span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="text-slate-600 dark:text-slate-400">{mediaReq.recommendation}</span>
                 </div>
-                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full">
-                  Preferred Size: {mediaReq.preferredSizeText}
+                <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md shrink-0">
+                  Size: {mediaReq.preferredSizeText}
                 </span>
               </div>
 
-              {/* Requirement details grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] bg-white dark:bg-slate-950 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80">
-                <div>
-                  <span className="text-slate-400 font-medium">Supported Formats: </span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{mediaReq.formats}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-medium">Recommendation: </span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{mediaReq.recommendation}</span>
-                </div>
-                <div className="col-span-1 sm:col-span-2 text-slate-500 flex items-center gap-1.5 pt-1">
-                  <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>{mediaReq.notes}</span>
-                </div>
-              </div>
+              {/* Hidden file input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                multiple
+                accept={
+                  currentMediaType === 'image'
+                    ? 'image/*'
+                    : currentMediaType === 'video'
+                    ? 'video/*'
+                    : '.pdf,.doc,.docx,.xls,.xlsx,.txt'
+                }
+                onChange={handleFileUpload}
+              />
 
-              {/* Upload Action */}
-              <div className="flex items-center gap-3">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  multiple
-                  accept={
-                    currentMediaType === 'image'
-                      ? 'image/*'
-                      : currentMediaType === 'video'
-                      ? 'video/*'
-                      : '.pdf,.doc,.docx,.xls,.xlsx,.txt'
-                  }
-                  onChange={handleFileUpload}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadFileMutation?.isPending}
-                  className="text-xs gap-1.5 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 hover:bg-slate-50"
-                >
-                  {uploadFileMutation?.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="w-3.5 h-3.5" />
-                  )}
-                  Select & Upload {currentMediaType.toUpperCase()} File(s)
-                </Button>
-                <span className="text-[11px] text-slate-400">
-                  Multiple files supported
-                </span>
-              </div>
-
-              {/* Attached Media List with File Size & Preferred Match Badge */}
+              {/* Attached Media List */}
               {attachedMediaList.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-slate-800">
-                  <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                <div className="space-y-1.5 pt-0.5">
+                  <Label className="text-[10px] font-semibold text-slate-600 dark:text-slate-400">
                     Attached Files ({attachedMediaList.length})
                   </Label>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {attachedMediaList.map((fileItem, fileIdx) => {
                       const formattedSize = formatFileSize(fileItem.size)
                       const isExceedingPreferred =
@@ -366,23 +335,23 @@ export function Step2MessageTemplates({
                       return (
                         <div
                           key={fileItem.id || fileIdx}
-                          className="flex items-center justify-between p-2.5 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 gap-3"
+                          className="flex items-center justify-between p-2 bg-white dark:bg-slate-950 rounded-md border border-slate-200 dark:border-slate-800 gap-2.5"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             {/* File Thumbnail or Icon */}
                             {currentMediaType === 'image' && fileItem.url ? (
                               <img
                                 src={fileItem.url}
                                 alt={fileItem.name || 'Image'}
-                                className="w-10 h-10 object-cover rounded-md border border-slate-200 dark:border-slate-800 bg-slate-100 shrink-0"
+                                className="w-8 h-8 object-cover rounded-md border border-slate-200 dark:border-slate-800 bg-slate-100 shrink-0"
                               />
                             ) : currentMediaType === 'video' ? (
-                              <div className="w-10 h-10 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                                <Film className="w-5 h-5" />
+                              <div className="w-8 h-8 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                <Film className="w-4 h-4" />
                               </div>
                             ) : (
-                              <div className="w-10 h-10 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                                <FileText className="w-5 h-5" />
+                              <div className="w-8 h-8 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <FileText className="w-4 h-4" />
                               </div>
                             )}
 
@@ -391,34 +360,32 @@ export function Step2MessageTemplates({
                                 {fileItem.name || `Attached ${currentMediaType} #${fileIdx + 1}`}
                               </p>
 
-                              <div className="flex flex-wrap items-center gap-2">
-                                {/* File Size Display */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                                 {formattedSize ? (
-                                  <span className="text-[11px] font-mono font-medium text-slate-600 dark:text-slate-400">
-                                    Size: {formattedSize}
+                                  <span>
+                                    Size: <strong className="font-mono text-slate-700 dark:text-slate-300 font-medium">{formattedSize}</strong>
                                   </span>
                                 ) : (
-                                  <span className="text-[11px] text-slate-400 italic">File uploaded</span>
+                                  <span className="italic text-slate-400">File uploaded</span>
                                 )}
 
-                                {/* Match Preferred File Size Badge */}
                                 {fileItem.size !== undefined ? (
                                   isExceedingHard ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 dark:bg-red-950/70 text-red-700 dark:text-red-300 flex items-center gap-1">
-                                      <AlertTriangle className="w-3 h-3" /> Exceeds Max Limit ({formatFileSize(mediaReq.hardMaxBytes)})
+                                    <span className="text-red-600 dark:text-red-400 flex items-center gap-1 font-medium">
+                                      • <AlertTriangle className="w-3 h-3 shrink-0" /> Exceeds max limit ({formatFileSize(mediaReq.hardMaxBytes)})
                                     </span>
                                   ) : isExceedingPreferred ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 flex items-center gap-1">
-                                      <AlertTriangle className="w-3 h-3" /> {formattedSize} (Exceeds preferred limit)
+                                    <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium">
+                                      • <AlertTriangle className="w-3 h-3 shrink-0" /> Exceeds preferred limit
                                     </span>
                                   ) : (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                                      <CheckCircle2 className="w-3 h-3" /> {formattedSize} (Matches preferred size)
+                                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                                      • <CheckCircle2 className="w-3 h-3 shrink-0" /> Matches preferred size
                                     </span>
                                   )
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" /> File Attached ✓
+                                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                                    • <CheckCircle2 className="w-3 h-3 shrink-0" /> Attached
                                   </span>
                                 )}
                               </div>
@@ -430,10 +397,10 @@ export function Step2MessageTemplates({
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemoveAttachedFile(fileItem.id, fileIdx)}
-                            className="h-8 w-8 p-0 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 shrink-0"
+                            className="h-7 w-7 p-0 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 shrink-0"
                             title="Remove attachment"
                           >
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       )
@@ -441,37 +408,66 @@ export function Step2MessageTemplates({
                   </div>
                 </div>
               )}
+
+              {/* Upload Action Button (Positioned BELOW current image list) */}
+              <div className="pt-0.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadFileMutation?.isPending}
+                  className="h-8 text-xs gap-1.5 px-3 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 hover:bg-slate-50 font-medium"
+                >
+                  {uploadFileMutation?.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  Upload {currentMediaType.toUpperCase()} File(s)
+                </Button>
+              </div>
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label className="text-xs font-medium">Message Text / Caption</Label>
             <Textarea
               value={currentTmpl.template || ''}
               onChange={(e) => handleUpdateCurrent({ template: e.target.value })}
-              rows={4}
+              rows={3}
               placeholder="Type your message here... Use {{name}} or {{phone}} for dynamic variables."
-              className="text-xs font-mono"
+              className="text-xs font-mono py-2"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Footer Text (Optional)</Label>
+            <Input
+              value={currentTmpl.footer || ''}
+              onChange={(e) => handleUpdateCurrent({ footer: e.target.value })}
+              placeholder="e.g. Reply STOP to unsubscribe or optional disclaimer"
+              className="text-xs font-mono h-8"
             />
           </div>
 
           {currentTmpl.messageType === 'buttons' && (
-            <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium">Interactive Buttons (Max 3)</Label>
-                <Button type="button" variant="outline" size="sm" onClick={handleAddButton} className="h-7 text-xs gap-1">
+                <Button type="button" variant="outline" size="sm" onClick={handleAddButton} className="h-6 text-[11px] px-2 gap-1">
                   <Plus className="w-3 h-3" /> Add Button
                 </Button>
               </div>
 
               {(currentTmpl.buttons || []).map((btn) => (
-                <div key={btn.id} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
+                <div key={btn.id} className="p-2.5 bg-slate-50 dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-800 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <Select
                       value={btn.type}
                       onValueChange={(val: any) => handleUpdateButton(btn.id, { type: val })}
                     >
-                      <SelectTrigger className="w-32 h-8 text-xs">
+                      <SelectTrigger className="w-32 h-7 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -486,7 +482,7 @@ export function Step2MessageTemplates({
                       placeholder="Button Label"
                       value={btn.display_text}
                       onChange={(e) => handleUpdateButton(btn.id, { display_text: e.target.value })}
-                      className="h-8 text-xs flex-1"
+                      className="h-7 text-xs flex-1"
                     />
 
                     <Button
@@ -494,7 +490,7 @@ export function Step2MessageTemplates({
                       variant="ghost"
                       size="sm"
                       onClick={() => handleRemoveButton(btn.id)}
-                      className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
@@ -511,7 +507,7 @@ export function Step2MessageTemplates({
                       }
                       value={btn.value || ''}
                       onChange={(e) => handleUpdateButton(btn.id, { value: e.target.value })}
-                      className="h-8 text-xs font-mono"
+                      className="h-7 text-xs font-mono"
                     />
                   )}
                 </div>
@@ -521,10 +517,10 @@ export function Step2MessageTemplates({
         </div>
 
         {/* Bottom Navigation Controls */}
-        <div className="flex items-center justify-between pt-6 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2">
             {onBack && (
-              <Button type="button" variant="outline" size="sm" onClick={onBack} className="text-xs gap-1.5">
+              <Button type="button" variant="outline" size="sm" onClick={onBack} className="h-8 text-xs gap-1.5 px-3">
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Back
               </Button>
@@ -536,7 +532,7 @@ export function Step2MessageTemplates({
                 size="sm"
                 onClick={onSaveDraft}
                 disabled={isSavingDraft}
-                className="text-xs gap-1.5"
+                className="h-8 text-xs gap-1.5 px-3"
               >
                 {isSavingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 Save Draft
@@ -548,10 +544,10 @@ export function Step2MessageTemplates({
             <Button
               type="button"
               onClick={onNext}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 h-9 gap-1.5 shadow-xs"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 h-8 gap-1.5 shadow-xs"
             >
               Next: Sending Sessions
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </Button>
           )}
         </div>

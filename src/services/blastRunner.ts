@@ -148,7 +148,8 @@ export async function sendBaileysTemplateMessage(
   const mainMedia = allMedia[0] || null;
 
   const buttons = Array.isArray(tplItem.buttons) ? tplItem.buttons : [];
-  const customFooter = tplItem.footer !== undefined && tplItem.footer !== null ? String(tplItem.footer).trim() : '';
+  const rawFooter = tplItem.footer ?? tplItem.footer_text ?? (typeof tplItem.content === 'object' ? tplItem.content?.footer ?? tplItem.content?.footer_text : null);
+  const customFooter = rawFooter !== undefined && rawFooter !== null ? String(rawFooter).trim() : '';
 
   const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
   let primarySendResult: any = null;
@@ -444,10 +445,13 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
           const buttonMedia = await getFileUrl(buttonMediaId);
           const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
 
+          const rawFooter = tplItem.footer ?? tplItem.footer_text ?? (typeof tplItem.content === 'object' ? tplItem.content?.footer ?? tplItem.content?.footer_text : null);
+          const itemFooter = rawFooter !== undefined && rawFooter !== null ? String(rawFooter).trim() : '';
+
           const fullContent = {
             text: tplItem.text || tplItem.template || '',
             buttons: tplItem.buttons || [],
-            footer: tplItem.footer || '',
+            footer: itemFooter,
             title: tplItem.title || '',
             subtitle: tplItem.subtitle || '',
             file: activeMedia?.url || mainMedia?.url || null,
