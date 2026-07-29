@@ -298,7 +298,7 @@ function AdminCampaignsPage() {
                     <TableHead>Merchant</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Recipients</TableHead>
-                    <TableHead>Templates</TableHead>
+                    <TableHead>Contents</TableHead>
                     <TableHead className="w-[120px]">Progress</TableHead>
                     <TableHead>Created / Completed</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -376,7 +376,7 @@ function AdminCampaignsPage() {
                             title="Click to preview message"
                           >
                             <FileText className="h-3.5 w-3.5" />
-                            {c.templates?.length || (c.template ? 1 : 1)} template(s)
+                            {c.templates?.length || (c.template ? 1 : 1)} content(s)
                           </button>
                         </TableCell>
                         <TableCell>
@@ -571,14 +571,14 @@ function AdminCampaignsPage() {
                       </div>
 
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-500">Templates:</span>
+                        <span className="text-slate-500">Contents:</span>
                         <button
                           type="button"
                           onClick={() => setSelectedPreviewCampaign(c)}
                           className="inline-flex items-center gap-1.5 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
                         >
                           <FileText className="h-3.5 w-3.5" />
-                          {c.templates?.length || (c.template ? 1 : 1)} template(s)
+                          {c.templates?.length || (c.template ? 1 : 1)} content(s)
                         </button>
                       </div>
 

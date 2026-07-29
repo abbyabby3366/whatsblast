@@ -192,7 +192,7 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
                   <div key={idx} className="space-y-1">
                     {displayTemplates.length > 1 && (
                       <div className="text-[10px] font-semibold text-slate-500 text-right pr-1">
-                        Template {idx + 1}
+                        Content {idx + 1}
                       </div>
                     )}
                     <div className="bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none p-2 max-w-[85%] ml-auto relative shadow-[0_1px_0.5px_rgba(11,20,26,.13)] break-words whitespace-pre-wrap text-[14px] leading-[19px]">

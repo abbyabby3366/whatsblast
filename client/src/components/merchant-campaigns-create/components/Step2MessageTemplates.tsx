@@ -195,7 +195,7 @@ export function Step2MessageTemplates({
               2
             </div>
             <div>
-              <h3 className="font-semibold text-base text-slate-900 dark:text-slate-100">Message Templates</h3>
+              <h3 className="font-semibold text-base text-slate-900 dark:text-slate-100">Message Content</h3>
               <p className="text-[11px] text-slate-500">Configure message content for sequence blasting.</p>
             </div>
           </div>

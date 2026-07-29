@@ -502,7 +502,7 @@ function CreateCampaignPage() {
     if (invalidIndex !== -1) {
       setStep(2)
       setActiveTemplateIndex(invalidIndex)
-      toast.error(`Message template ${invalidIndex + 1} text is required.`)
+      toast.error(`Message content ${invalidIndex + 1} text is required.`)
       return
     }
 
@@ -548,7 +548,7 @@ function CreateCampaignPage() {
     )
     if (invalidIndex !== -1) {
       setActiveTemplateIndex(invalidIndex)
-      toast.error(`Message template ${invalidIndex + 1} text is required.`)
+      toast.error(`Message content ${invalidIndex + 1} text is required.`)
       return
     }
 
@@ -708,7 +708,7 @@ function CreateCampaignPage() {
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/10 text-xs font-bold">
             2
           </span>
-          <span className="truncate">Message Template</span>
+          <span className="truncate">Message Content</span>
         </button>
 
         <button

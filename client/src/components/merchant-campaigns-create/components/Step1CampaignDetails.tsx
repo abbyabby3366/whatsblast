@@ -70,7 +70,7 @@ export function Step1CampaignDetails({
             onClick={onNext}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 h-9 gap-1.5 shadow-xs"
           >
-            Next: Message Templates
+            Next: Message Content
             <ArrowRight className="w-4 h-4" />
           </Button>
         </div>

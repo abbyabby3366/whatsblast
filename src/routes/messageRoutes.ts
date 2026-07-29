@@ -251,10 +251,22 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     }
   }
 
-  const formattedMessages = messages.map(formatMessage);
+  // Deduplicate multi-content campaign messages: keep only the latest per (campaign, recipient_phone)
+  const seen = new Set<string>();
+  const deduped = messages.filter((msg: any) => {
+    const camp = msg.campaign as any;
+    if (!camp || !camp._id) return true; // non-campaign messages always pass through
+    const key = `${camp._id.toString()}-${msg.recipient_phone}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const dedupedCount = messages.length - deduped.length;
+
+  const formattedMessages = deduped.map(formatMessage);
 
   return res.json({
-    count: totalCount,
+    count: Math.max(0, totalCount - dedupedCount),
     results: formattedMessages,
   });
 };

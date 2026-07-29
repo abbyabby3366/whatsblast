@@ -412,14 +412,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   return (
     <div className="space-y-4 max-w-7xl mx-auto pb-10">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-        <div>
-          <p className="text-xs text-slate-500">
-            View all sent and scheduled WhatsApp campaign messages.
-          </p>
-        </div>
-
-        {isAdmin && (
+      {isAdmin && (
+        <div className="flex justify-end border-b border-slate-200 dark:border-slate-800 pb-3">
           <Button
             variant="outline"
             size="sm"
@@ -428,8 +422,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           >
             <Trash2 className="w-3.5 h-3.5" /> Clear All Messages
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center gap-3">

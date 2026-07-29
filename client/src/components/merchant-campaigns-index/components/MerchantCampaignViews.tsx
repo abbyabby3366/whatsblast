@@ -79,7 +79,7 @@ export function MerchantCampaignViews({
                   <TableHead className="w-[220px]">Campaign Name</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Recipients</TableHead>
-                  <TableHead>Templates</TableHead>
+                  <TableHead>Contents</TableHead>
                   <TableHead className="w-[140px]">Progress</TableHead>
                   <TableHead>Created / Completed</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -148,7 +148,7 @@ export function MerchantCampaignViews({
                           className="inline-flex items-center gap-1.5 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
                         >
                           <FileText className="h-3.5 w-3.5" />
-                          {c.templates?.length || 1} template(s)
+                          {c.templates?.length || 1} content(s)
                         </button>
                       </TableCell>
                       <TableCell>
@@ -343,14 +343,14 @@ export function MerchantCampaignViews({
               </div>
 
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Templates:</span>
+                <span className="text-slate-500">Contents:</span>
                 <button
                   type="button"
                   onClick={() => onPreview(c)}
                   className="inline-flex items-center gap-1.5 font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  {c.templates?.length || 1} template(s)
+                  {c.templates?.length || 1} content(s)
                 </button>
               </div>
 
