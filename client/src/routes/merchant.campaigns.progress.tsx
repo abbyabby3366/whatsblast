@@ -170,6 +170,12 @@ function CampaignProgressPage() {
     ) ||
     []
 
+  // Base start time & interval for calculating fallback estimated send times
+  const baseStartTime = campaign.scheduled_at || campaign.created_at || campaign.createdAt
+  const minInterval = Number(campaign.min_interval_seconds) || 10
+  const maxInterval = Number(campaign.max_interval_seconds) || 15
+  const avgIntervalMins = (minInterval + maxInterval) / 2
+
   // Generate detailed report rows
   const reportRows =
     recipientPhones.length > 0
@@ -181,11 +187,16 @@ function CampaignProgressPage() {
               l.to_jid?.includes(cleanP)
           )
 
+          // Estimated target send time based on position in queue and campaign intervals
+          const estimatedScheduledTime = baseStartTime
+            ? dayjs(baseStartTime).add(idx * avgIntervalMins, 'minute').toISOString()
+            : null
+
           if (matchedLog) {
             return {
               phone: phone,
               status: matchedLog.status || 'sent',
-              scheduled_at: matchedLog.scheduled_at,
+              scheduled_at: matchedLog.scheduled_at || matchedLog.scheduled_datetime || estimatedScheduledTime,
               sent_at: matchedLog.sent_at || matchedLog.wa_timestamp,
               created_at: matchedLog.created_at || matchedLog.createdAt,
               error: matchedLog.error ? safeText(matchedLog.error) : null,
@@ -197,7 +208,7 @@ function CampaignProgressPage() {
             return {
               phone: phone,
               status: 'failed',
-              scheduled_at: null,
+              scheduled_at: estimatedScheduledTime,
               sent_at: null,
               created_at: null,
               error: 'Send failed during execution',
@@ -208,7 +219,7 @@ function CampaignProgressPage() {
           return {
             phone: phone,
             status: 'pending',
-            scheduled_at: null,
+            scheduled_at: estimatedScheduledTime,
             sent_at: null,
             created_at: null,
             error: null,
@@ -218,7 +229,7 @@ function CampaignProgressPage() {
       : logs.map((l) => ({
           phone: l.recipient_phone || l.to_jid || 'Recipient',
           status: l.status || 'sent',
-          scheduled_at: l.scheduled_at,
+          scheduled_at: l.scheduled_at || l.scheduled_datetime,
           sent_at: l.sent_at || l.wa_timestamp,
           created_at: l.created_at || l.createdAt,
           error: l.error ? safeText(l.error) : null,
