@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,90 +20,47 @@ function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [otp, setOtp] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isSendingOtp, setIsSendingOtp] = useState(false)
-  const [otpSentTo, setOtpSentTo] = useState('')
-  const [otpCooldown, setOtpCooldown] = useState(0)
-  
+
   const token = useAuthStore(s => s.access_token)
   const setTokens = useAuthStore(s => s.setTokens)
-
-  useEffect(() => {
-    if (otpCooldown <= 0) return
-    const timer = window.setInterval(() => {
-      setOtpCooldown(value => Math.max(0, value - 1))
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [otpCooldown])
 
   // Redirect to dashboard if already authenticated
   if (token) {
     navigate({ to: '/merchant', replace: true })
   }
 
-  const handleSendOtp = async () => {
-    if (!phoneNumber) {
-      toast.error('Please enter your phone number first')
-      return
-    }
-
-    try {
-      setIsSendingOtp(true)
-      const normalizedPhone = phoneNumber.trim().replace(/^\+/, '').replace(/\D/g, '')
-      const res: any = await baseInstance.post('register/send-otp/', {
-        json: { phone_number: normalizedPhone },
-      }).json()
-      setPhoneNumber(normalizedPhone)
-      setOtp('')
-      setOtpSentTo(normalizedPhone)
-      setOtpCooldown(120)
-      toast.success(res.detail ?? res.message ?? 'OTP has been sent to your WhatsApp')
-    } catch (err: any) {
-      console.error(err)
-      const parsed = await parseApiError(err, 'Unable to send OTP. Please try again.')
-      const retryAfter = Number(parsed.data?.retry_after_seconds ?? 0)
-      if (retryAfter > 0) setOtpCooldown(retryAfter)
-      toast.error(parsed.message)
-    } finally {
-      setIsSendingOtp(false)
-    }
-  }
-
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phoneNumber || !password || !confirmPassword || !otp) {
-      toast.error('Please fill in all fields and enter the OTP')
+    if (!phoneNumber || !password || !confirmPassword) {
+      toast.error('Please fill in all fields')
       return
     }
     if (password !== confirmPassword) {
       toast.error('Passwords do not match')
       return
     }
-    
+
     try {
       setIsLoading(true)
-      // Register
       const normalizedPhone = phoneNumber.trim().replace(/^\+/, '').replace(/\D/g, '')
-      if (otpSentTo && otpSentTo !== normalizedPhone) {
-        toast.error('Phone number changed after sending OTP. Please send OTP again.')
-        return
-      }
-      await baseInstance.post('register/', { 
-        json: { phone_number: normalizedPhone, password, confirm_password: confirmPassword, otp: otp.trim() } 
+
+      // Register
+      await baseInstance.post('register/', {
+        json: { phone_number: normalizedPhone, password, confirm_password: confirmPassword }
       })
-      
+
       // Auto login after register
-      const res: any = await baseInstance.post('login/', { 
-        json: { phone_number: normalizedPhone, password } 
+      const res: any = await baseInstance.post('login/', {
+        json: { phone_number: normalizedPhone, password }
       }).json()
-      
+
       setTokens(res.access, res.refresh)
       toast.success('Account created successfully!')
       navigate({ to: '/merchant', replace: true })
     } catch (err: any) {
       console.error(err)
-      const parsed = await parseApiError(err, 'Registration failed. Check your OTP or phone number.')
+      const parsed = await parseApiError(err, 'Registration failed. Check your phone number or password.')
       toast.error(parsed.message)
     } finally {
       setIsLoading(false)
@@ -121,49 +78,27 @@ function RegisterPage() {
               </div>
               <CardTitle className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Create an account</CardTitle>
               <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
-                Enter your details and verify your phone number with OTP
+                Enter your details to create a new account
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 px-6 pt-2">
               <div className="space-y-1.5">
                 <Label htmlFor="phoneNumber" className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone Number</Label>
-                <div className="flex gap-2">
-                  <Input 
-                    id="phoneNumber" 
-                    type="text" 
-                    placeholder="60123456789" 
-                    value={phoneNumber}
-                    onChange={e => {
-                      setPhoneNumber(e.target.value)
-                      if (otpSentTo && e.target.value.trim().replace(/^\+/, '').replace(/\D/g, '') !== otpSentTo) {
-                        setOtpSentTo('')
-                      }
-                    }}
-                    className="h-11 px-3.5 bg-slate-50/70 dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <Button type="button" variant="outline" disabled={isSendingOtp || otpCooldown > 0} onClick={handleSendOtp} className="h-11 px-4 border-slate-200 dark:border-slate-800 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40">
-                    {isSendingOtp ? <Loader2 className="w-4 h-4 animate-spin" /> : otpCooldown > 0 ? `Wait ${otpCooldown}s` : otpSentTo ? 'Resend OTP' : 'Send OTP'}
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="otp" className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">OTP Code</Label>
                 <Input
-                  id="otp"
+                  id="phoneNumber"
                   type="text"
-                  inputMode="numeric"
-                  placeholder="6-digit code"
-                  value={otp}
-                  onChange={e => setOtp(e.target.value)}
+                  placeholder="60123456789"
+                  value={phoneNumber}
+                  onChange={e => setPhoneNumber(e.target.value)}
                   className="h-11 px-3.5 bg-slate-50/70 dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Password</Label>
                 <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? 'text' : 'password'} 
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     className="h-11 pl-3.5 pr-10 bg-slate-50/70 dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-emerald-500"
@@ -195,9 +130,9 @@ function RegisterPage() {
                   )}
                 </div>
                 <div className="relative">
-                  <Input 
-                    id="confirmPassword" 
-                    type={showConfirmPassword ? 'text' : 'password'} 
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
                     className={`h-11 pl-3.5 pr-10 bg-slate-50/70 dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-emerald-500 ${

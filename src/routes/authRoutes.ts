@@ -108,20 +108,20 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 });
 
 router.post('/register', async (req: Request, res: Response) => {
-  const { phone_number, password, otp } = req.body;
+  const { phone_number, password } = req.body;
 
   if (!phone_number || !password) {
     return res.status(400).json({ error: 'Phone number and password are required' });
   }
 
   const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
+  if (!cleanPhone) {
+    return res.status(400).json({ error: 'Invalid phone number format' });
+  }
 
-  if (otp) {
-    const validOtp: IOTP | null = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
-    if (!validOtp || validOtp.expiresAt < new Date()) {
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
-    }
-    await OTP.deleteMany({ phone_number: cleanPhone });
+  const existing = await User.findOne({ phone_number: cleanPhone });
+  if (existing) {
+    return res.status(400).json({ error: 'Phone number already registered' });
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
