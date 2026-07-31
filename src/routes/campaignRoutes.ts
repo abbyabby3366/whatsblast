@@ -173,7 +173,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     },
   });
 
-  // Immediately create PENDING messages for all recipients with cumulative random 10-15 minute intervals
+  // Immediately create PENDING messages for all recipients with cumulative random 10-15 minute intervals per assigned session
   if (phoneList.length > 0) {
     const minIntervalMins = Number(minInterval) || 10;
     const maxIntervalMins = Number(maxInterval) >= minIntervalMins ? Number(maxInterval) : minIntervalMins + 5;
@@ -183,21 +183,45 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     const tplText = primaryTpl ? (primaryTpl.text || primaryTpl.template || '') : '';
     const msgType = primaryTpl ? (primaryTpl.type || primaryTpl.messageType || 'text') : 'text';
 
-    let cumulativeTimeMs = baseScheduledAt.getTime();
+    // Fetch user's WhatsApp sessions to pre-assign round-robin
+    let availableSessions = await WhatsAppSession.find({
+      user: targetUser,
+      status: 'connected',
+    }).sort({ createdAt: 1 });
+
+    if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
+      availableSessions = availableSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+    }
+
+    if (availableSessions.length === 0) {
+      let fallbackSessions = await WhatsAppSession.find({ user: targetUser }).sort({ createdAt: 1 });
+      if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
+        fallbackSessions = fallbackSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+      }
+      availableSessions = fallbackSessions;
+    }
+
+    const sessionLastTimeMap = new Map<string, number>();
 
     const pendingMessages = phoneList.map((contact: string, idx: number) => {
       const cleanPhone = contact.replace(/[^0-9]/g, '');
+      const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
+      const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
 
-      if (idx > 0) {
-        // Random decimal minutes between minIntervalMins and maxIntervalMins (e.g. 11.45 minutes)
+      let scheduledTimeMs = baseScheduledAt.getTime();
+      if (sessionLastTimeMap.has(sessKey)) {
+        const prevMs = sessionLastTimeMap.get(sessKey)!;
         const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
-        cumulativeTimeMs += randomMinutes * 60 * 1000;
+        scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
       }
+      sessionLastTimeMap.set(sessKey, scheduledTimeMs);
 
-      const scheduledTime = new Date(cumulativeTimeMs);
+      const scheduledTime = new Date(scheduledTimeMs);
 
       return {
         campaign: campaign._id,
+        session: assignedSession ? assignedSession._id : undefined,
+        sender_phone: assignedSession ? assignedSession.phone_number : undefined,
         direction: MessageDirection.OUTBOUND,
         type: msgType,
         status: MessageStatus.PENDING,
@@ -382,22 +406,47 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
   const now = new Date();
   const minInterval = Number(campaign.min_interval_seconds) || 10;
   const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
-  let cumulativeMs = now.getTime();
+
+  // Fetch available sessions for pre-assignment (same as createCampaign)
+  const sessionModeVal = (campaign as any).session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
+  const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
+
+  let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: 'connected' }).sort({ createdAt: 1 });
+  if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
+    availableSessions = availableSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+  }
+  if (availableSessions.length === 0) {
+    let fallbackSessions = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
+    if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
+      fallbackSessions = fallbackSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+    }
+    availableSessions = fallbackSessions;
+  }
+
+  const sessionLastTimeMap = new Map<string, number>();
 
   for (let idx = 0; idx < retryContacts.length; idx++) {
     const contact = retryContacts[idx];
     const clean = contact.replace(/[^0-9]/g, '');
+    const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
+    const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
 
-    if (idx > 0) {
+    let scheduledTimeMs = now.getTime();
+    if (sessionLastTimeMap.has(sessKey)) {
+      const prevMs = sessionLastTimeMap.get(sessKey)!;
       const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
-      cumulativeMs += randomMinutes * 60 * 1000;
+      scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
     }
-    const scheduledTime = new Date(cumulativeMs);
+    sessionLastTimeMap.set(sessKey, scheduledTimeMs);
+
+    const scheduledTime = new Date(scheduledTimeMs);
 
     const updated = await Message.findOneAndUpdate(
       { campaign: campaign._id, recipient_phone: clean },
       {
         status: MessageStatus.PENDING,
+        session: assignedSession ? assignedSession._id : undefined,
+        sender_phone: assignedSession ? assignedSession.phone_number : undefined,
         $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
         scheduled_at: scheduledTime,
         $inc: { retry_count: 1 },
@@ -407,6 +456,8 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
     if (!updated) {
       await Message.create({
         campaign: campaign._id,
+        session: assignedSession ? assignedSession._id : undefined,
+        sender_phone: assignedSession ? assignedSession.phone_number : undefined,
         direction: MessageDirection.OUTBOUND,
         type: 'text',
         status: MessageStatus.PENDING,

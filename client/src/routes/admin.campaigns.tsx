@@ -350,7 +350,7 @@ function AdminCampaignsPage() {
                               <Link
                                 to="/admin/sessions"
                                 className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight hover:underline cursor-pointer transition-colors"
-                                title="Failed to connect. Click to redirect to WhatsApp Sessions page"
+                                title="Click to redirect to WhatsApp Sessions page"
                               >
                                 <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
                                 <span className="truncate">{safeText(c.error_message)}</span>

@@ -192,7 +192,7 @@ function MerchantDashboard() {
                         <Link
                           to="/merchant/whatsapp-sessions"
                           className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-[200px] hover:underline cursor-pointer flex items-center gap-1 mt-0.5"
-                          title="Failed to connect. Click to redirect to Connect WhatsApp page"
+                          title="Click to redirect to WhatsApp Sessions page"
                         >
                           <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
                           <span className="truncate">{safeText(campaign.error_message)}</span>

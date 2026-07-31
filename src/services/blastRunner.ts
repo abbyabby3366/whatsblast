@@ -273,6 +273,97 @@ export async function sendBaileysTemplateMessage(
   return primarySendResult;
 }
 
+function isSessionQualified(sessionDoc: any): { qualified: boolean; reason?: string } {
+  if (!sessionDoc || sessionDoc.status !== 'connected') {
+    return { qualified: false, reason: 'Session is disconnected or unavailable' };
+  }
+
+  const today = dayjs().format('YYYY-MM-DD');
+  if (sessionDoc.current_day !== today) {
+    sessionDoc.current_day = today;
+    sessionDoc.current_message_count = 0;
+  }
+
+  if (sessionDoc.current_message_count >= sessionDoc.max_message_count_per_day) {
+    return { qualified: false, reason: `Session ${sessionDoc.session_id} reached daily message limit (${sessionDoc.max_message_count_per_day})` };
+  }
+
+  const startTime = sessionDoc.active_start_time || '00:00';
+  const endTime = sessionDoc.active_end_time || '23:59';
+  const currentTime = dayjs().format('HH:mm');
+
+  let isWithinActiveHours = false;
+  if (startTime <= endTime) {
+    isWithinActiveHours = currentTime >= startTime && currentTime <= endTime;
+  } else {
+    isWithinActiveHours = currentTime >= startTime || currentTime <= endTime;
+  }
+
+  if (!isWithinActiveHours) {
+    return { qualified: false, reason: `Outside active sending window (${startTime} - ${endTime})` };
+  }
+
+  return { qualified: true };
+}
+
+async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: any): Promise<{ sessionId?: string; sessionDoc?: any; errorMsg?: string }> {
+  const allowedSessionIds = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
+
+  if (targetPendingMsg && targetPendingMsg.session) {
+    const preSessObj: any = targetPendingMsg.session.toObject ? targetPendingMsg.session.toObject() : targetPendingMsg.session;
+    const sessId = preSessObj.session_id;
+    if (sessId && (!allowedSessionIds || allowedSessionIds.length === 0 || allowedSessionIds.includes(sessId))) {
+      const liveSessDoc = await WhatsAppSession.findOne({ session_id: sessId });
+      if (liveSessDoc) {
+        const check = isSessionQualified(liveSessDoc);
+        if (check.qualified) {
+          await liveSessDoc.save();
+          return { sessionId: sessId, sessionDoc: liveSessDoc };
+        }
+      }
+    }
+  }
+
+  let candidateSessions = await WhatsAppSession.find({ user: campaign.user, status: 'connected' }).sort({ createdAt: 1 });
+  if (allowedSessionIds && allowedSessionIds.length > 0) {
+    candidateSessions = candidateSessions.filter((s) => allowedSessionIds.includes(s.session_id));
+  }
+
+  if (candidateSessions.length === 0) {
+    return { errorMsg: 'No connected WhatsApp session available' };
+  }
+
+  const disqualificationReasons: string[] = [];
+
+  for (const sessDoc of candidateSessions) {
+    const check = isSessionQualified(sessDoc);
+    if (check.qualified) {
+      await sessDoc.save();
+      if (targetPendingMsg && targetPendingMsg._id) {
+        targetPendingMsg.session = sessDoc._id;
+        targetPendingMsg.sender_phone = sessDoc.phone_number;
+        await targetPendingMsg.save();
+      }
+      return { sessionId: sessDoc.session_id, sessionDoc: sessDoc };
+    }
+    if (check.reason) disqualificationReasons.push(check.reason);
+  }
+
+  const allLimits = disqualificationReasons.every((r) => r.includes('reached daily message limit'));
+  const allHours = disqualificationReasons.every((r) => r.includes('Outside active sending window'));
+
+  let finalError = 'No WhatsApp session available to send';
+  if (allLimits) {
+    finalError = 'All WhatsApp sessions reached daily message limit';
+  } else if (allHours) {
+    finalError = 'All WhatsApp sessions are outside active sending window';
+  } else if (disqualificationReasons.length > 0) {
+    finalError = disqualificationReasons[0];
+  }
+
+  return { errorMsg: finalError };
+}
+
 const activeCampaigns = new Set<string>();
 
 async function runSingleCampaign(campaignId: string): Promise<void> {
@@ -299,12 +390,16 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         continue;
       }
 
-      let sessionId: string;
-      try {
-        const allowedSessions = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
-        sessionId = await pickUserSession(campaign.user.toString(), allowedSessions);
-      } catch (err: any) {
-        const errorMsg = err.message || 'No connected WhatsApp session available';
+      const cleanRecip = recipientPhone.replace(/[^0-9]/g, '');
+      const existingPendingMsg = await Message.findOne({
+        campaign: campaign._id,
+        recipient_phone: cleanRecip,
+        status: MessageStatus.PENDING,
+      }).populate('session');
+
+      const qualifiedRes = await getQualifiedSessionForCampaign(campaign, existingPendingMsg);
+      if (!qualifiedRes.sessionId || !qualifiedRes.sessionDoc) {
+        const errorMsg = qualifiedRes.errorMsg || 'No connected WhatsApp session available';
         console.warn(`⚠️ Campaign "${campaign.name}" paused: ${errorMsg}`);
         campaign.status = CampaignStatus.PAUSED;
         campaign.error_message = errorMsg;
@@ -312,49 +407,11 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         break;
       }
 
+      const { sessionId, sessionDoc } = qualifiedRes;
+
       let activeSession = getActiveSession(sessionId);
       if (!activeSession) {
         activeSession = await initWhatsAppSession(sessionId);
-      }
-
-      const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
-      if (sessionDoc) {
-        const today = dayjs().format('YYYY-MM-DD');
-        if (sessionDoc.current_day !== today) {
-          sessionDoc.current_day = today;
-          sessionDoc.current_message_count = 0;
-        }
-
-        if (sessionDoc.current_message_count >= sessionDoc.max_message_count_per_day) {
-          const errorMsg = `Session ${sessionId} reached daily message limit (${sessionDoc.max_message_count_per_day})`;
-          console.log(`⚠️ ${errorMsg}. Pausing campaign "${campaign.name}".`);
-          campaign.status = CampaignStatus.PAUSED;
-          campaign.error_message = errorMsg;
-          await campaign.save();
-          break;
-        }
-
-        // Active Sending Time Window Check
-        const startTime = sessionDoc.active_start_time || '00:00';
-        const endTime = sessionDoc.active_end_time || '23:59';
-        const currentTime = dayjs().format('HH:mm');
-
-        let isWithinActiveHours = false;
-        if (startTime <= endTime) {
-          isWithinActiveHours = currentTime >= startTime && currentTime <= endTime;
-        } else {
-          // Overnight range (e.g. 22:00 to 06:00)
-          isWithinActiveHours = currentTime >= startTime || currentTime <= endTime;
-        }
-
-        if (!isWithinActiveHours) {
-          const errorMsg = `Outside active sending window (${startTime} - ${endTime})`;
-          console.log(`⏰ ${errorMsg}. Pausing campaign "${campaign.name}".`);
-          campaign.status = CampaignStatus.PAUSED;
-          campaign.error_message = errorMsg;
-          await campaign.save();
-          break;
-        }
       }
 
       // Verify recipient on WhatsApp & format phone number / JID

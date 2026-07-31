@@ -118,11 +118,11 @@ export function Step3SendingSessions({
                       <Link
                         to="/merchant/whatsapp-sessions"
                         className="p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-xs col-span-2 flex items-center justify-between cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all text-left group"
-                        title="Failed to find connected session. Click to redirect to Connect WhatsApp page"
+                        title="No connected sessions found. Click to redirect to WhatsApp Sessions page"
                       >
                         <div className="flex items-center gap-2">
                           <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                          <span>No connected WhatsApp sessions found. Failed to connect session.</span>
+                          <span>No connected WhatsApp sessions found. Please connect a session first.</span>
                         </div>
                         <span className="font-semibold underline text-amber-700 dark:text-amber-300 shrink-0 flex items-center gap-1 group-hover:text-amber-800">
                           Connect WhatsApp <ExternalLink className="w-3 h-3" />

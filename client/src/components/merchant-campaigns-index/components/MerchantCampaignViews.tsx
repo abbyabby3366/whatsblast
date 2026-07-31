@@ -124,7 +124,7 @@ export function MerchantCampaignViews({
                             <Link
                               to="/merchant/whatsapp-sessions"
                               className="flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 max-w-[180px] leading-tight hover:underline cursor-pointer text-left transition-colors"
-                              title="Failed to connect. Click to redirect to Connect WhatsApp page"
+                              title="Click to redirect to WhatsApp Sessions page"
                             >
                               <AlertCircle className="h-3 w-3 shrink-0 text-rose-500" />
                               <span className="truncate">{safeText(c.error_message)}</span>
@@ -324,7 +324,7 @@ export function MerchantCampaignViews({
                 <Link
                   to="/merchant/whatsapp-sessions"
                   className="flex items-center gap-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 cursor-pointer w-full text-left transition-all group"
-                  title="Failed to connect. Click to redirect to Connect WhatsApp page"
+                  title="Click to redirect to WhatsApp Sessions page"
                 >
                   <AlertCircle className="h-4 w-4 shrink-0 text-rose-500" />
                   <span className="flex-1 truncate">{safeText(c.error_message)}</span>
