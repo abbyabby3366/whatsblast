@@ -3,7 +3,7 @@ import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js'
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { MessageTemplate } from '../models/MessageTemplate.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
-import { WhatsAppSession } from '../models/WhatsAppSession.js';
+import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { FileModel } from '../models/File.js';
 import { pickUserSession, getActiveSession, initWhatsAppSession } from '../services/baileysManager.js';
 import { sendBaileysTemplateMessage, getFileUrl } from '../services/blastRunner.js';
@@ -186,7 +186,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     // Fetch user's WhatsApp sessions to pre-assign round-robin
     let availableSessions = await WhatsAppSession.find({
       user: targetUser,
-      status: 'connected',
+      status: SessionStatus.CONNECTED,
     }).sort({ createdAt: 1 });
 
     if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
@@ -411,7 +411,7 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
   const sessionModeVal = (campaign as any).session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
   const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
 
-  let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: 'connected' }).sort({ createdAt: 1 });
+  let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
   if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
     availableSessions = availableSessions.filter((s) => selectedSessionsList.includes(s.session_id));
   }

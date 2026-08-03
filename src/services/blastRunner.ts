@@ -1,6 +1,6 @@
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { MessageTemplate } from '../models/MessageTemplate.js';
-import { WhatsAppSession } from '../models/WhatsAppSession.js';
+import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { FileModel } from '../models/File.js';
 import { getActiveSession, pickUserSession, initWhatsAppSession, verifyAndFormatJid } from './baileysManager.js';
@@ -274,7 +274,7 @@ export async function sendBaileysTemplateMessage(
 }
 
 function isSessionQualified(sessionDoc: any): { qualified: boolean; reason?: string } {
-  if (!sessionDoc || sessionDoc.status !== 'connected') {
+  if (!sessionDoc || sessionDoc.status !== SessionStatus.CONNECTED) {
     return { qualified: false, reason: 'Session is disconnected or unavailable' };
   }
 
@@ -324,7 +324,7 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
     }
   }
 
-  let candidateSessions = await WhatsAppSession.find({ user: campaign.user, status: 'connected' }).sort({ createdAt: 1 });
+  let candidateSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
   if (allowedSessionIds && allowedSessionIds.length > 0) {
     candidateSessions = candidateSessions.filter((s) => allowedSessionIds.includes(s.session_id));
   }
