@@ -187,7 +187,6 @@ async function processCrossChat(): Promise<void> {
         // Update session stats
         senderSessionDoc.current_message_count += 1;
         senderSessionDoc.last_phone_activity_at = new Date();
-        senderSessionDoc.last_physical_phone_sent_message_at = new Date();
         await senderSessionDoc.save();
 
         // Log message record

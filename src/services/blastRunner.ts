@@ -3,7 +3,7 @@ import { MessageTemplate } from '../models/MessageTemplate.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { FileModel } from '../models/File.js';
-import { getActiveSession, pickUserSession, initWhatsAppSession, verifyAndFormatJid } from './baileysManager.js';
+import { getActiveSession, pickUserSession, initWhatsAppSession, verifyAndFormatJid, markSystemSentMessageId } from './baileysManager.js';
 import dayjs from 'dayjs';
 
 let runnerInterval: NodeJS.Timeout | null = null;
@@ -268,6 +268,10 @@ export async function sendBaileysTemplateMessage(
         console.warn('⚠️ Failed sending additional media item:', err.message || err);
       }
     }
+  }
+
+  if (primarySendResult?.key?.id) {
+    markSystemSentMessageId(primarySendResult.key.id);
   }
 
   return primarySendResult;
