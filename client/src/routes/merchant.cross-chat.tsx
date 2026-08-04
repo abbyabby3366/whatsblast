@@ -305,7 +305,7 @@ function CrossChatPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12 pt-2 select-text">
+    <div className="space-y-6 w-full pb-12 pt-2 select-text">
       {/* Top Header & Master Enable Switch */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 gap-4">
         <div className="flex items-center gap-3">
