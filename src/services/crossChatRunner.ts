@@ -83,8 +83,8 @@ async function processCrossChat(): Promise<void> {
 
       // Fetch user configuration
       const userDoc = await User.findById(dialogue.user_id);
-      const minDelaySec = userDoc?.cross_chat_min_delay_sec || 12;
-      const maxDelaySec = userDoc?.cross_chat_max_delay_sec || 25;
+      const minDelaySec = userDoc?.cross_chat_min_delay_sec ?? 25;
+      const maxDelaySec = userDoc?.cross_chat_max_delay_sec ?? 300;
       const maxDailyMsgs = userDoc?.cross_chat_max_daily_messages || senderSessionDoc.max_message_count_per_day || 50;
 
       // Check daily limit for sender session
@@ -260,7 +260,7 @@ export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endT
 
 function scheduleNextCycleForUser(userId: string, userDoc?: any): number {
   const minMin = userDoc?.cross_chat_min_cooldown_min ?? userDoc?.cross_chat_cooldown_min ?? 5;
-  const maxMin = userDoc?.cross_chat_max_cooldown_min ?? 15;
+  const maxMin = userDoc?.cross_chat_max_cooldown_min ?? 720;
   const randomMin = Math.floor(Math.random() * (Math.max(minMin, maxMin) - Math.min(minMin, maxMin) + 1)) + Math.min(minMin, maxMin);
   let nextTarget = Date.now() + randomMin * 60 * 1000;
 

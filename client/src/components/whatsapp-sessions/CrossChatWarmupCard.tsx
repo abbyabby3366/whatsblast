@@ -5,16 +5,12 @@ import {
   Zap, 
   Send, 
   Clock, 
-  MessageCircle, 
   Bot, 
   CheckCircle2, 
   AlertCircle, 
   Loader2, 
-  Play, 
-  Pause,
-  RefreshCw
+  Play
 } from 'lucide-react'
-import dayjs from 'dayjs'
 
 import { api, getErrorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -45,7 +41,7 @@ export function CrossChatWarmupCard({ connectedSessionsCount }: CrossChatWarmupC
   const queryClient = useQueryClient()
   const [timeLeftStr, setTimeLeftStr] = useState<string>('')
 
-  const { data: settingsData, isLoading, refetch } = useQuery({
+  const { data: settingsData } = useQuery({
     queryKey: ['cross-chat-settings'],
     queryFn: () => api.get('cross-chat/settings').json<CrossChatSettingsResponse>(),
     refetchInterval: 3000,

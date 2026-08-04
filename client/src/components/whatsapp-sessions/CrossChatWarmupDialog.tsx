@@ -51,7 +51,7 @@ export function CrossChatWarmupDialog({ connectedSessionsCount }: CrossChatWarmu
   const [isOpen, setIsOpen] = useState(false)
   const [timeLeftStr, setTimeLeftStr] = useState<string>('')
 
-  const { data: settingsData, refetch } = useQuery({
+  const { data: settingsData } = useQuery({
     queryKey: ['cross-chat-settings'],
     queryFn: () => api.get('cross-chat/settings').json<CrossChatSettingsResponse>(),
     refetchInterval: isOpen ? 2500 : 5000,

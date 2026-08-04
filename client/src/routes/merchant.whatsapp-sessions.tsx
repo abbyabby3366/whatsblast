@@ -44,7 +44,6 @@ import {
 
 import { ManageMerchantSessionDialog } from '@/components/merchant-whatsapp-sessions/components/ManageMerchantSessionDialog'
 import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
-import { CrossChatWarmupDialog } from '@/components/whatsapp-sessions/CrossChatWarmupDialog'
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,

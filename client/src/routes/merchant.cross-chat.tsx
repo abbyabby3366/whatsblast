@@ -13,7 +13,8 @@ import {
   Smartphone,
   Sliders,
   Save,
-  BarChart3
+  BarChart3,
+  RotateCcw
 } from 'lucide-react'
 
 import { api, getErrorMessage } from '@/lib/api'
@@ -82,22 +83,36 @@ function isTimeInWindow(startTime = '08:00', endTime = '22:00', date = new Date(
   }
 }
 
+const DEFAULT_CROSS_CHAT_CONFIGS = {
+  cross_chat_min_delay_sec: 25,
+  cross_chat_max_delay_sec: 300,
+  cross_chat_min_cooldown_min: 5,
+  cross_chat_max_cooldown_min: 720,
+  cross_chat_min_turns: 3,
+  cross_chat_max_turns: 5,
+  cross_chat_min_msgs_per_turn: 1,
+  cross_chat_max_msgs_per_turn: 4,
+  cross_chat_max_daily_messages: 50,
+  cross_chat_active_start_time: '08:00',
+  cross_chat_active_end_time: '22:00',
+}
+
 function CrossChatPage() {
   const queryClient = useQueryClient()
   const [nowTs, setNowTs] = useState<number>(Date.now())
 
   // Form State - All Intervals & Active Window
-  const [minDelay, setMinDelay] = useState<number | string>(12)
-  const [maxDelay, setMaxDelay] = useState<number | string>(25)
-  const [minCooldown, setMinCooldown] = useState<number | string>(5)
-  const [maxCooldown, setMaxCooldown] = useState<number | string>(15)
-  const [minTurns, setMinTurns] = useState<number | string>(3)
-  const [maxTurns, setMaxTurns] = useState<number | string>(5)
-  const [minMsgsPerTurn, setMinMsgsPerTurn] = useState<number | string>(1)
-  const [maxMsgsPerTurn, setMaxMsgsPerTurn] = useState<number | string>(2)
-  const [maxDaily, setMaxDaily] = useState<number | string>(50)
-  const [activeStartTime, setActiveStartTime] = useState<string>('08:00')
-  const [activeEndTime, setActiveEndTime] = useState<string>('22:00')
+  const [minDelay, setMinDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_delay_sec)
+  const [maxDelay, setMaxDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_delay_sec)
+  const [minCooldown, setMinCooldown] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_cooldown_min)
+  const [maxCooldown, setMaxCooldown] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_cooldown_min)
+  const [minTurns, setMinTurns] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_turns)
+  const [maxTurns, setMaxTurns] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_turns)
+  const [minMsgsPerTurn, setMinMsgsPerTurn] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_msgs_per_turn)
+  const [maxMsgsPerTurn, setMaxMsgsPerTurn] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_msgs_per_turn)
+  const [maxDaily, setMaxDaily] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_daily_messages)
+  const [activeStartTime, setActiveStartTime] = useState<string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_start_time)
+  const [activeEndTime, setActiveEndTime] = useState<string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_end_time)
 
   // Fetch connected sessions count
   const { data: sessionsResponse } = useQuery({
@@ -228,6 +243,22 @@ function CrossChatPage() {
       toast.error(getErrorMessage(err))
     },
   })
+
+  // Reset to Default handler
+  const handleResetToDefault = () => {
+    setMinDelay(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_delay_sec)
+    setMaxDelay(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_delay_sec)
+    setMinCooldown(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_cooldown_min)
+    setMaxCooldown(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_cooldown_min)
+    setMinTurns(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_turns)
+    setMaxTurns(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_turns)
+    setMinMsgsPerTurn(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_msgs_per_turn)
+    setMaxMsgsPerTurn(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_msgs_per_turn)
+    setMaxDaily(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_daily_messages)
+    setActiveStartTime(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_start_time)
+    setActiveEndTime(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_end_time)
+    toast.info('Reset configurations to default values. Click Save Configurations to persist.')
+  }
 
   // Send Now Mutation (targeted per pair or global)
   const sendNowMutation = useMutation({
@@ -386,6 +417,16 @@ function CrossChatPage() {
               )}
 
               <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetToDefault}
+                className="h-8 px-3 text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset to Default
+              </Button>
+
+              <Button
                 size="sm"
                 onClick={() => saveConfigMutation.mutate()}
                 disabled={saveConfigMutation.isPending}
@@ -407,7 +448,7 @@ function CrossChatPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={120}
+                  max={1440}
                   value={minCooldown}
                   onChange={(e) => setMinCooldown(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Min"
@@ -417,7 +458,7 @@ function CrossChatPage() {
                 <Input
                   type="number"
                   min={2}
-                  max={240}
+                  max={1440}
                   value={maxCooldown}
                   onChange={(e) => setMaxCooldown(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Max"
@@ -435,8 +476,8 @@ function CrossChatPage() {
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
-                  min={2}
-                  max={10}
+                  min={1}
+                  max={20}
                   value={minTurns}
                   onChange={(e) => setMinTurns(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Min"
@@ -445,8 +486,8 @@ function CrossChatPage() {
                 <span className="text-slate-400 font-semibold text-xs">to</span>
                 <Input
                   type="number"
-                  min={2}
-                  max={15}
+                  min={1}
+                  max={30}
                   value={maxTurns}
                   onChange={(e) => setMaxTurns(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Max"
@@ -464,8 +505,8 @@ function CrossChatPage() {
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
-                  min={5}
-                  max={300}
+                  min={1}
+                  max={1200}
                   value={minDelay}
                   onChange={(e) => setMinDelay(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Min"
@@ -474,8 +515,8 @@ function CrossChatPage() {
                 <span className="text-slate-400 font-semibold text-xs">to</span>
                 <Input
                   type="number"
-                  min={10}
-                  max={600}
+                  min={1}
+                  max={1200}
                   value={maxDelay}
                   onChange={(e) => setMaxDelay(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Max"
@@ -494,7 +535,7 @@ function CrossChatPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={5}
+                  max={10}
                   value={minMsgsPerTurn}
                   onChange={(e) => setMinMsgsPerTurn(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Min"
@@ -504,7 +545,7 @@ function CrossChatPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={5}
+                  max={10}
                   value={maxMsgsPerTurn}
                   onChange={(e) => setMaxMsgsPerTurn(e.target.value === '' ? '' : Number(e.target.value))}
                   placeholder="Max"
