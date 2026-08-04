@@ -41,6 +41,7 @@ import type { Session, MasterPhone, User } from '@/components/admin-sessions/typ
 import { rows, ownerDisplay } from '@/components/admin-sessions/types'
 import { MasterPhonesCard } from '@/components/admin-sessions/components/MasterPhonesCard'
 import { ManageAdminSessionDialog } from '@/components/admin-sessions/components/ManageAdminSessionDialog'
+import { CreateSessionDialog } from '@/components/admin-sessions/components/CreateSessionDialog'
 import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 
 export const Route = createFileRoute('/admin/sessions')({ ssr: false, component: AdminSessionsPage })
@@ -99,6 +100,7 @@ function AdminSessionsPage() {
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null)
   const [qrBase64, setQrBase64] = useState<string | null>(null)
   const [isQrOpen, setIsQrOpen] = useState(false)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const [manageSession, setManageSession] = useState<Session | null>(null)
   const [isManageOpen, setIsManageOpen] = useState(false)
@@ -187,13 +189,15 @@ function AdminSessionsPage() {
   const refreshMasters = () => queryClient.invalidateQueries({ queryKey: ['admin', 'master-phone-numbers'] })
 
   const createSession = useMutation({
-    mutationFn: () => api.post('whatsapp-sessions/').json<Session>(),
+    mutationFn: (payload?: { user?: string; alias?: string }) =>
+      api.post('whatsapp-sessions/', { json: payload || {} }).json<Session>(),
     onSuccess: (session) => {
       refreshSessions()
-      toast.success('Admin WhatsApp session created')
+      setIsCreateOpen(false)
+      toast.success('WhatsApp session created')
       handleScan(session.id)
     },
-    onError: async (err) => toast.error(await getErrorMessage(err, 'Unable to create session. Only super admins can create admin sessions.')),
+    onError: async (err) => toast.error(await getErrorMessage(err, 'Unable to create session.')),
   })
 
   const fetchQr = useMutation({
@@ -280,24 +284,11 @@ function AdminSessionsPage() {
         <p className="text-slate-500 text-sm">
           Manage all merchant & admin WhatsApp sessions, scan QR codes, configure master numbers, and reassign owners.
         </p>
-        <Button onClick={() => createSession.mutate()} disabled={createSession.isPending}>
-          {createSession.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-          New Admin Session
+        <Button onClick={() => setIsCreateOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Session
         </Button>
       </div>
-
-      {/* Master OTP Phones Section */}
-      <MasterPhonesCard
-        masters={masters}
-        mastersLoading={mastersLoading}
-        connectedSessions={connectedSessions}
-        selectedMasterSession={selectedMasterSession}
-        setSelectedMasterSession={setSelectedMasterSession}
-        createMaster={createMaster}
-        toggleMaster={toggleMaster}
-        deleteMaster={deleteMaster}
-        getStatusBadge={getStatusBadge}
-      />
 
       {/* Main Sessions List */}
       <Card>
@@ -660,6 +651,19 @@ function AdminSessionsPage() {
         </CardContent>
       </Card>
 
+      {/* Master OTP Phones Section */}
+      <MasterPhonesCard
+        masters={masters}
+        mastersLoading={mastersLoading}
+        connectedSessions={connectedSessions}
+        selectedMasterSession={selectedMasterSession}
+        setSelectedMasterSession={setSelectedMasterSession}
+        createMaster={createMaster}
+        toggleMaster={toggleMaster}
+        deleteMaster={deleteMaster}
+        getStatusBadge={getStatusBadge}
+      />
+
       {/* QR Code Dialog */}
       <Dialog open={isQrOpen} onOpenChange={setIsQrOpen}>
         <DialogContent className="sm:max-w-md">
@@ -753,6 +757,15 @@ function AdminSessionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Session Dialog */}
+      <CreateSessionDialog
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        users={users}
+        onSubmit={(data) => createSession.mutate(data)}
+        isPending={createSession.isPending}
+      />
 
       {/* Manage Session Dialog */}
       {manageSession && (

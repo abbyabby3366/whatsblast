@@ -44,5 +44,6 @@ export function ownerDisplay(user: Session['user']) {
 export function ownerId(user: Session['user']) {
   if (!user) return ''
   if (typeof user === 'string') return user
-  return user.id
+  const u = user as any
+  return u.id || u._id?.toString() || u._id || ''
 }

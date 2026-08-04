@@ -75,17 +75,22 @@ const createSession = async (req: AuthRequest, res: Response) => {
   const maxInterval = req.body.max_interval_seconds !== undefined ? Number(req.body.max_interval_seconds) : 15;
   const activeStart = req.body.active_start_time || '00:00';
   const activeEnd = req.body.active_end_time || '23:59';
+  const alias = req.body.alias ? String(req.body.alias).trim() : undefined;
+  const targetUserId = (req.body.user || req.body.user_id) && req.user?.role === 'admin'
+    ? (req.body.user || req.body.user_id)
+    : req.user?._id;
 
   let session = await WhatsAppSession.findOne({ session_id: sessionId });
   if (!session) {
     session = await WhatsAppSession.create({
-      user: req.user?._id,
+      user: targetUserId,
       session_id: sessionId,
       max_message_count_per_day: maxMessages,
       min_interval_seconds: minInterval,
       max_interval_seconds: maxInterval,
       active_start_time: activeStart,
       active_end_time: activeEnd,
+      ...(alias ? { alias } : {}),
       status: SessionStatus.STARTING,
     });
   }

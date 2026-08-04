@@ -17,7 +17,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -33,8 +32,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Session, User } from '../types'
+import { ownerId } from '../types'
+import { UserSearchSelect } from './UserSearchSelect'
 
 interface ManageAdminSessionDialogProps {
   isOpen: boolean
@@ -66,9 +66,7 @@ export function ManageAdminSessionDialog({
   const queryClient = useQueryClient()
   const [alias, setAlias] = useState(session.alias || '')
   const [labelsStr, setLabelsStr] = useState(session.labels?.join(', ') || '')
-  const [selectedUser, setSelectedUser] = useState<string>(
-    typeof session.user === 'object' ? session.user?.id || '' : session.user || ''
-  )
+  const [selectedUser, setSelectedUser] = useState<string>(ownerId(session.user))
   const [warmup, setWarmup] = useState(session.warmup_schedule?.join(', ') || '')
   const [maxCount, setMaxCount] = useState<number | ''>(session.max_message_count_per_day ?? 100)
   const [minInterval, setMinInterval] = useState<number>(session.min_interval_seconds ?? 10)
@@ -84,7 +82,7 @@ export function ManageAdminSessionDialog({
     if (isOpen) {
       setAlias(session.alias || '')
       setLabelsStr(session.labels?.join(', ') || '')
-      setSelectedUser(typeof session.user === 'object' ? session.user?.id || '' : session.user || '')
+      setSelectedUser(ownerId(session.user))
       setWarmup(session.warmup_schedule?.join(', ') || '')
       setMaxCount(session.max_message_count_per_day ?? 100)
       setMinInterval(session.min_interval_seconds ?? 10)
@@ -221,20 +219,6 @@ export function ManageAdminSessionDialog({
                 <span className="text-slate-500 font-medium">Phone:</span>
                 <span className="font-mono">{session.phone_number || 'Not connected'}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium flex items-center gap-1">
-                  Phone Active:
-                  <PhoneActiveTooltip />
-                </span>
-                <PhoneActiveIndicator lastPhoneActivityAt={session.last_phone_activity_at} />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium flex items-center gap-1">
-                  Last Message:
-                  <LastSentMessageTooltip />
-                </span>
-                <PhoneActiveIndicator lastPhoneActivityAt={session.last_physical_phone_sent_message_at} emptyLabel="No messages sent" />
-              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -303,18 +287,12 @@ export function ManageAdminSessionDialog({
             <TabsContent value="settings" className="space-y-4 pt-3">
               <div className="space-y-2">
                 <Label>Owner / Merchant Account</Label>
-                <Select value={selectedUser} onValueChange={setSelectedUser}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Assign session owner..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.phone_number || u.id} ({u.role || 'user'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <UserSearchSelect
+                  users={users}
+                  value={selectedUser}
+                  onChange={setSelectedUser}
+                  placeholder="Select owner or merchant..."
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
