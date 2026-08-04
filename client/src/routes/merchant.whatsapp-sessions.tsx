@@ -132,6 +132,21 @@ function SessionsPage() {
     }
   }, [isQrOpen, qrQueryData, sessions, selectedSessionId, queryClient])
 
+  const [isQrInitTimeout, setIsQrInitTimeout] = useState(false)
+
+  useEffect(() => {
+    if (!isQrOpen) {
+      setIsQrInitTimeout(false)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setIsQrInitTimeout(true)
+    }, 10000)
+
+    return () => clearTimeout(timer)
+  }, [isQrOpen, selectedSessionId])
+
   const createSessionMutation = useMutation({
     mutationFn: () => api.post('whatsapp-sessions/').json<any>(),
     onSuccess: (data) => {
@@ -153,12 +168,9 @@ function SessionsPage() {
         toast.success('WhatsApp Session Connected!')
         return
       }
-      if (data.qrBase64) {
-        setQrBase64(data.qrBase64)
-      } else if (data.data?.qrBase64) {
-        setQrBase64(data.data.qrBase64)
-      } else {
-        toast.error('No QR code returned.')
+      const qr = data.qrBase64 || data.qr_code || data.data?.qrBase64
+      if (qr) {
+        setQrBase64(qr)
       }
     },
     onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to fetch QR. Try again.'))
@@ -194,6 +206,7 @@ function SessionsPage() {
   const handleScan = (id: string) => {
     setSelectedSessionId(id)
     setQrBase64(null)
+    setIsQrInitTimeout(false)
     setIsQrOpen(true)
     fetchQrMutation.mutate(id)
   }
@@ -587,10 +600,11 @@ function SessionsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 min-h-[280px]">
-            {fetchQrMutation.isPending ? (
+            {fetchQrMutation.isPending || (!qrBase64 && !isQrInitTimeout) ? (
               <div className="text-center space-y-3">
                 <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
-                <p className="text-xs text-slate-500">Generating QR Code...</p>
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Initializing WhatsApp Session...</p>
+                <p className="text-[11px] text-slate-400">Connecting to WhatsApp, generating QR code, please wait...</p>
               </div>
             ) : qrBase64 ? (
               <div className="flex flex-col items-center space-y-4">
@@ -612,7 +626,10 @@ function SessionsPage() {
               </div>
             ) : (
               <div 
-                onClick={() => selectedSessionId && fetchQrMutation.mutate(selectedSessionId)}
+                onClick={() => {
+                  setIsQrInitTimeout(false)
+                  if (selectedSessionId) fetchQrMutation.mutate(selectedSessionId)
+                }}
                 className="text-center text-red-500 space-y-3 cursor-pointer p-4 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                 title="Failed to connect. Click error message to retry connecting WhatsApp"
               >
