@@ -174,7 +174,7 @@ function SessionsPage() {
   })
 
   const disconnectSessionMutation = useMutation({
-    mutationFn: (id: string) => api.patch(`whatsapp-sessions/${id}/`, { json: { status: 'disconnecting' } }).json(),
+    mutationFn: (id: string) => api.post(`whatsapp-sessions/${id}/logout`).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
       toast.success('Session disconnected')

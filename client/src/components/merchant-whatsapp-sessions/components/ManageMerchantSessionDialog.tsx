@@ -276,7 +276,7 @@ export function ManageMerchantSessionDialog({
                     <RefreshCw className={`h-3.5 w-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
                     Reconnect
                   </DropdownMenuItem>
-                  {(session.status || '').toLowerCase() === 'connected' && (
+                  {(session.status || '').toLowerCase() !== 'disconnected' && (
                     <DropdownMenuItem
                       onClick={() => {
                         onClose()

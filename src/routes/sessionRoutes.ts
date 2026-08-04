@@ -148,7 +148,20 @@ const patchSession = async (req: AuthRequest, res: Response) => {
     active_end_time,
     user: userId,
   } = req.body;
-  if (status) session.status = status;
+  if (status) {
+    session.status = status;
+    if (status === SessionStatus.DISCONNECTED || status === 'disconnecting') {
+      session.status = SessionStatus.DISCONNECTED;
+      session.qr_code = '';
+      const active = getActiveSession(session.session_id);
+      if (active) {
+        try {
+          await active.socket.logout();
+        } catch (_) {}
+        removeActiveSession(session.session_id);
+      }
+    }
+  }
   if (alias !== undefined) session.alias = String(alias).trim();
   if (labels !== undefined) {
     session.labels = Array.isArray(labels)
@@ -211,12 +224,19 @@ const logoutSession = async (req: AuthRequest, res: Response) => {
     return res.status(403).json({ error: 'Unauthorized to logout this session' });
   }
 
+  // 1. Mark session as DISCONNECTED in DB first so connection listener halts auto-reconnection
+  session.status = SessionStatus.DISCONNECTED;
+  session.qr_code = '';
+  await session.save();
+
+  // 2. Clear credentials & active session
   const active = getActiveSession(session.session_id);
   if (active) {
     try {
       await active.clearCreds?.();
       await active.socket.logout();
     } catch (_) {}
+    removeActiveSession(session.session_id);
   } else {
     try {
       const redisAuth = await useRedisAuthState(session.session_id);
@@ -224,19 +244,19 @@ const logoutSession = async (req: AuthRequest, res: Response) => {
     } catch (_) {}
   }
 
-  session.status = SessionStatus.DISCONNECTED;
-  session.qr_code = '';
-  await session.save();
-
+  // 3. Delete session directory on disk if any
   const folder = path.join(SESSIONS_DIR, session.session_id);
   if (fs.existsSync(folder)) {
-    fs.rmSync(folder, { recursive: true, force: true });
+    try {
+      fs.rmSync(folder, { recursive: true, force: true });
+    } catch (_) {}
   }
 
   return res.json({ success: true, message: 'Logged out successfully' });
 };
 
 router.post('/whatsapp-sessions/:id/logout', logoutSession);
+router.post('/whatsapp-sessions/:id/logout/', logoutSession);
 
 // Delete session
 const deleteSession = async (req: AuthRequest, res: Response) => {

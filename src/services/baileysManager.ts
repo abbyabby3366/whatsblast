@@ -223,10 +223,15 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     if (connection === 'close') {
       activeSessions.delete(sessionId);
 
-      // Verify if session still exists in MongoDB
-      const exists = await WhatsAppSession.exists({ session_id: sessionId });
-      if (!exists) {
+      // Verify if session still exists in MongoDB and check status
+      const dbSession = await WhatsAppSession.findOne({ session_id: sessionId });
+      if (!dbSession) {
         console.log(`🛑 Session ${sessionId} was deleted from DB, halting reconnection.`);
+        return;
+      }
+
+      if (dbSession.status === SessionStatus.DISCONNECTED) {
+        console.log(`🛑 Session ${sessionId} status is DISCONNECTED, halting reconnection.`);
         return;
       }
 
@@ -254,7 +259,11 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
           { $set: { status: SessionStatus.STARTING } }
         );
         setTimeout(() => {
-          initWhatsAppSession(sessionId).catch(console.error);
+          WhatsAppSession.findOne({ session_id: sessionId }).then((latest) => {
+            if (latest && latest.status !== SessionStatus.DISCONNECTED) {
+              initWhatsAppSession(sessionId).catch(console.error);
+            }
+          }).catch(console.error);
         }, 3000);
       }
     }

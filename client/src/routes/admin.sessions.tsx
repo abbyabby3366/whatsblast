@@ -201,7 +201,7 @@ function AdminSessionsPage() {
   })
 
   const logoutSession = useMutation({
-    mutationFn: (id: string) => api.post(`whatsapp-sessions/${id}/logout/`).json(),
+    mutationFn: (id: string) => api.post(`whatsapp-sessions/${id}/logout`).json(),
     onSuccess: () => {
       refreshSessions()
       toast.success('Session disconnected')
