@@ -26,6 +26,8 @@ export interface IUser extends Document {
   cross_chat_max_turns?: number;
   cross_chat_min_msgs_per_turn?: number;
   cross_chat_max_msgs_per_turn?: number;
+  cross_chat_active_start_time?: string;
+  cross_chat_active_end_time?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +53,8 @@ const UserSchema = new Schema<IUser>(
     cross_chat_max_turns: { type: Number, default: 5 },
     cross_chat_min_msgs_per_turn: { type: Number, default: 1 },
     cross_chat_max_msgs_per_turn: { type: Number, default: 2 },
+    cross_chat_active_start_time: { type: String, default: '08:00' },
+    cross_chat_active_end_time: { type: String, default: '22:00' },
   },
   { timestamps: true }
 );

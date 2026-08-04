@@ -412,10 +412,11 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     createdAt: { $gte: startOfDay }
   });
 
+  const todayStr = dayjs().format('YYYY-MM-DD');
   const sessionDailyCounts: Record<string, number> = {};
   for (const s of userSessions) {
     const key = s.phone_number || s.session_id;
-    sessionDailyCounts[key] = s.current_message_count || 0;
+    sessionDailyCounts[key] = s.current_day === todayStr ? (s.current_message_count || 0) : 0;
   }
 
   return res.json({
@@ -431,6 +432,8 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     cross_chat_max_turns: user?.cross_chat_max_turns ?? 5,
     cross_chat_min_msgs_per_turn: user?.cross_chat_min_msgs_per_turn ?? 1,
     cross_chat_max_msgs_per_turn: user?.cross_chat_max_msgs_per_turn ?? 2,
+    cross_chat_active_start_time: user?.cross_chat_active_start_time ?? '08:00',
+    cross_chat_active_end_time: user?.cross_chat_active_end_time ?? '22:00',
     next_scheduled_at: nextScheduledAt,
     total_messages_today: totalMessagesToday,
     session_daily_counts: sessionDailyCounts,
@@ -464,6 +467,8 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
     cross_chat_max_turns: user.cross_chat_max_turns ?? 5,
     cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn ?? 1,
     cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn ?? 2,
+    cross_chat_active_start_time: user.cross_chat_active_start_time ?? '08:00',
+    cross_chat_active_end_time: user.cross_chat_active_end_time ?? '22:00',
     active_dialogues: activeDialogues,
   });
 });
@@ -487,6 +492,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_max_turns,
     cross_chat_min_msgs_per_turn,
     cross_chat_max_msgs_per_turn,
+    cross_chat_active_start_time,
+    cross_chat_active_end_time,
   } = req.body;
 
   if (cross_chat_min_delay_sec !== undefined) user.cross_chat_min_delay_sec = Number(cross_chat_min_delay_sec);
@@ -500,6 +507,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (cross_chat_max_turns !== undefined) user.cross_chat_max_turns = Number(cross_chat_max_turns);
   if (cross_chat_min_msgs_per_turn !== undefined) user.cross_chat_min_msgs_per_turn = Number(cross_chat_min_msgs_per_turn);
   if (cross_chat_max_msgs_per_turn !== undefined) user.cross_chat_max_msgs_per_turn = Number(cross_chat_max_msgs_per_turn);
+  if (cross_chat_active_start_time !== undefined) user.cross_chat_active_start_time = String(cross_chat_active_start_time);
+  if (cross_chat_active_end_time !== undefined) user.cross_chat_active_end_time = String(cross_chat_active_end_time);
 
   await user.save();
 

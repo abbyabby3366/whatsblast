@@ -59,17 +59,34 @@ interface CrossChatSettingsResponse {
   cross_chat_max_turns: number
   cross_chat_min_msgs_per_turn: number
   cross_chat_max_msgs_per_turn: number
+  cross_chat_active_start_time?: string
+  cross_chat_active_end_time?: string
   next_scheduled_at?: number
   total_messages_today?: number
   session_daily_counts?: Record<string, number>
   active_dialogues: ActiveDialogueStatus[]
 }
 
+function isTimeInWindow(startTime = '08:00', endTime = '22:00', date = new Date()): boolean {
+  const [startHour, startMin] = (startTime || '08:00').split(':').map(Number)
+  const [endHour, endMin] = (endTime || '22:00').split(':').map(Number)
+
+  const curMinutes = date.getHours() * 60 + date.getMinutes()
+  const startMinutes = (startHour || 0) * 60 + (startMin || 0)
+  const endMinutes = (endHour || 0) * 60 + (endMin || 0)
+
+  if (startMinutes <= endMinutes) {
+    return curMinutes >= startMinutes && curMinutes <= endMinutes
+  } else {
+    return curMinutes >= startMinutes || curMinutes <= endMinutes
+  }
+}
+
 function CrossChatPage() {
   const queryClient = useQueryClient()
   const [nowTs, setNowTs] = useState<number>(Date.now())
 
-  // Form State - All Intervals
+  // Form State - All Intervals & Active Window
   const [minDelay, setMinDelay] = useState<number | string>(12)
   const [maxDelay, setMaxDelay] = useState<number | string>(25)
   const [minCooldown, setMinCooldown] = useState<number | string>(5)
@@ -79,6 +96,8 @@ function CrossChatPage() {
   const [minMsgsPerTurn, setMinMsgsPerTurn] = useState<number | string>(1)
   const [maxMsgsPerTurn, setMaxMsgsPerTurn] = useState<number | string>(2)
   const [maxDaily, setMaxDaily] = useState<number | string>(50)
+  const [activeStartTime, setActiveStartTime] = useState<string>('08:00')
+  const [activeEndTime, setActiveEndTime] = useState<string>('22:00')
 
   // Fetch connected sessions count
   const { data: sessionsResponse } = useQuery({
@@ -125,6 +144,8 @@ function CrossChatPage() {
       if (settingsData.cross_chat_min_msgs_per_turn !== undefined) setMinMsgsPerTurn(settingsData.cross_chat_min_msgs_per_turn)
       if (settingsData.cross_chat_max_msgs_per_turn !== undefined) setMaxMsgsPerTurn(settingsData.cross_chat_max_msgs_per_turn)
       if (settingsData.cross_chat_max_daily_messages !== undefined) setMaxDaily(settingsData.cross_chat_max_daily_messages)
+      if (settingsData.cross_chat_active_start_time !== undefined) setActiveStartTime(settingsData.cross_chat_active_start_time)
+      if (settingsData.cross_chat_active_end_time !== undefined) setActiveEndTime(settingsData.cross_chat_active_end_time)
     }
   }, [settingsData])
 
@@ -134,6 +155,10 @@ function CrossChatPage() {
   const globalNextScheduledAt = settingsData?.next_scheduled_at || (Date.now() + 10000)
   const totalMessagesToday = settingsData?.total_messages_today || 0
   const sessionDailyCounts = settingsData?.session_daily_counts || {}
+
+  const isWindowActive = useMemo(() => {
+    return isTimeInWindow(activeStartTime, activeEndTime, new Date(nowTs))
+  }, [activeStartTime, activeEndTime, nowTs])
 
   // Compute if form has unsaved configuration changes
   const isDirty = useMemo(() => {
@@ -147,7 +172,9 @@ function CrossChatPage() {
       Number(maxTurns) !== settingsData.cross_chat_max_turns ||
       Number(minMsgsPerTurn) !== settingsData.cross_chat_min_msgs_per_turn ||
       Number(maxMsgsPerTurn) !== settingsData.cross_chat_max_msgs_per_turn ||
-      Number(maxDaily) !== settingsData.cross_chat_max_daily_messages
+      Number(maxDaily) !== settingsData.cross_chat_max_daily_messages ||
+      activeStartTime !== (settingsData.cross_chat_active_start_time || '08:00') ||
+      activeEndTime !== (settingsData.cross_chat_active_end_time || '22:00')
     )
   }, [
     settingsData,
@@ -160,6 +187,8 @@ function CrossChatPage() {
     minMsgsPerTurn,
     maxMsgsPerTurn,
     maxDaily,
+    activeStartTime,
+    activeEndTime,
   ])
 
   // Toggle Mutation
@@ -187,6 +216,8 @@ function CrossChatPage() {
         cross_chat_min_msgs_per_turn: Number(minMsgsPerTurn),
         cross_chat_max_msgs_per_turn: Number(maxMsgsPerTurn),
         cross_chat_max_daily_messages: Number(maxDaily),
+        cross_chat_active_start_time: activeStartTime,
+        cross_chat_active_end_time: activeEndTime,
       }
     }).json<any>(),
     onSuccess: () => {
@@ -292,29 +323,49 @@ function CrossChatPage() {
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-6">
 
         {/* Active Participating Sessions Summary Banner */}
-        <div className="bg-emerald-50/70 dark:bg-emerald-950/30 p-4 rounded-xl border border-emerald-200/80 dark:border-emerald-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-200">
+        <div className="bg-slate-50 dark:bg-slate-950/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="h-11 w-11 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-900 shrink-0">
               <Smartphone className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                Active Participating Sessions
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Active Participating Sessions
+                </h3>
+                {!isWindowActive ? (
+                  <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 text-[11px] font-semibold px-2.5 py-0.5">
+                    PAUSED ({activeStartTime} - {activeEndTime})
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-semibold px-2.5 py-0.5">
+                    RUNNING ({activeStartTime} - {activeEndTime})
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Connected WhatsApp accounts participating in automatic cross-chat pairing.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-            <Badge variant="outline" className="bg-white dark:bg-slate-900 border-emerald-300 text-emerald-700 dark:text-emerald-400 px-3.5 py-1.5 text-xs font-extrabold shadow-2xs">
-              {connectedCount} Sessions → {sessionLinks.length} Active Session Links
-            </Badge>
-            <Badge variant="outline" className="bg-emerald-600 text-white border-emerald-700 px-3.5 py-1.5 text-xs font-extrabold shadow-2xs gap-1">
-              <BarChart3 className="w-3.5 h-3.5" />
-              {totalMessagesToday} Messages Today
-            </Badge>
+          <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1.5 text-center shadow-2xs">
+              <div className="text-[10px] uppercase font-bold text-slate-400">Connected Pool</div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white font-mono">
+                {connectedCount} Sessions ({sessionLinks.length} Pairs)
+              </div>
+            </div>
+
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-lg px-3 py-1.5 text-center shadow-2xs">
+              <div className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1">
+                <BarChart3 className="w-3 h-3 text-emerald-600" />
+                Sent Today
+              </div>
+              <div className="text-xs font-extrabold text-emerald-800 dark:text-emerald-300 font-mono">
+                {totalMessagesToday} Messages
+              </div>
+            </div>
           </div>
         </div>
 
@@ -478,6 +529,29 @@ function CrossChatPage() {
               />
               <p className="text-[11px] text-slate-400">Max warmup messages allowed per session per day.</p>
             </div>
+
+            {/* 6. Active Sending Time Window */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Active Sending Time Window (24h)
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="time"
+                  value={activeStartTime}
+                  onChange={(e) => setActiveStartTime(e.target.value)}
+                  className="h-9 text-xs bg-white dark:bg-slate-900 font-mono"
+                />
+                <span className="text-slate-400 font-semibold text-xs">to</span>
+                <Input
+                  type="time"
+                  value={activeEndTime}
+                  onChange={(e) => setActiveEndTime(e.target.value)}
+                  className="h-9 text-xs bg-white dark:bg-slate-900 font-mono"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400">Warmup sessions will only run between these hours (e.g. 08:00 to 22:00).</p>
+            </div>
           </div>
         </div>
 
@@ -577,6 +651,10 @@ function CrossChatPage() {
                                   {currentDialogue.topic}
                                 </div>
                               </div>
+                            ) : !isWindowActive ? (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-800 border border-amber-200">
+                                PAUSED (Outside Active Window)
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-slate-100 text-slate-600 border border-slate-200">
                                 Idle (Next Cycle)
@@ -588,7 +666,7 @@ function CrossChatPage() {
                             <div className="space-y-0.5">
                               <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 w-fit">
                                 <Clock className="w-3 h-3 animate-pulse" />
-                                {getTimeLeftStr(scheduledTime)}
+                                {!isWindowActive ? `Resume at ${activeStartTime}` : getTimeLeftStr(scheduledTime)}
                               </span>
                               <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                                 at {formatClockTime(scheduledTime)}
@@ -599,7 +677,7 @@ function CrossChatPage() {
                           <TableCell className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                             <div className="space-y-0.5">
                               <Badge variant="secondary" className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs gap-1 border border-emerald-200 font-bold">
-                                <BarChart3 className="w-3 h-3 text-emerald-600" />
+                                <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
                                 {countA + countB} / {maxDailyNum * 2} msgs today
                               </Badge>
                               <div className="text-[10px] text-slate-400 font-mono">
@@ -627,7 +705,7 @@ function CrossChatPage() {
                                 session_a_id: link.sessionA.session_id,
                                 session_b_id: link.sessionB.session_id,
                               })}
-                              disabled={sendNowMutation.isPending}
+                              disabled={sendNowMutation.isPending || !isWindowActive}
                             >
                               {sendNowMutation.isPending ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

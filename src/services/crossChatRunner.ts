@@ -223,11 +223,52 @@ async function processCrossChat(): Promise<void> {
   }
 }
 
+export function isCurrentTimeInActiveWindow(startTime = '08:00', endTime = '22:00', targetDate = new Date()): boolean {
+  const [startHour, startMin] = (startTime || '08:00').split(':').map(Number);
+  const [endHour, endMin] = (endTime || '22:00').split(':').map(Number);
+
+  const curMinutes = targetDate.getHours() * 60 + targetDate.getMinutes();
+  const startMinutes = (startHour || 0) * 60 + (startMin || 0);
+  const endMinutes = (endHour || 0) * 60 + (endMin || 0);
+
+  if (startMinutes <= endMinutes) {
+    return curMinutes >= startMinutes && curMinutes <= endMinutes;
+  } else {
+    return curMinutes >= startMinutes || curMinutes <= endMinutes;
+  }
+}
+
+export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endTime = '22:00'): number {
+  const date = new Date(targetMs);
+  if (isCurrentTimeInActiveWindow(startTime, endTime, date)) {
+    return targetMs;
+  }
+
+  const [startHour, startMin] = (startTime || '08:00').split(':').map(Number);
+  const [endHour, endMin] = (endTime || '22:00').split(':').map(Number);
+  const curMinutes = date.getHours() * 60 + date.getMinutes();
+  const endMinutes = (endHour || 0) * 60 + (endMin || 0);
+
+  const nextActive = new Date(targetMs);
+  if (curMinutes > endMinutes) {
+    nextActive.setDate(nextActive.getDate() + 1);
+  }
+  nextActive.setHours(startHour || 8, (startMin || 0) + Math.floor(Math.random() * 5), 0, 0);
+
+  return nextActive.getTime();
+}
+
 function scheduleNextCycleForUser(userId: string, userDoc?: any): number {
   const minMin = userDoc?.cross_chat_min_cooldown_min ?? userDoc?.cross_chat_cooldown_min ?? 5;
   const maxMin = userDoc?.cross_chat_max_cooldown_min ?? 15;
   const randomMin = Math.floor(Math.random() * (Math.max(minMin, maxMin) - Math.min(minMin, maxMin) + 1)) + Math.min(minMin, maxMin);
-  const nextTarget = Date.now() + randomMin * 60 * 1000;
+  let nextTarget = Date.now() + randomMin * 60 * 1000;
+
+  const startTime = userDoc?.cross_chat_active_start_time || '08:00';
+  const endTime = userDoc?.cross_chat_active_end_time || '22:00';
+
+  nextTarget = adjustToActiveWindow(nextTarget, startTime, endTime);
+
   userNextScheduledTimeMap.set(userId, nextTarget);
   return nextTarget;
 }
@@ -272,6 +313,16 @@ export async function forceSendNextTurn(
   sessionAId?: string,
   sessionBId?: string
 ): Promise<{ success: boolean; message: string }> {
+  const user = await User.findById(userId);
+  const startTime = user?.cross_chat_active_start_time || '08:00';
+  const endTime = user?.cross_chat_active_end_time || '22:00';
+
+  if (!isCurrentTimeInActiveWindow(startTime, endTime)) {
+    return {
+      success: false,
+      message: `Cannot send: Current time is outside configured active sending window (${startTime} to ${endTime}).`
+    };
+  }
   if (sessionAId && sessionBId) {
     const existing = Array.from(activeDialogues.values()).find(
       (d) => d.user_id === userId &&
