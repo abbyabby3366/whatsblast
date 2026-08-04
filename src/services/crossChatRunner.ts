@@ -43,6 +43,55 @@ function getRandomDelayMs(minSec = 10, maxSec = 25): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+export async function getRandomWarmupImageUrl(): Promise<string> {
+  const topics = ['nature', 'landscape', 'coffee', 'workspace', 'city', 'architecture', 'minimal', 'travel', 'animals', 'technology'];
+  const topic = topics[Math.floor(Math.random() * topics.length)];
+
+  // 1. Try Unsplash API if access key exists
+  const unsplashKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_API_KEY;
+  if (unsplashKey) {
+    try {
+      const res = await fetch(`https://api.unsplash.com/photos/random?query=${topic}&orientation=landscape`, {
+        headers: { Authorization: `Client-ID ${unsplashKey}` },
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data?.urls?.regular || data?.urls?.small) {
+          return data.urls.regular || data.urls.small;
+        }
+      }
+    } catch (e) {
+      console.warn('[CrossChat] Unsplash API fetch error:', e);
+    }
+  }
+
+  // 2. Try Pexels API if key exists
+  const pexelsKey = process.env.PEXELS_API_KEY;
+  if (pexelsKey) {
+    try {
+      const page = Math.floor(Math.random() * 10) + 1;
+      const res = await fetch(`https://api.pexels.com/v1/search?query=${topic}&per_page=15&page=${page}`, {
+        headers: { Authorization: pexelsKey },
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data?.photos?.length > 0) {
+          const photo = data.photos[Math.floor(Math.random() * data.photos.length)];
+          if (photo?.src?.medium || photo?.src?.original) {
+            return photo.src.medium || photo.src.original;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[CrossChat] Pexels API fetch error:', e);
+    }
+  }
+
+  // 3. Fallback: Picsum Photos dynamic seed URL
+  const seed = Math.floor(Math.random() * 100000);
+  return `https://picsum.photos/seed/${seed}/800/600`;
+}
+
 async function processCrossChat(): Promise<void> {
   if (isRunningCycle) return;
   isRunningCycle = true;
@@ -107,7 +156,31 @@ async function processCrossChat(): Promise<void> {
       const processedText = parseSpintax(turn.text);
 
       try {
-        const sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
+        const sendImagesEnabled = Boolean(userDoc?.cross_chat_send_images_enabled);
+        const imagePercentage = userDoc?.cross_chat_image_percentage ?? 20;
+        const shouldSendImage = sendImagesEnabled && (Math.random() * 100 < imagePercentage);
+
+        let sentMsg: any;
+        let isMediaImage = false;
+        let imageUrlUsed = '';
+
+        if (shouldSendImage) {
+          try {
+            imageUrlUsed = await getRandomWarmupImageUrl();
+            console.log(`📸 [CrossChat] Sending random image (${imageUrlUsed})`);
+            sentMsg = await senderActive.socket.sendMessage(targetJid, {
+              image: { url: imageUrlUsed },
+              caption: processedText,
+            });
+            isMediaImage = true;
+          } catch (imgErr) {
+            console.warn(`[CrossChat] Image send failed, falling back to text:`, imgErr);
+            sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
+          }
+        } else {
+          sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
+        }
+
         const messageId = sentMsg?.key?.id || `cross_${Date.now()}`;
         markSystemSentMessageId(messageId);
 
@@ -122,15 +195,21 @@ async function processCrossChat(): Promise<void> {
           session: senderSessionDoc._id,
           message_id: messageId,
           direction: MessageDirection.OUTBOUND,
-          type: 'text',
+          type: isMediaImage ? 'image' : 'text',
           status: MessageStatus.SENT,
           to_jid: targetJid,
           recipient_phone: cleanPhone || recipientPhone,
-          content: { text: `[Cross-Chat Warmup] ${processedText}` },
+          content: isMediaImage
+            ? { text: `[Cross-Chat Warmup Image] ${processedText}`, file_url: imageUrlUsed }
+            : { text: `[Cross-Chat Warmup] ${processedText}` },
           wa_timestamp: Math.floor(now / 1000),
         });
 
-        console.log(`💬 [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: "${processedText}"`);
+        if (isMediaImage) {
+          console.log(`🖼️ [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: Image (${imageUrlUsed})`);
+        } else {
+          console.log(`💬 [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: "${processedText}"`);
+        }
 
         // Advance to next turn
         dialogue.current_turn_index += 1;

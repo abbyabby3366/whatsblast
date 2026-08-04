@@ -434,6 +434,8 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     cross_chat_max_msgs_per_turn: user?.cross_chat_max_msgs_per_turn ?? 4,
     cross_chat_active_start_time: user?.cross_chat_active_start_time ?? '08:00',
     cross_chat_active_end_time: user?.cross_chat_active_end_time ?? '22:00',
+    cross_chat_send_images_enabled: Boolean(user?.cross_chat_send_images_enabled),
+    cross_chat_image_percentage: user?.cross_chat_image_percentage ?? 20,
     next_scheduled_at: nextScheduledAt,
     total_messages_today: totalMessagesToday,
     session_daily_counts: sessionDailyCounts,
@@ -469,6 +471,8 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
     cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn ?? 4,
     cross_chat_active_start_time: user.cross_chat_active_start_time ?? '08:00',
     cross_chat_active_end_time: user.cross_chat_active_end_time ?? '22:00',
+    cross_chat_send_images_enabled: Boolean(user.cross_chat_send_images_enabled),
+    cross_chat_image_percentage: user.cross_chat_image_percentage ?? 20,
     active_dialogues: activeDialogues,
   });
 });
@@ -494,6 +498,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_max_msgs_per_turn,
     cross_chat_active_start_time,
     cross_chat_active_end_time,
+    cross_chat_send_images_enabled,
+    cross_chat_image_percentage,
   } = req.body;
 
   if (cross_chat_min_delay_sec !== undefined) user.cross_chat_min_delay_sec = Number(cross_chat_min_delay_sec);
@@ -509,6 +515,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (cross_chat_max_msgs_per_turn !== undefined) user.cross_chat_max_msgs_per_turn = Number(cross_chat_max_msgs_per_turn);
   if (cross_chat_active_start_time !== undefined) user.cross_chat_active_start_time = String(cross_chat_active_start_time);
   if (cross_chat_active_end_time !== undefined) user.cross_chat_active_end_time = String(cross_chat_active_end_time);
+  if (cross_chat_send_images_enabled !== undefined) user.cross_chat_send_images_enabled = Boolean(cross_chat_send_images_enabled);
+  if (cross_chat_image_percentage !== undefined) user.cross_chat_image_percentage = Number(cross_chat_image_percentage);
 
   await user.save();
 
@@ -528,6 +536,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_max_turns: user.cross_chat_max_turns,
     cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn,
     cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn,
+    cross_chat_send_images_enabled: user.cross_chat_send_images_enabled,
+    cross_chat_image_percentage: user.cross_chat_image_percentage,
     active_dialogues: activeDialogues,
   });
 });

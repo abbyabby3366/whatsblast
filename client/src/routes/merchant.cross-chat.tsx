@@ -14,7 +14,8 @@ import {
   Sliders,
   Save,
   BarChart3,
-  RotateCcw
+  RotateCcw,
+  Image as ImageIcon
 } from 'lucide-react'
 
 import { api, getErrorMessage } from '@/lib/api'
@@ -62,6 +63,8 @@ interface CrossChatSettingsResponse {
   cross_chat_max_msgs_per_turn: number
   cross_chat_active_start_time?: string
   cross_chat_active_end_time?: string
+  cross_chat_send_images_enabled?: boolean
+  cross_chat_image_percentage?: number
   next_scheduled_at?: number
   total_messages_today?: number
   session_daily_counts?: Record<string, number>
@@ -95,13 +98,15 @@ const DEFAULT_CROSS_CHAT_CONFIGS = {
   cross_chat_max_daily_messages: 50,
   cross_chat_active_start_time: '08:00',
   cross_chat_active_end_time: '22:00',
+  cross_chat_send_images_enabled: false,
+  cross_chat_image_percentage: 20,
 }
 
 function CrossChatPage() {
   const queryClient = useQueryClient()
   const [nowTs, setNowTs] = useState<number>(Date.now())
 
-  // Form State - All Intervals & Active Window
+  // Form State - All Intervals & Active Window & Image Settings
   const [minDelay, setMinDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_delay_sec)
   const [maxDelay, setMaxDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_delay_sec)
   const [minCooldown, setMinCooldown] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_cooldown_min)
@@ -113,6 +118,9 @@ function CrossChatPage() {
   const [maxDaily, setMaxDaily] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_daily_messages)
   const [activeStartTime, setActiveStartTime] = useState<string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_start_time)
   const [activeEndTime, setActiveEndTime] = useState<string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_end_time)
+  const [sendImagesEnabled, setSendImagesEnabled] = useState<boolean>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_send_images_enabled)
+  const [imagePercentage, setImagePercentage] = useState<number>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_image_percentage)
+  const [isFormInitialized, setIsFormInitialized] = useState<boolean>(false)
 
   // Fetch connected sessions count
   const { data: sessionsResponse } = useQuery({
@@ -147,9 +155,9 @@ function CrossChatPage() {
     refetchInterval: 3000,
   })
 
-  // Sync initial settings into form state
+  // Sync initial settings into form state once on initial load
   useEffect(() => {
-    if (settingsData) {
+    if (settingsData && !isFormInitialized) {
       if (settingsData.cross_chat_min_delay_sec !== undefined) setMinDelay(settingsData.cross_chat_min_delay_sec)
       if (settingsData.cross_chat_max_delay_sec !== undefined) setMaxDelay(settingsData.cross_chat_max_delay_sec)
       if (settingsData.cross_chat_min_cooldown_min !== undefined) setMinCooldown(settingsData.cross_chat_min_cooldown_min)
@@ -161,8 +169,11 @@ function CrossChatPage() {
       if (settingsData.cross_chat_max_daily_messages !== undefined) setMaxDaily(settingsData.cross_chat_max_daily_messages)
       if (settingsData.cross_chat_active_start_time !== undefined) setActiveStartTime(settingsData.cross_chat_active_start_time)
       if (settingsData.cross_chat_active_end_time !== undefined) setActiveEndTime(settingsData.cross_chat_active_end_time)
+      if (settingsData.cross_chat_send_images_enabled !== undefined) setSendImagesEnabled(Boolean(settingsData.cross_chat_send_images_enabled))
+      if (settingsData.cross_chat_image_percentage !== undefined) setImagePercentage(settingsData.cross_chat_image_percentage)
+      setIsFormInitialized(true)
     }
-  }, [settingsData])
+  }, [settingsData, isFormInitialized])
 
   const isEnabled = Boolean(settingsData?.cross_chat_enabled)
   const activeDialogues = settingsData?.active_dialogues || []
@@ -189,7 +200,9 @@ function CrossChatPage() {
       Number(maxMsgsPerTurn) !== settingsData.cross_chat_max_msgs_per_turn ||
       Number(maxDaily) !== settingsData.cross_chat_max_daily_messages ||
       activeStartTime !== (settingsData.cross_chat_active_start_time || '08:00') ||
-      activeEndTime !== (settingsData.cross_chat_active_end_time || '22:00')
+      activeEndTime !== (settingsData.cross_chat_active_end_time || '22:00') ||
+      sendImagesEnabled !== Boolean(settingsData.cross_chat_send_images_enabled) ||
+      Number(imagePercentage) !== (settingsData.cross_chat_image_percentage ?? 20)
     )
   }, [
     settingsData,
@@ -204,6 +217,8 @@ function CrossChatPage() {
     maxDaily,
     activeStartTime,
     activeEndTime,
+    sendImagesEnabled,
+    imagePercentage,
   ])
 
   // Toggle Mutation
@@ -233,6 +248,8 @@ function CrossChatPage() {
         cross_chat_max_daily_messages: Number(maxDaily),
         cross_chat_active_start_time: activeStartTime,
         cross_chat_active_end_time: activeEndTime,
+        cross_chat_send_images_enabled: sendImagesEnabled,
+        cross_chat_image_percentage: Number(imagePercentage),
       }
     }).json<any>(),
     onSuccess: () => {
@@ -257,6 +274,8 @@ function CrossChatPage() {
     setMaxDaily(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_daily_messages)
     setActiveStartTime(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_start_time)
     setActiveEndTime(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_end_time)
+    setSendImagesEnabled(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_send_images_enabled)
+    setImagePercentage(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_image_percentage)
     toast.info('Reset configurations to default values. Click Save Configurations to persist.')
   }
 
@@ -592,6 +611,66 @@ function CrossChatPage() {
                 />
               </div>
               <p className="text-[11px] text-slate-400">Warmup sessions will only run between these hours (e.g. 08:00 to 22:00).</p>
+            </div>
+
+            {/* 7. Send Images & Frequency Percentage Slider */}
+            <div className="space-y-2 col-span-1 md:col-span-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl p-4 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800 shrink-0">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 cursor-pointer">
+                      Send Random Stock Images
+                      <Badge variant="outline" className={sendImagesEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600'}>
+                        {sendImagesEnabled ? 'ENABLED' : 'OFF'}
+                      </Badge>
+                    </Label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Randomly sends realistic stock photo media (Unsplash / Pexels API) instead of plain text during warmup turns.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    {sendImagesEnabled ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                  <Switch
+                    checked={sendImagesEnabled}
+                    onCheckedChange={setSendImagesEnabled}
+                  />
+                </div>
+              </div>
+
+              {sendImagesEnabled && (
+                <div className="pt-3 mt-1 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    <span className="flex items-center gap-1.5">
+                      <span>Image Sending Frequency Probability:</span>
+                      <Badge variant="secondary" className="bg-emerald-600 text-white font-mono text-xs font-bold px-2 py-0.5">
+                        {imagePercentage}%
+                      </Badge>
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">({imagePercentage}% Images / {100 - Number(imagePercentage)}% Text)</span>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-1">
+                    <span className="text-[11px] font-bold text-slate-400 font-mono">0%</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={imagePercentage}
+                      onChange={(e) => setImagePercentage(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                    />
+                    <span className="text-[11px] font-bold text-slate-400 font-mono">100%</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
