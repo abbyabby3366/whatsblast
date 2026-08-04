@@ -13,7 +13,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, ChevronsUpDown } from 'lucide-react'
+import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, ChevronsUpDown, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
@@ -61,6 +61,9 @@ function MerchantLayout() {
     }
     if (location.pathname.startsWith('/merchant/whatsapp-sessions')) {
       return 'WhatsApp Sessions'
+    }
+    if (location.pathname.startsWith('/merchant/cross-chat')) {
+      return 'Cross-Chat Warmup'
     }
     if (location.pathname.startsWith('/merchant/profile')) {
       return 'Profile Settings'
@@ -163,6 +166,14 @@ function MerchantLayout() {
                       <Link to="/merchant/whatsapp-sessions" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                         <Smartphone className="w-4 h-4 shrink-0" />
                         <span>WhatsApp Sessions</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton size="lg" asChild>
+                      <Link to="/merchant/cross-chat" activeProps={{ className: 'bg-emerald-50 dark:bg-emerald-950/50 font-semibold text-emerald-600 dark:text-emerald-400' }} className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <Zap className="w-4 h-4 shrink-0 text-emerald-600" />
+                        <span>Cross-Chat Warmup</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

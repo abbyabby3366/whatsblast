@@ -16,6 +16,7 @@ import fileRoutes from './routes/fileRoutes.js';
 
 import { restoreAllSessions } from './services/baileysManager.js';
 import { startBlastRunner } from './services/blastRunner.js';
+import { startCrossChatRunner } from './services/crossChatRunner.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -144,6 +145,7 @@ async function main() {
   await connectDB();
   await restoreAllSessions();
   startBlastRunner();
+  startCrossChatRunner();
 
   const serverDistPath = path.resolve(process.cwd(), 'client/dist/server/server.js');
   if (fs.existsSync(serverDistPath)) {

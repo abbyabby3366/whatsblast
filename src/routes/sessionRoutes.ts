@@ -2,8 +2,12 @@ import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone, IMasterPhone } from '../models/MasterPhone.js';
+import { User } from '../models/User.js';
 import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../services/baileysManager.js';
+import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime } from '../services/crossChatRunner.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
+import { Message } from '../models/Message.js';
+import dayjs from 'dayjs';
 import fs from 'fs';
 import path from 'path';
 
@@ -388,5 +392,149 @@ const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
 };
 
 router.delete('/master-phone-numbers/:id', deleteMasterPhone);
+
+// Cross-Chat Warmup Settings & Control Endpoints
+router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const user = await User.findById(userId);
+  const activeDialogues = getCrossChatStatus(userId.toString());
+  const nextScheduledAt = getUserNextScheduledTime(userId.toString(), user?.cross_chat_min_cooldown_min ?? 5);
+
+  const userSessions = await WhatsAppSession.find({ user: userId });
+  const sessionIds = userSessions.map((s) => s._id);
+
+  const startOfDay = dayjs().startOf('day').toDate();
+  const totalMessagesToday = await Message.countDocuments({
+    session: { $in: sessionIds },
+    'content.text': { $regex: 'Cross-Chat Warmup', $options: 'i' },
+    createdAt: { $gte: startOfDay }
+  });
+
+  const sessionDailyCounts: Record<string, number> = {};
+  for (const s of userSessions) {
+    const key = s.phone_number || s.session_id;
+    sessionDailyCounts[key] = s.current_message_count || 0;
+  }
+
+  return res.json({
+    cross_chat_enabled: Boolean(user?.cross_chat_enabled),
+    cross_chat_min_delay_sec: user?.cross_chat_min_delay_sec ?? 12,
+    cross_chat_max_delay_sec: user?.cross_chat_max_delay_sec ?? 25,
+    cross_chat_cooldown_min: user?.cross_chat_cooldown_min ?? 5,
+    cross_chat_min_cooldown_min: user?.cross_chat_min_cooldown_min ?? 5,
+    cross_chat_max_cooldown_min: user?.cross_chat_max_cooldown_min ?? 15,
+    cross_chat_max_daily_messages: user?.cross_chat_max_daily_messages ?? 50,
+    cross_chat_turns_per_dialogue: user?.cross_chat_turns_per_dialogue ?? 5,
+    cross_chat_min_turns: user?.cross_chat_min_turns ?? 3,
+    cross_chat_max_turns: user?.cross_chat_max_turns ?? 5,
+    cross_chat_min_msgs_per_turn: user?.cross_chat_min_msgs_per_turn ?? 1,
+    cross_chat_max_msgs_per_turn: user?.cross_chat_max_msgs_per_turn ?? 2,
+    next_scheduled_at: nextScheduledAt,
+    total_messages_today: totalMessagesToday,
+    session_daily_counts: sessionDailyCounts,
+    active_dialogues: activeDialogues,
+  });
+});
+
+router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { enabled } = req.body;
+  const user = await User.findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  user.cross_chat_enabled = Boolean(enabled);
+  await user.save();
+
+  const activeDialogues = getCrossChatStatus(userId.toString());
+
+  return res.json({
+    cross_chat_enabled: user.cross_chat_enabled,
+    cross_chat_min_delay_sec: user.cross_chat_min_delay_sec ?? 12,
+    cross_chat_max_delay_sec: user.cross_chat_max_delay_sec ?? 25,
+    cross_chat_cooldown_min: user.cross_chat_cooldown_min ?? 5,
+    cross_chat_min_cooldown_min: user.cross_chat_min_cooldown_min ?? 5,
+    cross_chat_max_cooldown_min: user.cross_chat_max_cooldown_min ?? 15,
+    cross_chat_max_daily_messages: user.cross_chat_max_daily_messages ?? 50,
+    cross_chat_turns_per_dialogue: user.cross_chat_turns_per_dialogue ?? 5,
+    cross_chat_min_turns: user.cross_chat_min_turns ?? 3,
+    cross_chat_max_turns: user.cross_chat_max_turns ?? 5,
+    cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn ?? 1,
+    cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn ?? 2,
+    active_dialogues: activeDialogues,
+  });
+});
+
+router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const user = await User.findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const {
+    cross_chat_min_delay_sec,
+    cross_chat_max_delay_sec,
+    cross_chat_cooldown_min,
+    cross_chat_min_cooldown_min,
+    cross_chat_max_cooldown_min,
+    cross_chat_max_daily_messages,
+    cross_chat_turns_per_dialogue,
+    cross_chat_min_turns,
+    cross_chat_max_turns,
+    cross_chat_min_msgs_per_turn,
+    cross_chat_max_msgs_per_turn,
+  } = req.body;
+
+  if (cross_chat_min_delay_sec !== undefined) user.cross_chat_min_delay_sec = Number(cross_chat_min_delay_sec);
+  if (cross_chat_max_delay_sec !== undefined) user.cross_chat_max_delay_sec = Number(cross_chat_max_delay_sec);
+  if (cross_chat_cooldown_min !== undefined) user.cross_chat_cooldown_min = Number(cross_chat_cooldown_min);
+  if (cross_chat_min_cooldown_min !== undefined) user.cross_chat_min_cooldown_min = Number(cross_chat_min_cooldown_min);
+  if (cross_chat_max_cooldown_min !== undefined) user.cross_chat_max_cooldown_min = Number(cross_chat_max_cooldown_min);
+  if (cross_chat_max_daily_messages !== undefined) user.cross_chat_max_daily_messages = Number(cross_chat_max_daily_messages);
+  if (cross_chat_turns_per_dialogue !== undefined) user.cross_chat_turns_per_dialogue = Number(cross_chat_turns_per_dialogue);
+  if (cross_chat_min_turns !== undefined) user.cross_chat_min_turns = Number(cross_chat_min_turns);
+  if (cross_chat_max_turns !== undefined) user.cross_chat_max_turns = Number(cross_chat_max_turns);
+  if (cross_chat_min_msgs_per_turn !== undefined) user.cross_chat_min_msgs_per_turn = Number(cross_chat_min_msgs_per_turn);
+  if (cross_chat_max_msgs_per_turn !== undefined) user.cross_chat_max_msgs_per_turn = Number(cross_chat_max_msgs_per_turn);
+
+  await user.save();
+
+  const activeDialogues = getCrossChatStatus(userId.toString());
+
+  return res.json({
+    success: true,
+    cross_chat_enabled: user.cross_chat_enabled,
+    cross_chat_min_delay_sec: user.cross_chat_min_delay_sec,
+    cross_chat_max_delay_sec: user.cross_chat_max_delay_sec,
+    cross_chat_cooldown_min: user.cross_chat_cooldown_min,
+    cross_chat_min_cooldown_min: user.cross_chat_min_cooldown_min,
+    cross_chat_max_cooldown_min: user.cross_chat_max_cooldown_min,
+    cross_chat_max_daily_messages: user.cross_chat_max_daily_messages,
+    cross_chat_turns_per_dialogue: user.cross_chat_turns_per_dialogue,
+    cross_chat_min_turns: user.cross_chat_min_turns,
+    cross_chat_max_turns: user.cross_chat_max_turns,
+    cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn,
+    cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn,
+    active_dialogues: activeDialogues,
+  });
+});
+
+router.post('/cross-chat/send-now', async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { session_a_id, session_b_id } = req.body || {};
+  const result = await forceSendNextTurn(userId.toString(), session_a_id, session_b_id);
+  const activeDialogues = getCrossChatStatus(userId.toString());
+
+  return res.json({
+    ...result,
+    active_dialogues: activeDialogues,
+  });
+});
 
 export default router;

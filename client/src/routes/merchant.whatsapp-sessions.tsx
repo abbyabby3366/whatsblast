@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ import {
   Clock,
   Calendar,
   MessageSquare,
+  Zap,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -43,6 +44,7 @@ import {
 
 import { ManageMerchantSessionDialog } from '@/components/merchant-whatsapp-sessions/components/ManageMerchantSessionDialog'
 import { PhoneActiveIndicator, PhoneActiveTooltip, LastSentMessageTooltip } from '@/components/whatsapp-sessions/PhoneActiveIndicator'
+import { CrossChatWarmupDialog } from '@/components/whatsapp-sessions/CrossChatWarmupDialog'
 
 export const Route = createFileRoute('/merchant/whatsapp-sessions')({
   component: SessionsPage,
@@ -238,14 +240,26 @@ function SessionsPage() {
           </p>
         </div>
 
-        <Button 
-          onClick={() => createSessionMutation.mutate()} 
-          disabled={createSessionMutation.isPending}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all h-9 px-3.5 gap-1.5"
-        >
-          {createSessionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-          Add New WhatsApp Session
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link to="/merchant/cross-chat">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/60 text-emerald-700 font-semibold text-xs h-9 px-3 gap-1.5 shadow-2xs transition-all"
+            >
+              <Zap className="w-4 h-4 text-emerald-600 animate-pulse" />
+              <span>Cross-Chat Warmup</span>
+            </Button>
+          </Link>
+          <Button 
+            onClick={() => createSessionMutation.mutate()} 
+            disabled={createSessionMutation.isPending}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all h-9 px-3.5 gap-1.5"
+          >
+            {createSessionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            Add New WhatsApp Session
+          </Button>
+        </div>
       </div>
 
       {/* Stats Summary Bar */}

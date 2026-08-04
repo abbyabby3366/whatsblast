@@ -111,22 +111,26 @@ export async function parseApiError(
   if (err?.response) {
     try {
       const response: Response = err.response;
-      if (typeof response.clone === 'function') {
-        const text = await response.clone().text().catch(() => null);
-        if (text) {
-          try {
-            body = JSON.parse(text);
-          } catch {
-            body = { error: text };
+      if (!response.bodyUsed && typeof response.clone === 'function') {
+        try {
+          const text = await response.clone().text().catch(() => null);
+          if (text) {
+            try {
+              body = JSON.parse(text);
+            } catch {
+              body = { error: text };
+            }
           }
+        } catch {
+          // Body disturbed or already used asynchronously
         }
-      } else if (typeof response.json === 'function') {
+      } else if (!response.bodyUsed && typeof response.json === 'function') {
         body = await response.json().catch(() => null);
       } else if (err.response.data) {
         body = err.response.data;
       }
-    } catch (e) {
-      console.warn('Error reading error response body:', e);
+    } catch {
+      // Ignore response reading errors
     }
   }
 

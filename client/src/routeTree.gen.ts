@@ -23,6 +23,7 @@ import { Route as AdminSessionsRouteImport } from './routes/admin.sessions'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as MerchantIndexRouteImport } from './routes/merchant.index'
 import { Route as MerchantCampaignsRouteImport } from './routes/merchant.campaigns'
+import { Route as MerchantCrossChatRouteImport } from './routes/merchant.cross-chat'
 import { Route as MerchantCustomersRouteImport } from './routes/merchant.customers'
 import { Route as MerchantMessagesRouteImport } from './routes/merchant.messages'
 import { Route as MerchantProfileRouteImport } from './routes/merchant.profile'
@@ -101,6 +102,11 @@ const MerchantCampaignsRoute = MerchantCampaignsRouteImport.update({
   path: '/campaigns',
   getParentRoute: () => MerchantRoute,
 } as any)
+const MerchantCrossChatRoute = MerchantCrossChatRouteImport.update({
+  id: '/cross-chat',
+  path: '/cross-chat',
+  getParentRoute: () => MerchantRoute,
+} as any)
 const MerchantCustomersRoute = MerchantCustomersRouteImport.update({
   id: '/customers',
   path: '/customers',
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/merchant/campaigns': typeof MerchantCampaignsRouteWithChildren
+  '/merchant/cross-chat': typeof MerchantCrossChatRoute
   '/merchant/customers': typeof MerchantCustomersRoute
   '/merchant/messages': typeof MerchantMessagesRoute
   '/merchant/profile': typeof MerchantProfileRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/merchant/cross-chat': typeof MerchantCrossChatRoute
   '/merchant/customers': typeof MerchantCustomersRoute
   '/merchant/messages': typeof MerchantMessagesRoute
   '/merchant/profile': typeof MerchantProfileRoute
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/admin/sessions': typeof AdminSessionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/merchant/campaigns': typeof MerchantCampaignsRouteWithChildren
+  '/merchant/cross-chat': typeof MerchantCrossChatRoute
   '/merchant/customers': typeof MerchantCustomersRoute
   '/merchant/messages': typeof MerchantMessagesRoute
   '/merchant/profile': typeof MerchantProfileRoute
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | '/admin/sessions'
     | '/admin/users'
     | '/merchant/campaigns'
+    | '/merchant/cross-chat'
     | '/merchant/customers'
     | '/merchant/messages'
     | '/merchant/profile'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/admin/messages'
     | '/admin/sessions'
     | '/admin/users'
+    | '/merchant/cross-chat'
     | '/merchant/customers'
     | '/merchant/messages'
     | '/merchant/profile'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/admin/sessions'
     | '/admin/users'
     | '/merchant/campaigns'
+    | '/merchant/cross-chat'
     | '/merchant/customers'
     | '/merchant/messages'
     | '/merchant/profile'
@@ -385,6 +397,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MerchantCampaignsRouteImport
       parentRoute: typeof MerchantRoute
     }
+    '/merchant/cross-chat': {
+      id: '/merchant/cross-chat'
+      path: '/cross-chat'
+      fullPath: '/merchant/cross-chat'
+      preLoaderRoute: typeof MerchantCrossChatRouteImport
+      parentRoute: typeof MerchantRoute
+    }
     '/merchant/customers': {
       id: '/merchant/customers'
       path: '/customers'
@@ -472,6 +491,7 @@ const MerchantCampaignsRouteWithChildren =
 
 interface MerchantRouteChildren {
   MerchantCampaignsRoute: typeof MerchantCampaignsRouteWithChildren
+  MerchantCrossChatRoute: typeof MerchantCrossChatRoute
   MerchantCustomersRoute: typeof MerchantCustomersRoute
   MerchantMessagesRoute: typeof MerchantMessagesRoute
   MerchantProfileRoute: typeof MerchantProfileRoute
@@ -481,6 +501,7 @@ interface MerchantRouteChildren {
 
 const MerchantRouteChildren: MerchantRouteChildren = {
   MerchantCampaignsRoute: MerchantCampaignsRouteWithChildren,
+  MerchantCrossChatRoute: MerchantCrossChatRoute,
   MerchantCustomersRoute: MerchantCustomersRoute,
   MerchantMessagesRoute: MerchantMessagesRoute,
   MerchantProfileRoute: MerchantProfileRoute,
