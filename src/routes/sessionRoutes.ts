@@ -400,7 +400,7 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
 
   const user = await User.findById(userId);
   const activeDialogues = getCrossChatStatus(userId.toString());
-  const nextScheduledAt = getUserNextScheduledTime(userId.toString(), user?.cross_chat_min_cooldown_min ?? 5);
+  const nextScheduledAt = await getUserNextScheduledTime(userId.toString(), user?.cross_chat_min_cooldown_min ?? 5);
 
   const userSessions = await WhatsAppSession.find({ user: userId });
   const sessionIds = userSessions.map((s) => s._id);
@@ -540,8 +540,11 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_max_turns: user.cross_chat_max_turns,
     cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn,
     cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn,
+    cross_chat_active_start_time: user.cross_chat_active_start_time,
+    cross_chat_active_end_time: user.cross_chat_active_end_time,
     cross_chat_send_images_enabled: user.cross_chat_send_images_enabled,
     cross_chat_image_percentage: user.cross_chat_image_percentage,
+    timezone: user.timezone,
     active_dialogues: activeDialogues,
   });
 });

@@ -106,7 +106,7 @@ async function processCrossChat(): Promise<void> {
       const turn = dialogue.script.turns[dialogue.current_turn_index];
       if (!turn) {
         activeDialogues.delete(dialogueId);
-        scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForUser(dialogue.user_id);
         continue;
       }
 
@@ -118,7 +118,7 @@ async function processCrossChat(): Promise<void> {
       if (!senderActive || !senderActive.socket) {
         console.warn(`[CrossChat] Sender session ${senderSessionId} not active. Aborting dialogue.`);
         activeDialogues.delete(dialogueId);
-        scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForUser(dialogue.user_id);
         continue;
       }
 
@@ -126,7 +126,7 @@ async function processCrossChat(): Promise<void> {
       if (!senderSessionDoc || senderSessionDoc.status !== SessionStatus.CONNECTED) {
         console.warn(`[CrossChat] Sender session ${senderSessionId} disconnected in DB.`);
         activeDialogues.delete(dialogueId);
-        scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForUser(dialogue.user_id);
         continue;
       }
 
@@ -146,72 +146,129 @@ async function processCrossChat(): Promise<void> {
       if (senderSessionDoc.current_message_count >= maxDailyMsgs) {
         console.log(`[CrossChat] Session ${senderSessionId} reached configured daily max message limit (${maxDailyMsgs}). Stopping dialogue.`);
         activeDialogues.delete(dialogueId);
-        scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForUser(dialogue.user_id);
         continue;
+      }
+
+      // Group consecutive turns for the same speaker starting at current_turn_index
+      const speaker = turn.speaker;
+      let endIdx = dialogue.current_turn_index;
+      while (
+        endIdx < dialogue.script.turns.length &&
+        dialogue.script.turns[endIdx].speaker === speaker
+      ) {
+        endIdx++;
+      }
+      const consumedTurnsCount = endIdx - dialogue.current_turn_index;
+      const consecutiveTurns = dialogue.script.turns.slice(dialogue.current_turn_index, endIdx);
+
+      // Determine how many bubbles to send based on user config (min/max msgs per turn)
+      const minMsgs = userDoc?.cross_chat_min_msgs_per_turn ?? 1;
+      const maxMsgs = userDoc?.cross_chat_max_msgs_per_turn ?? 2;
+      const targetBubbles = Math.floor(Math.random() * (maxMsgs - minMsgs + 1)) + minMsgs;
+
+      let messagesToSend = consecutiveTurns.map(t => t.text);
+      if (messagesToSend.length < targetBubbles) {
+        // Try splitting the last message text by sentence boundaries (.?! followed by whitespace)
+        const lastMsg = messagesToSend.pop();
+        if (lastMsg) {
+          const sentences = lastMsg.split(/(?<=[.!?])\s+/).filter(Boolean);
+          if (sentences.length > 1) {
+            messagesToSend.push(...sentences);
+          } else {
+            messagesToSend.push(lastMsg);
+          }
+        }
+        if (messagesToSend.length > targetBubbles) {
+          messagesToSend = messagesToSend.slice(0, targetBubbles);
+        }
+      } else if (messagesToSend.length > targetBubbles) {
+        messagesToSend = messagesToSend.slice(0, targetBubbles);
       }
 
       // Format recipient JID
       const { jid, cleanPhone } = await verifyAndFormatJid(senderActive.socket, recipientPhone);
       const targetJid = jid || `${cleanPhone || recipientPhone.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
-      const processedText = parseSpintax(turn.text);
 
       try {
         const sendImagesEnabled = Boolean(userDoc?.cross_chat_send_images_enabled);
         const imagePercentage = userDoc?.cross_chat_image_percentage ?? 20;
-        const shouldSendImage = sendImagesEnabled && (Math.random() * 100 < imagePercentage);
 
-        let sentMsg: any;
-        let isMediaImage = false;
-        let imageUrlUsed = '';
+        for (let i = 0; i < messagesToSend.length; i++) {
+          // Check daily limit for sender session again inside the loop
+          const loopTodayStr = dayjs().format('YYYY-MM-DD');
+          if (senderSessionDoc.current_day !== loopTodayStr) {
+            senderSessionDoc.current_day = loopTodayStr;
+            senderSessionDoc.current_message_count = 0;
+          }
 
-        if (shouldSendImage) {
-          try {
-            imageUrlUsed = await getRandomWarmupImageUrl();
-            console.log(`📸 [CrossChat] Sending random image (${imageUrlUsed})`);
-            sentMsg = await senderActive.socket.sendMessage(targetJid, {
-              image: { url: imageUrlUsed },
-              caption: processedText,
-            });
-            isMediaImage = true;
-          } catch (imgErr) {
-            console.warn(`[CrossChat] Image send failed, falling back to text:`, imgErr);
+          if (senderSessionDoc.current_message_count >= maxDailyMsgs) {
+            console.log(`[CrossChat] Session ${senderSessionId} reached configured daily max message limit (${maxDailyMsgs}) mid-turn. Stopping turn.`);
+            break;
+          }
+
+          const bubbleText = messagesToSend[i];
+          const processedText = parseSpintax(bubbleText);
+          const shouldSendImage = (i === 0) && sendImagesEnabled && (Math.random() * 100 < imagePercentage);
+
+          let sentMsg: any;
+          let isMediaImage = false;
+          let imageUrlUsed = '';
+
+          if (shouldSendImage) {
+            try {
+              imageUrlUsed = await getRandomWarmupImageUrl();
+              console.log(`📸 [CrossChat] Sending random image (${imageUrlUsed})`);
+              sentMsg = await senderActive.socket.sendMessage(targetJid, {
+                image: { url: imageUrlUsed },
+                caption: processedText,
+              });
+              isMediaImage = true;
+            } catch (imgErr) {
+              console.warn(`[CrossChat] Image send failed, falling back to text:`, imgErr);
+              sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
+            }
+          } else {
             sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
           }
-        } else {
-          sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
+
+          const messageId = sentMsg?.key?.id || `cross_${Date.now()}`;
+          markSystemSentMessageId(messageId);
+
+          // Update session stats
+          senderSessionDoc.current_message_count += 1;
+          senderSessionDoc.last_phone_activity_at = new Date();
+          await senderSessionDoc.save();
+
+          // Log message record
+          await Message.create({
+            session: senderSessionDoc._id,
+            message_id: messageId,
+            direction: MessageDirection.OUTBOUND,
+            type: isMediaImage ? 'image' : 'text',
+            status: MessageStatus.SENT,
+            to_jid: targetJid,
+            recipient_phone: cleanPhone || recipientPhone,
+            content: isMediaImage
+              ? { text: `[Cross-Chat Warmup Image] ${processedText}`, file_url: imageUrlUsed }
+              : { text: `[Cross-Chat Warmup] ${processedText}` },
+            wa_timestamp: Math.floor(Date.now() / 1000),
+          });
+
+          if (isMediaImage) {
+            console.log(`🖼️ [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: Image (${imageUrlUsed})`);
+          } else {
+            console.log(`💬 [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: "${processedText}"`);
+          }
+
+          // Delay between consecutive messages in the same turn
+          if (i < messagesToSend.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
         }
 
-        const messageId = sentMsg?.key?.id || `cross_${Date.now()}`;
-        markSystemSentMessageId(messageId);
-
-        // Update session stats
-        senderSessionDoc.current_message_count += 1;
-        senderSessionDoc.last_phone_activity_at = new Date();
-        await senderSessionDoc.save();
-
-        // Log message record
-        await Message.create({
-          session: senderSessionDoc._id,
-          message_id: messageId,
-          direction: MessageDirection.OUTBOUND,
-          type: isMediaImage ? 'image' : 'text',
-          status: MessageStatus.SENT,
-          to_jid: targetJid,
-          recipient_phone: cleanPhone || recipientPhone,
-          content: isMediaImage
-            ? { text: `[Cross-Chat Warmup Image] ${processedText}`, file_url: imageUrlUsed }
-            : { text: `[Cross-Chat Warmup] ${processedText}` },
-          wa_timestamp: Math.floor(now / 1000),
-        });
-
-        if (isMediaImage) {
-          console.log(`🖼️ [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: Image (${imageUrlUsed})`);
-        } else {
-          console.log(`💬 [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: "${processedText}"`);
-        }
-
-        // Advance to next turn
-        dialogue.current_turn_index += 1;
+        // Advance script index by the number of turns consumed
+        dialogue.current_turn_index += consumedTurnsCount;
         const targetTurns = dialogue.target_turns || userDoc?.cross_chat_max_turns || 5;
 
         if (dialogue.current_turn_index < Math.min(dialogue.script.turns.length, targetTurns)) {
@@ -219,12 +276,12 @@ async function processCrossChat(): Promise<void> {
         } else {
           console.log(`✅ [CrossChat] Completed dialogue "${dialogue.script.topic}" (${dialogue.current_turn_index} turns) between ${dialogue.session_a_phone} & ${dialogue.session_b_phone}`);
           activeDialogues.delete(dialogueId);
-          scheduleNextCycleForUser(dialogue.user_id);
+          await scheduleNextCycleForUser(dialogue.user_id, userDoc);
         }
       } catch (err) {
         console.error(`❌ [CrossChat] Failed sending turn from ${senderSessionId}:`, err);
         activeDialogues.delete(dialogueId);
-        scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForUser(dialogue.user_id);
       }
     }
 
@@ -246,7 +303,7 @@ async function processCrossChat(): Promise<void> {
       // Check scheduled target time for this user
       let scheduledTime = userNextScheduledTimeMap.get(userIdStr);
       if (!scheduledTime) {
-        scheduledTime = scheduleNextCycleForUser(userIdStr, user);
+        scheduledTime = await scheduleNextCycleForUser(userIdStr, user);
       }
 
       if (now < scheduledTime) continue;
@@ -358,15 +415,16 @@ export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endT
   return nextActive.getTime();
 }
 
-function scheduleNextCycleForUser(userId: string, userDoc?: any): number {
-  const minMin = userDoc?.cross_chat_min_cooldown_min ?? userDoc?.cross_chat_cooldown_min ?? 5;
-  const maxMin = userDoc?.cross_chat_max_cooldown_min ?? 720;
+async function scheduleNextCycleForUser(userId: string, userDoc?: any): Promise<number> {
+  const doc = userDoc || await User.findById(userId);
+  const minMin = doc?.cross_chat_min_cooldown_min ?? doc?.cross_chat_cooldown_min ?? 5;
+  const maxMin = doc?.cross_chat_max_cooldown_min ?? 720;
   const randomMin = Math.floor(Math.random() * (Math.max(minMin, maxMin) - Math.min(minMin, maxMin) + 1)) + Math.min(minMin, maxMin);
   let nextTarget = Date.now() + randomMin * 60 * 1000;
 
-  const startTime = userDoc?.cross_chat_active_start_time || '08:00';
-  const endTime = userDoc?.cross_chat_active_end_time || '22:00';
-  const timezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
+  const startTime = doc?.cross_chat_active_start_time || '08:00';
+  const endTime = doc?.cross_chat_active_end_time || '22:00';
+  const timezone = doc?.timezone || 'Asia/Kuala_Lumpur';
 
   nextTarget = adjustToActiveWindow(nextTarget, startTime, endTime, timezone);
 
@@ -374,7 +432,7 @@ function scheduleNextCycleForUser(userId: string, userDoc?: any): number {
   return nextTarget;
 }
 
-export function getUserNextScheduledTime(userId: string, minCooldownMin = 5): number {
+export async function getUserNextScheduledTime(userId: string, minCooldownMin = 5): Promise<number> {
   const dialogue = Array.from(activeDialogues.values()).find((d) => d.user_id === userId);
   if (dialogue) {
     return dialogue.next_turn_at;
@@ -382,7 +440,7 @@ export function getUserNextScheduledTime(userId: string, minCooldownMin = 5): nu
 
   let scheduled = userNextScheduledTimeMap.get(userId);
   if (!scheduled || scheduled <= Date.now()) {
-    scheduled = scheduleNextCycleForUser(userId);
+    scheduled = await scheduleNextCycleForUser(userId);
   }
 
   return scheduled;
