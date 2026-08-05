@@ -70,6 +70,7 @@ interface CrossChatSettingsResponse {
   cross_chat_reaction_percentage?: number
   next_scheduled_at?: number
   pair_scheduled_times?: Record<string, number>
+  pair_last_sent_times?: Record<string, number>
   total_messages_today?: number
   session_daily_counts?: Record<string, number>
   active_dialogues: ActiveDialogueStatus[]
@@ -344,6 +345,21 @@ function CrossChatPage() {
   const formatClockTime = (ts?: number) => {
     if (!ts) return ''
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
+
+  // Helper to format time ago string (e.g. 5m ago)
+  const getTimeAgoStr = (targetTs?: number) => {
+    if (!targetTs) return ''
+    const diffMs = nowTs - targetTs
+    if (diffMs < 5000) return 'Just now'
+    const seconds = Math.floor(diffMs / 1000)
+    if (seconds < 60) return `${seconds}s ago`
+    const mins = Math.floor(seconds / 60)
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    return `${days}d ago`
   }
 
   return (
@@ -793,6 +809,7 @@ function CrossChatPage() {
                       <TableHead className="w-8 text-center text-xs text-slate-400">↔</TableHead>
                       <TableHead className="font-bold text-xs">Session B (Phone / Alias)</TableHead>
                       <TableHead className="font-bold text-xs">Status / Active Topic</TableHead>
+                      <TableHead className="font-bold text-xs">Last Sent</TableHead>
                       <TableHead className="font-bold text-xs">Scheduled Send</TableHead>
                       <TableHead className="font-bold text-xs">Total Messages Today</TableHead>
                       <TableHead className="font-bold text-xs">Upcoming Message Preview</TableHead>
@@ -814,6 +831,7 @@ function CrossChatPage() {
                       const pairKey = getCanonicalPairKey(link.sessionA.session_id, link.sessionB.session_id)
                       const pairScheduledTime = settingsData?.pair_scheduled_times?.[pairKey] || globalNextScheduledAt
                       const scheduledTime = isMatch && matchingDialogue ? matchingDialogue.next_turn_at : pairScheduledTime
+                      const lastSentTime = settingsData?.pair_last_sent_times?.[pairKey]
 
                       // Calculate sent count for Session A & B against max limit
                       const countA = sessionDailyCounts[link.sessionA.phone_number] || sessionDailyCounts[link.sessionA.session_id] || 0
@@ -868,6 +886,22 @@ function CrossChatPage() {
                               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-slate-100 text-slate-600 border border-slate-200">
                                 Idle (Next Cycle)
                               </Badge>
+                            )}
+                          </TableCell>
+
+                          <TableCell className="text-xs">
+                            {lastSentTime ? (
+                              <div className="space-y-0.5">
+                                <span className="text-xs font-mono text-slate-700 dark:text-slate-300 font-semibold flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 w-fit">
+                                  <Clock className="w-3 h-3 text-slate-400" />
+                                  {getTimeAgoStr(lastSentTime)}
+                                </span>
+                                <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                  at {formatClockTime(lastSentTime)}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">Never</span>
                             )}
                           </TableCell>
 

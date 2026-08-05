@@ -4,7 +4,7 @@ import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone, IMasterPhone } from '../models/MasterPhone.js';
 import { User } from '../models/User.js';
 import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../services/baileysManager.js';
-import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime, getPairScheduledTimes } from '../services/crossChatRunner.js';
+import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime, getPairScheduledTimes, getPairLastSentTimes } from '../services/crossChatRunner.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
 import { Message } from '../models/Message.js';
 import dayjs from 'dayjs';
@@ -402,6 +402,7 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
   const activeDialogues = getCrossChatStatus(userId.toString());
   const nextScheduledAt = await getUserNextScheduledTime(userId.toString());
   const pairScheduledTimes = await getPairScheduledTimes(userId.toString());
+  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
 
   const userSessions = await WhatsAppSession.find({ user: userId });
   const sessionIds = userSessions.map((s) => s._id);
@@ -442,6 +443,7 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     timezone: user?.timezone || 'Asia/Kuala_Lumpur',
     next_scheduled_at: nextScheduledAt,
     pair_scheduled_times: pairScheduledTimes,
+    pair_last_sent_times: pairLastSentTimes,
     total_messages_today: totalMessagesToday,
     session_daily_counts: sessionDailyCounts,
     active_dialogues: activeDialogues,
@@ -460,6 +462,7 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
   await user.save();
 
   const activeDialogues = getCrossChatStatus(userId.toString());
+  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
 
   return res.json({
     cross_chat_enabled: user.cross_chat_enabled,
@@ -481,6 +484,7 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
     cross_chat_send_reactions_enabled: Boolean(user.cross_chat_send_reactions_enabled),
     cross_chat_reaction_percentage: user.cross_chat_reaction_percentage ?? 20,
     timezone: user.timezone || 'Asia/Kuala_Lumpur',
+    pair_last_sent_times: pairLastSentTimes,
     active_dialogues: activeDialogues,
   });
 });
@@ -535,6 +539,7 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   await user.save();
 
   const activeDialogues = getCrossChatStatus(userId.toString());
+  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
 
   return res.json({
     success: true,
@@ -557,6 +562,7 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_send_reactions_enabled: user.cross_chat_send_reactions_enabled,
     cross_chat_reaction_percentage: user.cross_chat_reaction_percentage,
     timezone: user.timezone,
+    pair_last_sent_times: pairLastSentTimes,
     active_dialogues: activeDialogues,
   });
 });
@@ -568,9 +574,11 @@ router.post('/cross-chat/send-now', async (req: AuthRequest, res: Response) => {
   const { session_a_id, session_b_id } = req.body || {};
   const result = await forceSendNextTurn(userId.toString(), session_a_id, session_b_id);
   const activeDialogues = getCrossChatStatus(userId.toString());
+  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
 
   return res.json({
     ...result,
+    pair_last_sent_times: pairLastSentTimes,
     active_dialogues: activeDialogues,
   });
 });

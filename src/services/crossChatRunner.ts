@@ -24,6 +24,8 @@ let runnerInterval: NodeJS.Timeout | null = null;
 let isRunningCycle = false;
 const userLastInitiatedMap: Map<string, number> = new Map();
 const pairNextScheduledTimeMap: Map<string, number> = new Map(); // Fixed scheduled time per pair ID
+const pairLastSentTimeMap: Map<string, number> = new Map(); // Last sent time per pair ID
+
 
 export function getCanonicalPairKey(idA: string, idB: string): string {
   return [idA, idB].sort().join('_');
@@ -287,6 +289,8 @@ async function processCrossChat(): Promise<void> {
           senderSessionDoc.last_phone_activity_at = new Date();
           await senderSessionDoc.save();
 
+          pairLastSentTimeMap.set(pairKey, Date.now());
+
           // Log message record
           await Message.create({
             session: senderSessionDoc._id,
@@ -529,6 +533,45 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
           scheduled = await scheduleNextCycleForPair(pairKey, userDoc, i + j);
         }
         result[pairKey] = scheduled;
+      }
+    }
+  }
+
+  return result;
+}
+
+export async function getPairLastSentTimes(userId: string): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  const userSessions = await WhatsAppSession.find({
+    user: userId,
+    status: SessionStatus.CONNECTED,
+    phone_number: { $exists: true, $ne: '' },
+  });
+
+  for (let i = 0; i < userSessions.length; i++) {
+    for (let j = i + 1; j < userSessions.length; j++) {
+      const sA = userSessions[i];
+      const sB = userSessions[j];
+      const pairKey = getCanonicalPairKey(sA.session_id, sB.session_id);
+
+      if (pairLastSentTimeMap.has(pairKey)) {
+        result[pairKey] = pairLastSentTimeMap.get(pairKey)!;
+      } else {
+        const cleanA = (sA.phone_number || '').replace(/[^0-9]/g, '');
+        const cleanB = (sB.phone_number || '').replace(/[^0-9]/g, '');
+        const phones = [cleanA, cleanB, sA.phone_number, sB.phone_number].filter(Boolean);
+
+        const latestMsg = await Message.findOne({
+          session: { $in: [sA._id, sB._id] },
+          recipient_phone: { $in: phones },
+          'content.text': { $regex: 'Cross-Chat Warmup', $options: 'i' },
+        }).sort({ createdAt: -1 });
+
+        if (latestMsg && latestMsg.createdAt) {
+          const lastTs = new Date(latestMsg.createdAt).getTime();
+          pairLastSentTimeMap.set(pairKey, lastTs);
+          result[pairKey] = lastTs;
+        }
       }
     }
   }
