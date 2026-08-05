@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
+import dayjs from 'dayjs'
 import { 
   Send, 
   Clock, 
@@ -16,7 +17,8 @@ import {
   BarChart3,
   RotateCcw,
   Image as ImageIcon,
-  Smile
+  Smile,
+  Ban
 } from 'lucide-react'
 
 import { api, getErrorMessage } from '@/lib/api'
@@ -33,6 +35,7 @@ import {
   TableRow, 
   TableCell 
 } from '@/components/ui/table'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 
 export const Route = createFileRoute('/merchant/cross-chat')({
   component: CrossChatPage,
@@ -820,6 +823,8 @@ function CrossChatPage() {
                     {sessionLinks.map((link, index) => {
                       const phoneA = link.sessionA.phone_number || link.sessionA.session_id
                       const phoneB = link.sessionB.phone_number || link.sessionB.session_id
+                      const aliasOrPhoneA = link.sessionA.alias || link.sessionA.phone_number || link.sessionA.session_id
+                      const aliasOrPhoneB = link.sessionB.alias || link.sessionB.phone_number || link.sessionB.session_id
                       
                       // Find if this specific pair has an active running dialogue
                       const matchingDialogue = activeDialogues.find(d =>
@@ -834,12 +839,28 @@ function CrossChatPage() {
                       const lastSentTime = settingsData?.pair_last_sent_times?.[pairKey]
 
                       // Calculate sent count for Session A & B against max limit
-                      const countA = sessionDailyCounts[link.sessionA.phone_number] || sessionDailyCounts[link.sessionA.session_id] || 0
-                      const countB = sessionDailyCounts[link.sessionB.phone_number] || sessionDailyCounts[link.sessionB.session_id] || 0
-                      const maxDailyNum = Number(maxDaily) || 50
+                      const todayStr = dayjs().format('YYYY-MM-DD')
+                      const countA = sessionDailyCounts[link.sessionA.phone_number] ?? sessionDailyCounts[link.sessionA.session_id] ?? (link.sessionA.current_day === todayStr ? link.sessionA.current_message_count || 0 : 0)
+                      const countB = sessionDailyCounts[link.sessionB.phone_number] ?? sessionDailyCounts[link.sessionB.session_id] ?? (link.sessionB.current_day === todayStr ? link.sessionB.current_message_count || 0 : 0)
+
+                      const limitA = link.sessionA.max_message_count_per_day || Number(maxDaily) || 50
+                      const limitB = link.sessionB.max_message_count_per_day || Number(maxDaily) || 50
+
+                      const isAMaxed = countA >= limitA
+                      const isBMaxed = countB >= limitB
+                      const isStoppedDueToLimit = isAMaxed || isBMaxed
+
+                      let stoppedReason = ''
+                      if (isAMaxed && isBMaxed) {
+                        stoppedReason = `Daily message limit reached for both Session A (${aliasOrPhoneA}: ${countA}/${limitA}) and Session B (${aliasOrPhoneB}: ${countB}/${limitB})`
+                      } else if (isAMaxed) {
+                        stoppedReason = `Daily message limit reached for Session A (${aliasOrPhoneA}: ${countA}/${limitA})`
+                      } else if (isBMaxed) {
+                        stoppedReason = `Daily message limit reached for Session B (${aliasOrPhoneB}: ${countB}/${limitB})`
+                      }
 
                       return (
-                        <TableRow key={link.id} className={isMatch ? 'bg-emerald-50/60 dark:bg-emerald-950/20 font-medium' : ''}>
+                        <TableRow key={link.id} className={isMatch ? 'bg-emerald-50/60 dark:bg-emerald-950/20 font-medium' : isStoppedDueToLimit ? 'bg-slate-50/50 dark:bg-slate-950/30' : ''}>
                           <TableCell className="font-mono text-xs text-slate-500">
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700 bg-emerald-50">
                               #{index + 1}
@@ -847,8 +868,13 @@ function CrossChatPage() {
                           </TableCell>
                           
                           <TableCell className="text-xs">
-                            <div className="font-bold text-slate-900 dark:text-white">
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
                               {link.sessionA.alias || link.sessionA.phone_number || link.sessionA.session_id}
+                              {isAMaxed && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-rose-50 text-rose-700 border-rose-200">
+                                  {countA}/{limitA}
+                                </Badge>
+                              )}
                             </div>
                             {link.sessionA.alias && (
                               <span className="text-[10px] text-slate-400 font-mono">{link.sessionA.phone_number}</span>
@@ -860,8 +886,13 @@ function CrossChatPage() {
                           </TableCell>
 
                           <TableCell className="text-xs">
-                            <div className="font-bold text-slate-900 dark:text-white">
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
                               {link.sessionB.alias || link.sessionB.phone_number || link.sessionB.session_id}
+                              {isBMaxed && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-rose-50 text-rose-700 border-rose-200">
+                                  {countB}/{limitB}
+                                </Badge>
+                              )}
                             </div>
                             {link.sessionB.alias && (
                               <span className="text-[10px] text-slate-400 font-mono">{link.sessionB.phone_number}</span>
@@ -878,6 +909,19 @@ function CrossChatPage() {
                                   {matchingDialogue!.topic}
                                 </div>
                               </div>
+                            ) : isStoppedDueToLimit ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 font-bold cursor-help">
+                                      PAUSED (Limit Reached)
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs text-xs font-sans">
+                                    <p>{stoppedReason}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             ) : !isWindowActive ? (
                               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-800 border border-amber-200">
                                 PAUSED (Outside Active Window)
@@ -906,25 +950,46 @@ function CrossChatPage() {
                           </TableCell>
 
                           <TableCell className="text-xs">
-                            <div className="space-y-0.5">
-                              <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 w-fit">
-                                <Clock className="w-3 h-3 animate-pulse" />
-                                {!isWindowActive ? `Resume at ${activeStartTime}` : getTimeLeftStr(scheduledTime)}
-                              </span>
-                              <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                                at {formatClockTime(scheduledTime)}
+                            {isStoppedDueToLimit ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="space-y-0.5 cursor-help">
+                                      <span className="text-xs font-mono text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-800 w-fit">
+                                        <Ban className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                        PAUSED
+                                      </span>
+                                      <div className="text-[10px] font-mono text-amber-600/80 dark:text-amber-400/80 italic">
+                                        Daily Limit Reached
+                                      </div>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs text-xs font-sans">
+                                    <p>{stoppedReason}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 w-fit">
+                                  <Clock className="w-3 h-3 animate-pulse" />
+                                  {!isWindowActive ? `Resume at ${activeStartTime}` : getTimeLeftStr(scheduledTime)}
+                                </span>
+                                <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                  at {formatClockTime(scheduledTime)}
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </TableCell>
 
                           <TableCell className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                             <div className="space-y-0.5">
-                              <Badge variant="secondary" className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs gap-1 border border-emerald-200 font-bold">
-                                <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
-                                {countA + countB} / {maxDailyNum * 2} msgs today
+                              <Badge variant="secondary" className={isStoppedDueToLimit ? "bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 text-xs gap-1 border border-rose-200 font-bold" : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs gap-1 border border-emerald-200 font-bold"}>
+                                <BarChart3 className={isStoppedDueToLimit ? "w-3.5 h-3.5 text-rose-600" : "w-3.5 h-3.5 text-emerald-600"} />
+                                {countA + countB} / {limitA + limitB} msgs today
                               </Badge>
                               <div className="text-[10px] text-slate-400 font-mono">
-                                A: {countA}/{maxDailyNum} | B: {countB}/{maxDailyNum}
+                                A: {countA}/{limitA} | B: {countB}/{limitB}
                               </div>
                             </div>
                           </TableCell>
@@ -934,29 +999,44 @@ function CrossChatPage() {
                               <p className="truncate italic text-slate-700 dark:text-slate-300 font-medium" title={matchingDialogue!.next_message_preview}>
                                 "{matchingDialogue!.next_message_preview}"
                               </p>
+                            ) : isStoppedDueToLimit ? (
+                              <span className="text-amber-600/80 text-[11px] italic">Paused (Daily limit reached)</span>
                             ) : (
                               <span className="text-slate-400 text-[11px] italic">Dynamic spintax script ready</span>
                             )}
                           </TableCell>
 
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant={isMatch ? 'default' : 'outline'}
-                              className={isMatch ? 'bg-emerald-600 hover:bg-emerald-700 h-7 text-xs font-semibold px-2.5 gap-1' : 'h-7 text-xs font-semibold px-2.5 gap-1 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'}
-                              onClick={() => sendNowMutation.mutate({
-                                session_a_id: link.sessionA.session_id,
-                                session_b_id: link.sessionB.session_id,
-                              })}
-                              disabled={sendNowMutation.isPending}
-                            >
-                              {sendNowMutation.isPending ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Send className="h-3.5 w-3.5" />
-                              )}
-                              Send Now
-                            </Button>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Button
+                                      size="sm"
+                                      disabled={sendNowMutation.isPending || isStoppedDueToLimit}
+                                      variant={isMatch ? 'default' : 'outline'}
+                                      className={isMatch ? 'bg-emerald-600 hover:bg-emerald-700 h-7 text-xs font-semibold px-2.5 gap-1' : 'h-7 text-xs font-semibold px-2.5 gap-1 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 disabled:opacity-50'}
+                                      onClick={() => sendNowMutation.mutate({
+                                        session_a_id: link.sessionA.session_id,
+                                        session_b_id: link.sessionB.session_id,
+                                      })}
+                                    >
+                                      {sendNowMutation.isPending ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Send className="h-3.5 w-3.5" />
+                                      )}
+                                      Send Now
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                {isStoppedDueToLimit && (
+                                  <TooltipContent className="max-w-xs text-xs font-sans">
+                                    <p>{stoppedReason}</p>
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                            </TooltipProvider>
                           </TableCell>
                         </TableRow>
                       )

@@ -378,6 +378,17 @@ async function processCrossChat(): Promise<void> {
             continue;
           }
 
+          // Skip if either session has reached daily max message limit
+          const todayStr = dayjs().format('YYYY-MM-DD');
+          const countA = sA.current_day === todayStr ? (sA.current_message_count || 0) : 0;
+          const countB = sB.current_day === todayStr ? (sB.current_message_count || 0) : 0;
+          const maxA = sA.max_message_count_per_day || user.cross_chat_max_daily_messages || 50;
+          const maxB = sB.max_message_count_per_day || user.cross_chat_max_daily_messages || 50;
+
+          if (countA >= maxA || countB >= maxB) {
+            continue;
+          }
+
           const pairKey = getCanonicalPairKey(sA.session_id, sB.session_id);
           let scheduledTime = pairNextScheduledTimeMap.get(pairKey);
           if (!scheduledTime) {
@@ -519,7 +530,9 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
 
   for (let i = 0; i < userSessions.length; i++) {
     for (let j = i + 1; j < userSessions.length; j++) {
-      const pairKey = getCanonicalPairKey(userSessions[i].session_id, userSessions[j].session_id);
+      const sA = userSessions[i];
+      const sB = userSessions[j];
+      const pairKey = getCanonicalPairKey(sA.session_id, sB.session_id);
 
       const activeDialogue = Array.from(activeDialogues.values()).find(
         (d) => d.user_id === userId && getCanonicalPairKey(d.session_a_id, d.session_b_id) === pairKey
@@ -528,11 +541,21 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
       if (activeDialogue) {
         result[pairKey] = activeDialogue.next_turn_at;
       } else {
-        let scheduled = pairNextScheduledTimeMap.get(pairKey);
-        if (!scheduled || scheduled <= Date.now()) {
-          scheduled = await scheduleNextCycleForPair(pairKey, userDoc, i + j);
+        const todayStr = dayjs().format('YYYY-MM-DD');
+        const countA = sA.current_day === todayStr ? (sA.current_message_count || 0) : 0;
+        const countB = sB.current_day === todayStr ? (sB.current_message_count || 0) : 0;
+        const maxA = sA.max_message_count_per_day || userDoc?.cross_chat_max_daily_messages || 50;
+        const maxB = sB.max_message_count_per_day || userDoc?.cross_chat_max_daily_messages || 50;
+
+        if (countA >= maxA || countB >= maxB) {
+          result[pairKey] = 0;
+        } else {
+          let scheduled = pairNextScheduledTimeMap.get(pairKey);
+          if (!scheduled || scheduled <= Date.now()) {
+            scheduled = await scheduleNextCycleForPair(pairKey, userDoc, i + j);
+          }
+          result[pairKey] = scheduled;
         }
-        result[pairKey] = scheduled;
       }
     }
   }
@@ -634,6 +657,24 @@ export async function forceSendNextTurn(
       }
 
       const user = await User.findById(userId);
+      const todayStr = dayjs().format('YYYY-MM-DD');
+      const countA = sessionA.current_day === todayStr ? (sessionA.current_message_count || 0) : 0;
+      const countB = sessionB.current_day === todayStr ? (sessionB.current_message_count || 0) : 0;
+      const maxA = sessionA.max_message_count_per_day || user?.cross_chat_max_daily_messages || 50;
+      const maxB = sessionB.max_message_count_per_day || user?.cross_chat_max_daily_messages || 50;
+
+      if (countA >= maxA || countB >= maxB) {
+        let reason = '';
+        if (countA >= maxA && countB >= maxB) {
+          reason = `Daily limit reached for both Session A (${sessionA.phone_number || 'Session A'}) and Session B (${sessionB.phone_number || 'Session B'})`;
+        } else if (countA >= maxA) {
+          reason = `Daily limit reached for Session A (${sessionA.phone_number || 'Session A'})`;
+        } else {
+          reason = `Daily limit reached for Session B (${sessionB.phone_number || 'Session B'})`;
+        }
+        return { success: false, message: `Cannot start chat: ${reason}` };
+      }
+
       const minTurns = user?.cross_chat_min_turns ?? 3;
       const maxTurns = user?.cross_chat_max_turns ?? 5;
       const targetTurns = Math.floor(Math.random() * (Math.max(minTurns, maxTurns) - Math.min(minTurns, maxTurns) + 1)) + Math.min(minTurns, maxTurns);

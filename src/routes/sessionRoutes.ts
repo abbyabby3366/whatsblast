@@ -394,15 +394,12 @@ const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
 router.delete('/master-phone-numbers/:id', deleteMasterPhone);
 
 // Cross-Chat Warmup Settings & Control Endpoints
-router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
-  const userId = req.user?._id;
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
+async function getCrossChatSettingsPayload(userId: string) {
   const user = await User.findById(userId);
-  const activeDialogues = getCrossChatStatus(userId.toString());
-  const nextScheduledAt = await getUserNextScheduledTime(userId.toString());
-  const pairScheduledTimes = await getPairScheduledTimes(userId.toString());
-  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
+  const activeDialogues = getCrossChatStatus(userId);
+  const nextScheduledAt = await getUserNextScheduledTime(userId);
+  const pairScheduledTimes = await getPairScheduledTimes(userId);
+  const pairLastSentTimes = await getPairLastSentTimes(userId);
 
   const userSessions = await WhatsAppSession.find({ user: userId });
   const sessionIds = userSessions.map((s) => s._id);
@@ -421,7 +418,7 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     sessionDailyCounts[key] = s.current_day === todayStr ? (s.current_message_count || 0) : 0;
   }
 
-  return res.json({
+  return {
     cross_chat_enabled: Boolean(user?.cross_chat_enabled),
     cross_chat_min_delay_sec: user?.cross_chat_min_delay_sec ?? 15,
     cross_chat_max_delay_sec: user?.cross_chat_max_delay_sec ?? 120,
@@ -447,7 +444,15 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     total_messages_today: totalMessagesToday,
     session_daily_counts: sessionDailyCounts,
     active_dialogues: activeDialogues,
-  });
+  };
+}
+
+router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const payload = await getCrossChatSettingsPayload(userId.toString());
+  return res.json(payload);
 });
 
 router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
@@ -461,32 +466,8 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
   user.cross_chat_enabled = Boolean(enabled);
   await user.save();
 
-  const activeDialogues = getCrossChatStatus(userId.toString());
-  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
-
-  return res.json({
-    cross_chat_enabled: user.cross_chat_enabled,
-    cross_chat_min_delay_sec: user.cross_chat_min_delay_sec ?? 15,
-    cross_chat_max_delay_sec: user.cross_chat_max_delay_sec ?? 120,
-    cross_chat_cooldown_min: user.cross_chat_cooldown_min ?? 5,
-    cross_chat_min_cooldown_min: user.cross_chat_min_cooldown_min ?? 5,
-    cross_chat_max_cooldown_min: user.cross_chat_max_cooldown_min ?? 720,
-    cross_chat_max_daily_messages: user.cross_chat_max_daily_messages ?? 50,
-    cross_chat_turns_per_dialogue: user.cross_chat_turns_per_dialogue ?? 5,
-    cross_chat_min_turns: user.cross_chat_min_turns ?? 3,
-    cross_chat_max_turns: user.cross_chat_max_turns ?? 5,
-    cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn ?? 1,
-    cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn ?? 4,
-    cross_chat_active_start_time: user.cross_chat_active_start_time ?? '08:00',
-    cross_chat_active_end_time: user.cross_chat_active_end_time ?? '22:00',
-    cross_chat_send_images_enabled: Boolean(user.cross_chat_send_images_enabled),
-    cross_chat_image_percentage: user.cross_chat_image_percentage ?? 20,
-    cross_chat_send_reactions_enabled: Boolean(user.cross_chat_send_reactions_enabled),
-    cross_chat_reaction_percentage: user.cross_chat_reaction_percentage ?? 20,
-    timezone: user.timezone || 'Asia/Kuala_Lumpur',
-    pair_last_sent_times: pairLastSentTimes,
-    active_dialogues: activeDialogues,
-  });
+  const payload = await getCrossChatSettingsPayload(userId.toString());
+  return res.json(payload);
 });
 
 router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
@@ -538,32 +519,10 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
 
   await user.save();
 
-  const activeDialogues = getCrossChatStatus(userId.toString());
-  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
-
+  const payload = await getCrossChatSettingsPayload(userId.toString());
   return res.json({
     success: true,
-    cross_chat_enabled: user.cross_chat_enabled,
-    cross_chat_min_delay_sec: user.cross_chat_min_delay_sec,
-    cross_chat_max_delay_sec: user.cross_chat_max_delay_sec,
-    cross_chat_cooldown_min: user.cross_chat_cooldown_min,
-    cross_chat_min_cooldown_min: user.cross_chat_min_cooldown_min,
-    cross_chat_max_cooldown_min: user.cross_chat_max_cooldown_min,
-    cross_chat_max_daily_messages: user.cross_chat_max_daily_messages,
-    cross_chat_turns_per_dialogue: user.cross_chat_turns_per_dialogue,
-    cross_chat_min_turns: user.cross_chat_min_turns,
-    cross_chat_max_turns: user.cross_chat_max_turns,
-    cross_chat_min_msgs_per_turn: user.cross_chat_min_msgs_per_turn,
-    cross_chat_max_msgs_per_turn: user.cross_chat_max_msgs_per_turn,
-    cross_chat_active_start_time: user.cross_chat_active_start_time,
-    cross_chat_active_end_time: user.cross_chat_active_end_time,
-    cross_chat_send_images_enabled: user.cross_chat_send_images_enabled,
-    cross_chat_image_percentage: user.cross_chat_image_percentage,
-    cross_chat_send_reactions_enabled: user.cross_chat_send_reactions_enabled,
-    cross_chat_reaction_percentage: user.cross_chat_reaction_percentage,
-    timezone: user.timezone,
-    pair_last_sent_times: pairLastSentTimes,
-    active_dialogues: activeDialogues,
+    ...payload,
   });
 });
 
@@ -573,13 +532,11 @@ router.post('/cross-chat/send-now', async (req: AuthRequest, res: Response) => {
 
   const { session_a_id, session_b_id } = req.body || {};
   const result = await forceSendNextTurn(userId.toString(), session_a_id, session_b_id);
-  const activeDialogues = getCrossChatStatus(userId.toString());
-  const pairLastSentTimes = await getPairLastSentTimes(userId.toString());
+  const payload = await getCrossChatSettingsPayload(userId.toString());
 
   return res.json({
     ...result,
-    pair_last_sent_times: pairLastSentTimes,
-    active_dialogues: activeDialogues,
+    ...payload,
   });
 });
 
