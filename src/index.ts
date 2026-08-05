@@ -26,6 +26,8 @@ import fileRoutes from './routes/fileRoutes.js';
 import { restoreAllSessions } from './services/baileysManager.js';
 import { startBlastRunner } from './services/blastRunner.js';
 import { startCrossChatRunner } from './services/crossChatRunner.js';
+import { sendDeployNotification } from './utils/whatsappNotifier.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -170,7 +172,14 @@ async function main() {
   app.listen(PORT, () => {
     console.log(`\n🚀 WhatsBlast Server listening on port ${PORT}`);
     console.log(`👉 API Base: http://localhost:3000/api`);
+
+    // Send deployment WhatsApp notification
+    if (process.env.NODE_ENV === 'production') {
+      sendDeployNotification('🚀 *WhatsBlast app built & deployed successfully!*');
+    }
+
   });
+
 }
 
 main().catch((err) => {
