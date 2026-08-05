@@ -95,8 +95,8 @@ function isTimeInWindow(startTime = '08:00', endTime = '22:00', date = new Date(
 }
 
 const DEFAULT_CROSS_CHAT_CONFIGS = {
-  cross_chat_min_delay_sec: 25,
-  cross_chat_max_delay_sec: 300,
+  cross_chat_min_delay_sec: 15,
+  cross_chat_max_delay_sec: 120,
   cross_chat_min_cooldown_min: 5,
   cross_chat_max_cooldown_min: 720,
   cross_chat_min_turns: 3,
@@ -565,7 +565,7 @@ function CrossChatPage() {
                   className="h-9 text-xs bg-white dark:bg-slate-900"
                 />
               </div>
-              <p className="text-[11px] text-slate-400">Randomized delay range between back-and-forth replies (e.g. 12 to 25s).</p>
+              <p className="text-[11px] text-slate-400">Randomized delay range between back-and-forth replies (e.g. 15 to 120s).</p>
             </div>
 
             {/* 4. Messages Per Turn Interval */}

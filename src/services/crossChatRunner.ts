@@ -139,8 +139,8 @@ async function processCrossChat(): Promise<void> {
 
       // Fetch user configuration
       const userDoc = await User.findById(dialogue.user_id);
-      const minDelaySec = userDoc?.cross_chat_min_delay_sec ?? 25;
-      const maxDelaySec = userDoc?.cross_chat_max_delay_sec ?? 300;
+      const minDelaySec = userDoc?.cross_chat_min_delay_sec ?? 15;
+      const maxDelaySec = userDoc?.cross_chat_max_delay_sec ?? 120;
       const maxDailyMsgs = userDoc?.cross_chat_max_daily_messages || senderSessionDoc.max_message_count_per_day || 50;
 
       // Check daily limit for sender session

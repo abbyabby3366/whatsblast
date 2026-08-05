@@ -422,8 +422,8 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
 
   return res.json({
     cross_chat_enabled: Boolean(user?.cross_chat_enabled),
-    cross_chat_min_delay_sec: user?.cross_chat_min_delay_sec ?? 25,
-    cross_chat_max_delay_sec: user?.cross_chat_max_delay_sec ?? 300,
+    cross_chat_min_delay_sec: user?.cross_chat_min_delay_sec ?? 15,
+    cross_chat_max_delay_sec: user?.cross_chat_max_delay_sec ?? 120,
     cross_chat_cooldown_min: user?.cross_chat_cooldown_min ?? 5,
     cross_chat_min_cooldown_min: user?.cross_chat_min_cooldown_min ?? 5,
     cross_chat_max_cooldown_min: user?.cross_chat_max_cooldown_min ?? 720,
@@ -463,8 +463,8 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
 
   return res.json({
     cross_chat_enabled: user.cross_chat_enabled,
-    cross_chat_min_delay_sec: user.cross_chat_min_delay_sec ?? 25,
-    cross_chat_max_delay_sec: user.cross_chat_max_delay_sec ?? 300,
+    cross_chat_min_delay_sec: user.cross_chat_min_delay_sec ?? 15,
+    cross_chat_max_delay_sec: user.cross_chat_max_delay_sec ?? 120,
     cross_chat_cooldown_min: user.cross_chat_cooldown_min ?? 5,
     cross_chat_min_cooldown_min: user.cross_chat_min_cooldown_min ?? 5,
     cross_chat_max_cooldown_min: user.cross_chat_max_cooldown_min ?? 720,
