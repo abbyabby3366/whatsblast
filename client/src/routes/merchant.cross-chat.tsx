@@ -188,7 +188,7 @@ function CrossChatPage() {
 
   // Compute if form has unsaved configuration changes
   const isDirty = useMemo(() => {
-    if (!settingsData) return false
+    if (!settingsData || !isFormInitialized) return false
     return (
       Number(minDelay) !== settingsData.cross_chat_min_delay_sec ||
       Number(maxDelay) !== settingsData.cross_chat_max_delay_sec ||
@@ -206,6 +206,7 @@ function CrossChatPage() {
     )
   }, [
     settingsData,
+    isFormInitialized,
     minDelay,
     maxDelay,
     minCooldown,
