@@ -1,4 +1,13 @@
+process.env.TZ = 'Asia/Kuala_Lumpur';
 import 'dotenv/config';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Kuala_Lumpur');
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
