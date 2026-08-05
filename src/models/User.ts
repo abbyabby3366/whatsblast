@@ -30,6 +30,7 @@ export interface IUser extends Document {
   cross_chat_active_end_time?: string;
   cross_chat_send_images_enabled?: boolean;
   cross_chat_image_percentage?: number;
+  timezone?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -59,6 +60,7 @@ const UserSchema = new Schema<IUser>(
     cross_chat_active_end_time: { type: String, default: '22:00' },
     cross_chat_send_images_enabled: { type: Boolean, default: false },
     cross_chat_image_percentage: { type: Number, default: 20 },
+    timezone: { type: String, default: 'Asia/Kuala_Lumpur' },
   },
   { timestamps: true }
 );

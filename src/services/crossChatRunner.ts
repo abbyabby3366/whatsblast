@@ -301,11 +301,23 @@ async function processCrossChat(): Promise<void> {
   }
 }
 
-export function isCurrentTimeInActiveWindow(startTime = '08:00', endTime = '22:00', targetDate = new Date()): boolean {
+export function isCurrentTimeInActiveWindow(startTime = '08:00', endTime = '22:00', targetDate = new Date(), userTimezone = 'Asia/Kuala_Lumpur'): boolean {
   const [startHour, startMin] = (startTime || '08:00').split(':').map(Number);
   const [endHour, endMin] = (endTime || '22:00').split(':').map(Number);
 
-  const curMinutes = targetDate.getHours() * 60 + targetDate.getMinutes();
+  let curMinutes = targetDate.getHours() * 60 + targetDate.getMinutes();
+  if (userTimezone) {
+    try {
+      const timeStr = targetDate.toLocaleTimeString('en-GB', { timeZone: userTimezone, hour: '2-digit', minute: '2-digit', hour12: false });
+      const [h, m] = timeStr.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        curMinutes = h * 60 + m;
+      }
+    } catch (e) {
+      // Fallback to local server time
+    }
+  }
+
   const startMinutes = (startHour || 0) * 60 + (startMin || 0);
   const endMinutes = (endHour || 0) * 60 + (endMin || 0);
 
@@ -316,15 +328,25 @@ export function isCurrentTimeInActiveWindow(startTime = '08:00', endTime = '22:0
   }
 }
 
-export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endTime = '22:00'): number {
+export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endTime = '22:00', userTimezone = 'Asia/Kuala_Lumpur'): number {
   const date = new Date(targetMs);
-  if (isCurrentTimeInActiveWindow(startTime, endTime, date)) {
+  if (isCurrentTimeInActiveWindow(startTime, endTime, date, userTimezone)) {
     return targetMs;
   }
 
   const [startHour, startMin] = (startTime || '08:00').split(':').map(Number);
   const [endHour, endMin] = (endTime || '22:00').split(':').map(Number);
-  const curMinutes = date.getHours() * 60 + date.getMinutes();
+
+  let curMinutes = date.getHours() * 60 + date.getMinutes();
+  if (userTimezone) {
+    try {
+      const timeStr = date.toLocaleTimeString('en-GB', { timeZone: userTimezone, hour: '2-digit', minute: '2-digit', hour12: false });
+      const [h, m] = timeStr.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        curMinutes = h * 60 + m;
+      }
+    } catch (e) {}
+  }
   const endMinutes = (endHour || 0) * 60 + (endMin || 0);
 
   const nextActive = new Date(targetMs);
@@ -344,8 +366,9 @@ function scheduleNextCycleForUser(userId: string, userDoc?: any): number {
 
   const startTime = userDoc?.cross_chat_active_start_time || '08:00';
   const endTime = userDoc?.cross_chat_active_end_time || '22:00';
+  const timezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
 
-  nextTarget = adjustToActiveWindow(nextTarget, startTime, endTime);
+  nextTarget = adjustToActiveWindow(nextTarget, startTime, endTime, timezone);
 
   userNextScheduledTimeMap.set(userId, nextTarget);
   return nextTarget;
@@ -391,16 +414,6 @@ export async function forceSendNextTurn(
   sessionAId?: string,
   sessionBId?: string
 ): Promise<{ success: boolean; message: string }> {
-  const user = await User.findById(userId);
-  const startTime = user?.cross_chat_active_start_time || '08:00';
-  const endTime = user?.cross_chat_active_end_time || '22:00';
-
-  if (!isCurrentTimeInActiveWindow(startTime, endTime)) {
-    return {
-      success: false,
-      message: `Cannot send: Current time is outside configured active sending window (${startTime} to ${endTime}).`
-    };
-  }
   if (sessionAId && sessionBId) {
     const existing = Array.from(activeDialogues.values()).find(
       (d) => d.user_id === userId &&

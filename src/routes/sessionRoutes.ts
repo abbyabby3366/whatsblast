@@ -436,6 +436,7 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time: user?.cross_chat_active_end_time ?? '22:00',
     cross_chat_send_images_enabled: Boolean(user?.cross_chat_send_images_enabled),
     cross_chat_image_percentage: user?.cross_chat_image_percentage ?? 20,
+    timezone: user?.timezone || 'Asia/Kuala_Lumpur',
     next_scheduled_at: nextScheduledAt,
     total_messages_today: totalMessagesToday,
     session_daily_counts: sessionDailyCounts,
@@ -473,6 +474,7 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time: user.cross_chat_active_end_time ?? '22:00',
     cross_chat_send_images_enabled: Boolean(user.cross_chat_send_images_enabled),
     cross_chat_image_percentage: user.cross_chat_image_percentage ?? 20,
+    timezone: user.timezone || 'Asia/Kuala_Lumpur',
     active_dialogues: activeDialogues,
   });
 });
@@ -500,6 +502,7 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time,
     cross_chat_send_images_enabled,
     cross_chat_image_percentage,
+    timezone,
   } = req.body;
 
   if (cross_chat_min_delay_sec !== undefined) user.cross_chat_min_delay_sec = Number(cross_chat_min_delay_sec);
@@ -517,6 +520,7 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (cross_chat_active_end_time !== undefined) user.cross_chat_active_end_time = String(cross_chat_active_end_time);
   if (cross_chat_send_images_enabled !== undefined) user.cross_chat_send_images_enabled = Boolean(cross_chat_send_images_enabled);
   if (cross_chat_image_percentage !== undefined) user.cross_chat_image_percentage = Number(cross_chat_image_percentage);
+  if (timezone !== undefined) user.timezone = String(timezone);
 
   await user.save();
 

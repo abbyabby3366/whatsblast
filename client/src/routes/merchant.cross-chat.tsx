@@ -250,6 +250,7 @@ function CrossChatPage() {
         cross_chat_active_end_time: activeEndTime,
         cross_chat_send_images_enabled: sendImagesEnabled,
         cross_chat_image_percentage: Number(imagePercentage),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }
     }).json<any>(),
     onSuccess: () => {
@@ -825,7 +826,7 @@ function CrossChatPage() {
                                 session_a_id: link.sessionA.session_id,
                                 session_b_id: link.sessionB.session_id,
                               })}
-                              disabled={sendNowMutation.isPending || !isWindowActive}
+                              disabled={sendNowMutation.isPending}
                             >
                               {sendNowMutation.isPending ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
