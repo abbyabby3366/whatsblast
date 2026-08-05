@@ -15,7 +15,8 @@ import {
   Save,
   BarChart3,
   RotateCcw,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Smile
 } from 'lucide-react'
 
 import { api, getErrorMessage } from '@/lib/api'
@@ -65,6 +66,8 @@ interface CrossChatSettingsResponse {
   cross_chat_active_end_time?: string
   cross_chat_send_images_enabled?: boolean
   cross_chat_image_percentage?: number
+  cross_chat_send_reactions_enabled?: boolean
+  cross_chat_reaction_percentage?: number
   next_scheduled_at?: number
   pair_scheduled_times?: Record<string, number>
   total_messages_today?: number
@@ -105,13 +108,15 @@ const DEFAULT_CROSS_CHAT_CONFIGS = {
   cross_chat_active_end_time: '22:00',
   cross_chat_send_images_enabled: false,
   cross_chat_image_percentage: 20,
+  cross_chat_send_reactions_enabled: false,
+  cross_chat_reaction_percentage: 20,
 }
 
 function CrossChatPage() {
   const queryClient = useQueryClient()
   const [nowTs, setNowTs] = useState<number>(Date.now())
 
-  // Form State - All Intervals & Active Window & Image Settings
+  // Form State - All Intervals & Active Window & Image & Reaction Settings
   const [minDelay, setMinDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_delay_sec)
   const [maxDelay, setMaxDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_delay_sec)
   const [minCooldown, setMinCooldown] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_cooldown_min)
@@ -125,6 +130,8 @@ function CrossChatPage() {
   const [activeEndTime, setActiveEndTime] = useState<string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_end_time)
   const [sendImagesEnabled, setSendImagesEnabled] = useState<boolean>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_send_images_enabled)
   const [imagePercentage, setImagePercentage] = useState<number>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_image_percentage)
+  const [sendReactionsEnabled, setSendReactionsEnabled] = useState<boolean>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_send_reactions_enabled)
+  const [reactionPercentage, setReactionPercentage] = useState<number>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_reaction_percentage)
   const [isFormInitialized, setIsFormInitialized] = useState<boolean>(false)
 
   // Fetch connected sessions count
@@ -176,13 +183,14 @@ function CrossChatPage() {
       if (settingsData.cross_chat_active_end_time !== undefined) setActiveEndTime(settingsData.cross_chat_active_end_time)
       if (settingsData.cross_chat_send_images_enabled !== undefined) setSendImagesEnabled(Boolean(settingsData.cross_chat_send_images_enabled))
       if (settingsData.cross_chat_image_percentage !== undefined) setImagePercentage(settingsData.cross_chat_image_percentage)
+      if (settingsData.cross_chat_send_reactions_enabled !== undefined) setSendReactionsEnabled(Boolean(settingsData.cross_chat_send_reactions_enabled))
+      if (settingsData.cross_chat_reaction_percentage !== undefined) setReactionPercentage(settingsData.cross_chat_reaction_percentage)
       setIsFormInitialized(true)
     }
   }, [settingsData, isFormInitialized])
 
   const isEnabled = Boolean(settingsData?.cross_chat_enabled)
   const activeDialogues = settingsData?.active_dialogues || []
-  const currentDialogue = activeDialogues[0]
   const globalNextScheduledAt = settingsData?.next_scheduled_at || (Date.now() + 10000)
   const totalMessagesToday = settingsData?.total_messages_today || 0
   const sessionDailyCounts = settingsData?.session_daily_counts || {}
@@ -207,7 +215,9 @@ function CrossChatPage() {
       activeStartTime !== (settingsData.cross_chat_active_start_time || '08:00') ||
       activeEndTime !== (settingsData.cross_chat_active_end_time || '22:00') ||
       sendImagesEnabled !== Boolean(settingsData.cross_chat_send_images_enabled) ||
-      Number(imagePercentage) !== (settingsData.cross_chat_image_percentage ?? 20)
+      Number(imagePercentage) !== (settingsData.cross_chat_image_percentage ?? 20) ||
+      sendReactionsEnabled !== Boolean(settingsData.cross_chat_send_reactions_enabled) ||
+      Number(reactionPercentage) !== (settingsData.cross_chat_reaction_percentage ?? 20)
     )
   }, [
     settingsData,
@@ -225,6 +235,8 @@ function CrossChatPage() {
     activeEndTime,
     sendImagesEnabled,
     imagePercentage,
+    sendReactionsEnabled,
+    reactionPercentage,
   ])
 
   // Toggle Mutation
@@ -256,6 +268,8 @@ function CrossChatPage() {
         cross_chat_active_end_time: activeEndTime,
         cross_chat_send_images_enabled: sendImagesEnabled,
         cross_chat_image_percentage: Number(imagePercentage),
+        cross_chat_send_reactions_enabled: sendReactionsEnabled,
+        cross_chat_reaction_percentage: Number(reactionPercentage),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }
     }).json<any>(),
@@ -283,6 +297,8 @@ function CrossChatPage() {
     setActiveEndTime(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_active_end_time)
     setSendImagesEnabled(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_send_images_enabled)
     setImagePercentage(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_image_percentage)
+    setSendReactionsEnabled(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_send_reactions_enabled)
+    setReactionPercentage(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_reaction_percentage)
     toast.info('Reset configurations to default values. Click Save Configurations to persist.')
   }
 
@@ -620,64 +636,127 @@ function CrossChatPage() {
               <p className="text-[11px] text-slate-400">Warmup sessions will only run between these hours (e.g. 08:00 to 22:00).</p>
             </div>
 
-            {/* 7. Send Images & Frequency Percentage Slider */}
-            <div className="space-y-2 col-span-1 md:col-span-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl p-4 shadow-2xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800 shrink-0">
-                    <ImageIcon className="w-4 h-4" />
+            {/* 7. Media & Interaction Toggles (2-Column Grid) */}
+            <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Send Stock Images Card */}
+              <div className="space-y-2 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl p-4 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800 shrink-0">
+                      <ImageIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 cursor-pointer">
+                        Send Random Stock Images
+                        <Badge variant="outline" className={sendImagesEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600'}>
+                          {sendImagesEnabled ? 'ENABLED' : 'OFF'}
+                        </Badge>
+                      </Label>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Randomly sends realistic stock photo media (Unsplash / Pexels API) instead of plain text during warmup turns.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 cursor-pointer">
-                      Send Random Stock Images
-                      <Badge variant="outline" className={sendImagesEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600'}>
-                        {sendImagesEnabled ? 'ENABLED' : 'OFF'}
-                      </Badge>
-                    </Label>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Randomly sends realistic stock photo media (Unsplash / Pexels API) instead of plain text during warmup turns.
-                    </p>
+
+                  <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      {sendImagesEnabled ? 'ENABLED' : 'DISABLED'}
+                    </span>
+                    <Switch
+                      checked={sendImagesEnabled}
+                      onCheckedChange={setSendImagesEnabled}
+                    />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                    {sendImagesEnabled ? 'ENABLED' : 'DISABLED'}
-                  </span>
-                  <Switch
-                    checked={sendImagesEnabled}
-                    onCheckedChange={setSendImagesEnabled}
-                  />
-                </div>
+                {sendImagesEnabled && (
+                  <div className="pt-3 mt-1 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      <span className="flex items-center gap-1.5">
+                        <span>Image Sending Frequency Probability:</span>
+                        <Badge variant="secondary" className="bg-emerald-600 text-white font-mono text-xs font-bold px-2 py-0.5">
+                          {imagePercentage}%
+                        </Badge>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">({imagePercentage}% Images / {100 - Number(imagePercentage)}% Text)</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-1">
+                      <span className="text-[11px] font-bold text-slate-400 font-mono">0%</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={imagePercentage}
+                        onChange={(e) => setImagePercentage(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                      />
+                      <span className="text-[11px] font-bold text-slate-400 font-mono">100%</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {sendImagesEnabled && (
-                <div className="pt-3 mt-1 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    <span className="flex items-center gap-1.5">
-                      <span>Image Sending Frequency Probability:</span>
-                      <Badge variant="secondary" className="bg-emerald-600 text-white font-mono text-xs font-bold px-2 py-0.5">
-                        {imagePercentage}%
-                      </Badge>
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-mono">({imagePercentage}% Images / {100 - Number(imagePercentage)}% Text)</span>
+              {/* Send Reaction Card */}
+              <div className="space-y-2 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl p-4 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800 shrink-0">
+                      <Smile className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 cursor-pointer">
+                        Send Reaction
+                        <Badge variant="outline" className={sendReactionsEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600'}>
+                          {sendReactionsEnabled ? 'ENABLED' : 'OFF'}
+                        </Badge>
+                      </Label>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Randomly reacts with emoji to messages sent in the opposing sender's last turn.
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 pt-1">
-                    <span className="text-[11px] font-bold text-slate-400 font-mono">0%</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={imagePercentage}
-                      onChange={(e) => setImagePercentage(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                  <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      {sendReactionsEnabled ? 'ENABLED' : 'DISABLED'}
+                    </span>
+                    <Switch
+                      checked={sendReactionsEnabled}
+                      onCheckedChange={setSendReactionsEnabled}
                     />
-                    <span className="text-[11px] font-bold text-slate-400 font-mono">100%</span>
                   </div>
                 </div>
-              )}
+
+                {sendReactionsEnabled && (
+                  <div className="pt-3 mt-1 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      <span className="flex items-center gap-1.5">
+                        <span>Reaction Sending Frequency Probability:</span>
+                        <Badge variant="secondary" className="bg-emerald-600 text-white font-mono text-xs font-bold px-2 py-0.5">
+                          {reactionPercentage}%
+                        </Badge>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">({reactionPercentage}% React / {100 - Number(reactionPercentage)}% Skip)</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-1">
+                      <span className="text-[11px] font-bold text-slate-400 font-mono">0%</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={reactionPercentage}
+                        onChange={(e) => setReactionPercentage(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                      />
+                      <span className="text-[11px] font-bold text-slate-400 font-mono">100%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -725,15 +804,16 @@ function CrossChatPage() {
                       const phoneA = link.sessionA.phone_number || link.sessionA.session_id
                       const phoneB = link.sessionB.phone_number || link.sessionB.session_id
                       
-                      // Check if this pair is currently running in currentDialogue
-                      const isMatch = currentDialogue && (
-                        (currentDialogue.sender_phone === phoneA && currentDialogue.recipient_phone === phoneB) ||
-                        (currentDialogue.sender_phone === phoneB && currentDialogue.recipient_phone === phoneA)
+                      // Find if this specific pair has an active running dialogue
+                      const matchingDialogue = activeDialogues.find(d =>
+                        (d.sender_phone === phoneA && d.recipient_phone === phoneB) ||
+                        (d.sender_phone === phoneB && d.recipient_phone === phoneA)
                       )
+                      const isMatch = Boolean(matchingDialogue)
 
                       const pairKey = getCanonicalPairKey(link.sessionA.session_id, link.sessionB.session_id)
                       const pairScheduledTime = settingsData?.pair_scheduled_times?.[pairKey] || globalNextScheduledAt
-                      const scheduledTime = isMatch ? currentDialogue.next_turn_at : pairScheduledTime
+                      const scheduledTime = isMatch && matchingDialogue ? matchingDialogue.next_turn_at : pairScheduledTime
 
                       // Calculate sent count for Session A & B against max limit
                       const countA = sessionDailyCounts[link.sessionA.phone_number] || sessionDailyCounts[link.sessionA.session_id] || 0
@@ -774,10 +854,10 @@ function CrossChatPage() {
                             {isMatch ? (
                               <div className="space-y-0.5">
                                 <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0">
-                                  RUNNING (Turn {currentDialogue.current_turn_index + 1}/{currentDialogue.total_turns})
+                                  RUNNING (Turn {matchingDialogue!.current_turn_index + 1}/{matchingDialogue!.total_turns})
                                 </Badge>
                                 <div className="text-[11px] text-slate-700 dark:text-slate-300 font-semibold truncate max-w-[150px]">
-                                  {currentDialogue.topic}
+                                  {matchingDialogue!.topic}
                                 </div>
                               </div>
                             ) : !isWindowActive ? (
@@ -817,8 +897,8 @@ function CrossChatPage() {
 
                           <TableCell className="text-xs max-w-[200px]">
                             {isMatch ? (
-                              <p className="truncate italic text-slate-700 dark:text-slate-300 font-medium" title={currentDialogue.next_message_preview}>
-                                "{currentDialogue.next_message_preview}"
+                              <p className="truncate italic text-slate-700 dark:text-slate-300 font-medium" title={matchingDialogue!.next_message_preview}>
+                                "{matchingDialogue!.next_message_preview}"
                               </p>
                             ) : (
                               <span className="text-slate-400 text-[11px] italic">Dynamic spintax script ready</span>

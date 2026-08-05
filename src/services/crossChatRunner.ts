@@ -16,6 +16,7 @@ interface ActiveDialogue {
   current_turn_index: number;
   target_turns?: number;
   next_turn_at: number;
+  last_turn_sent_messages?: Array<{ key: any }>;
 }
 
 const activeDialogues: Map<string, ActiveDialogue> = new Map();
@@ -198,6 +199,44 @@ async function processCrossChat(): Promise<void> {
       try {
         const sendImagesEnabled = Boolean(userDoc?.cross_chat_send_images_enabled);
         const imagePercentage = userDoc?.cross_chat_image_percentage ?? 20;
+        const sendReactionsEnabled = Boolean(userDoc?.cross_chat_send_reactions_enabled);
+        const reactionPercentage = userDoc?.cross_chat_reaction_percentage ?? 20;
+
+        // Process reactions to opposing sender's previous turn messages
+        if (sendReactionsEnabled && dialogue.last_turn_sent_messages && dialogue.last_turn_sent_messages.length > 0) {
+          const reactionEmojis = ['👍', '❤️', '😂', '😮', '🔥', '🙏', '👏'];
+          let reactionsSentCount = 0;
+
+          for (const prevMsg of dialogue.last_turn_sent_messages) {
+            if (prevMsg?.key && Math.random() * 100 < reactionPercentage) {
+              try {
+                const emoji = reactionEmojis[Math.floor(Math.random() * reactionEmojis.length)];
+                const reactionKey = {
+                  ...prevMsg.key,
+                  remoteJid: targetJid,
+                  fromMe: false,
+                };
+                const reactMsg: any = await senderActive.socket.sendMessage(targetJid, {
+                  react: { text: emoji, key: reactionKey },
+                });
+                const reactId = reactMsg?.key?.id || `react_${Date.now()}`;
+                markSystemSentMessageId(reactId);
+                reactionsSentCount++;
+
+                console.log(`😍 [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} reacted "${emoji}" to opposing message`);
+              } catch (reactErr) {
+                console.warn(`[CrossChat] Failed sending reaction:`, reactErr);
+              }
+            }
+          }
+
+          if (reactionsSentCount > 0) {
+            // Small delay (1-2 seconds) after sending reactions before sending text bubbles
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+        }
+
+        const currentTurnSentMessages: Array<{ key: any }> = [];
 
         for (let i = 0; i < messagesToSend.length; i++) {
           const loopTodayStr = dayjs().format('YYYY-MM-DD');
@@ -236,6 +275,10 @@ async function processCrossChat(): Promise<void> {
             sentMsg = await senderActive.socket.sendMessage(targetJid, { text: processedText });
           }
 
+          if (sentMsg?.key) {
+            currentTurnSentMessages.push({ key: sentMsg.key });
+          }
+
           const messageId = sentMsg?.key?.id || `cross_${Date.now()}`;
           markSystemSentMessageId(messageId);
 
@@ -268,6 +311,11 @@ async function processCrossChat(): Promise<void> {
           if (i < messagesToSend.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 1500));
           }
+        }
+
+        // Save last turn sent messages for reaction matching in the next speaker's turn
+        if (currentTurnSentMessages.length > 0) {
+          dialogue.last_turn_sent_messages = currentTurnSentMessages;
         }
 
         // Advance script index

@@ -437,6 +437,8 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time: user?.cross_chat_active_end_time ?? '22:00',
     cross_chat_send_images_enabled: Boolean(user?.cross_chat_send_images_enabled),
     cross_chat_image_percentage: user?.cross_chat_image_percentage ?? 20,
+    cross_chat_send_reactions_enabled: Boolean(user?.cross_chat_send_reactions_enabled),
+    cross_chat_reaction_percentage: user?.cross_chat_reaction_percentage ?? 20,
     timezone: user?.timezone || 'Asia/Kuala_Lumpur',
     next_scheduled_at: nextScheduledAt,
     pair_scheduled_times: pairScheduledTimes,
@@ -476,6 +478,8 @@ router.post('/cross-chat/toggle', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time: user.cross_chat_active_end_time ?? '22:00',
     cross_chat_send_images_enabled: Boolean(user.cross_chat_send_images_enabled),
     cross_chat_image_percentage: user.cross_chat_image_percentage ?? 20,
+    cross_chat_send_reactions_enabled: Boolean(user.cross_chat_send_reactions_enabled),
+    cross_chat_reaction_percentage: user.cross_chat_reaction_percentage ?? 20,
     timezone: user.timezone || 'Asia/Kuala_Lumpur',
     active_dialogues: activeDialogues,
   });
@@ -504,6 +508,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time,
     cross_chat_send_images_enabled,
     cross_chat_image_percentage,
+    cross_chat_send_reactions_enabled,
+    cross_chat_reaction_percentage,
     timezone,
   } = req.body;
 
@@ -522,6 +528,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (cross_chat_active_end_time !== undefined) user.cross_chat_active_end_time = String(cross_chat_active_end_time);
   if (cross_chat_send_images_enabled !== undefined) user.cross_chat_send_images_enabled = Boolean(cross_chat_send_images_enabled);
   if (cross_chat_image_percentage !== undefined) user.cross_chat_image_percentage = Number(cross_chat_image_percentage);
+  if (cross_chat_send_reactions_enabled !== undefined) user.cross_chat_send_reactions_enabled = Boolean(cross_chat_send_reactions_enabled);
+  if (cross_chat_reaction_percentage !== undefined) user.cross_chat_reaction_percentage = Number(cross_chat_reaction_percentage);
   if (timezone !== undefined) user.timezone = String(timezone);
 
   await user.save();
@@ -546,6 +554,8 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
     cross_chat_active_end_time: user.cross_chat_active_end_time,
     cross_chat_send_images_enabled: user.cross_chat_send_images_enabled,
     cross_chat_image_percentage: user.cross_chat_image_percentage,
+    cross_chat_send_reactions_enabled: user.cross_chat_send_reactions_enabled,
+    cross_chat_reaction_percentage: user.cross_chat_reaction_percentage,
     timezone: user.timezone,
     active_dialogues: activeDialogues,
   });
