@@ -74,7 +74,6 @@ router.get('/whatsapp-sessions', getSessions);
 // Create WhatsApp Session
 const createSession = async (req: AuthRequest, res: Response) => {
   const sessionId = req.body.session_id || `session_${Date.now()}`;
-  const maxMessages = req.body.max_message_count_per_day || 50;
   const minInterval = req.body.min_interval_seconds !== undefined ? Number(req.body.min_interval_seconds) : 10;
   const maxInterval = req.body.max_interval_seconds !== undefined ? Number(req.body.max_interval_seconds) : 15;
   const activeStart = req.body.active_start_time || '00:00';
@@ -83,6 +82,13 @@ const createSession = async (req: AuthRequest, res: Response) => {
   const targetUserId = (req.body.user || req.body.user_id) && req.user?.role === 'admin'
     ? (req.body.user || req.body.user_id)
     : req.user?._id;
+
+  // Use user's cross_chat_max_daily_messages as the default for new sessions
+  let maxMessages = req.body.max_message_count_per_day;
+  if (!maxMessages) {
+    const ownerUser = await User.findById(targetUserId);
+    maxMessages = ownerUser?.cross_chat_max_daily_messages || 50;
+  }
 
   let session = await WhatsAppSession.findOne({ session_id: sessionId });
   if (!session) {
@@ -503,7 +509,14 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (cross_chat_cooldown_min !== undefined) user.cross_chat_cooldown_min = Number(cross_chat_cooldown_min);
   if (cross_chat_min_cooldown_min !== undefined) user.cross_chat_min_cooldown_min = Number(cross_chat_min_cooldown_min);
   if (cross_chat_max_cooldown_min !== undefined) user.cross_chat_max_cooldown_min = Number(cross_chat_max_cooldown_min);
-  if (cross_chat_max_daily_messages !== undefined) user.cross_chat_max_daily_messages = Number(cross_chat_max_daily_messages);
+  if (cross_chat_max_daily_messages !== undefined) {
+    const newMaxDaily = Number(cross_chat_max_daily_messages);
+    user.cross_chat_max_daily_messages = newMaxDaily;
+    await WhatsAppSession.updateMany(
+      { user: user._id },
+      { $set: { max_message_count_per_day: newMaxDaily } }
+    );
+  }
   if (cross_chat_turns_per_dialogue !== undefined) user.cross_chat_turns_per_dialogue = Number(cross_chat_turns_per_dialogue);
   if (cross_chat_min_turns !== undefined) user.cross_chat_min_turns = Number(cross_chat_min_turns);
   if (cross_chat_max_turns !== undefined) user.cross_chat_max_turns = Number(cross_chat_max_turns);

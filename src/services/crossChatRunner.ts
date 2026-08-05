@@ -382,8 +382,8 @@ async function processCrossChat(): Promise<void> {
           const todayStr = dayjs().format('YYYY-MM-DD');
           const countA = sA.current_day === todayStr ? (sA.current_message_count || 0) : 0;
           const countB = sB.current_day === todayStr ? (sB.current_message_count || 0) : 0;
-          const maxA = sA.max_message_count_per_day || user.cross_chat_max_daily_messages || 50;
-          const maxB = sB.max_message_count_per_day || user.cross_chat_max_daily_messages || 50;
+          const maxA = user.cross_chat_max_daily_messages || sA.max_message_count_per_day || 50;
+          const maxB = user.cross_chat_max_daily_messages || sB.max_message_count_per_day || 50;
 
           if (countA >= maxA || countB >= maxB) {
             continue;
@@ -544,8 +544,8 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
         const todayStr = dayjs().format('YYYY-MM-DD');
         const countA = sA.current_day === todayStr ? (sA.current_message_count || 0) : 0;
         const countB = sB.current_day === todayStr ? (sB.current_message_count || 0) : 0;
-        const maxA = sA.max_message_count_per_day || userDoc?.cross_chat_max_daily_messages || 50;
-        const maxB = sB.max_message_count_per_day || userDoc?.cross_chat_max_daily_messages || 50;
+        const maxA = userDoc?.cross_chat_max_daily_messages || sA.max_message_count_per_day || 50;
+        const maxB = userDoc?.cross_chat_max_daily_messages || sB.max_message_count_per_day || 50;
 
         if (countA >= maxA || countB >= maxB) {
           result[pairKey] = 0;
@@ -660,8 +660,8 @@ export async function forceSendNextTurn(
       const todayStr = dayjs().format('YYYY-MM-DD');
       const countA = sessionA.current_day === todayStr ? (sessionA.current_message_count || 0) : 0;
       const countB = sessionB.current_day === todayStr ? (sessionB.current_message_count || 0) : 0;
-      const maxA = sessionA.max_message_count_per_day || user?.cross_chat_max_daily_messages || 50;
-      const maxB = sessionB.max_message_count_per_day || user?.cross_chat_max_daily_messages || 50;
+      const maxA = user?.cross_chat_max_daily_messages || sessionA.max_message_count_per_day || 50;
+      const maxB = user?.cross_chat_max_daily_messages || sessionB.max_message_count_per_day || 50;
 
       if (countA >= maxA || countB >= maxB) {
         let reason = '';

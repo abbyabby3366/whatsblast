@@ -843,8 +843,8 @@ function CrossChatPage() {
                       const countA = sessionDailyCounts[link.sessionA.phone_number] ?? sessionDailyCounts[link.sessionA.session_id] ?? (link.sessionA.current_day === todayStr ? link.sessionA.current_message_count || 0 : 0)
                       const countB = sessionDailyCounts[link.sessionB.phone_number] ?? sessionDailyCounts[link.sessionB.session_id] ?? (link.sessionB.current_day === todayStr ? link.sessionB.current_message_count || 0 : 0)
 
-                      const limitA = link.sessionA.max_message_count_per_day || Number(maxDaily) || 50
-                      const limitB = link.sessionB.max_message_count_per_day || Number(maxDaily) || 50
+                      const limitA = Number(maxDaily) || link.sessionA.max_message_count_per_day || 50
+                      const limitB = Number(maxDaily) || link.sessionB.max_message_count_per_day || 50
 
                       const isAMaxed = countA >= limitA
                       const isBMaxed = countB >= limitB
