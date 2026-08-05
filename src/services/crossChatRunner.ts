@@ -22,7 +22,11 @@ const activeDialogues: Map<string, ActiveDialogue> = new Map();
 let runnerInterval: NodeJS.Timeout | null = null;
 let isRunningCycle = false;
 const userLastInitiatedMap: Map<string, number> = new Map();
-const userNextScheduledTimeMap: Map<string, number> = new Map(); // Fixed scheduled time for next cycle per user
+const pairNextScheduledTimeMap: Map<string, number> = new Map(); // Fixed scheduled time per pair ID
+
+export function getCanonicalPairKey(idA: string, idB: string): string {
+  return [idA, idB].sort().join('_');
+}
 
 export function startCrossChatRunner(intervalMs = 8000): void {
   if (runnerInterval) return;
@@ -104,9 +108,11 @@ async function processCrossChat(): Promise<void> {
       if (now < dialogue.next_turn_at) continue;
 
       const turn = dialogue.script.turns[dialogue.current_turn_index];
+      const pairKey = getCanonicalPairKey(dialogue.session_a_id, dialogue.session_b_id);
+
       if (!turn) {
         activeDialogues.delete(dialogueId);
-        await scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForPair(pairKey);
         continue;
       }
 
@@ -118,7 +124,7 @@ async function processCrossChat(): Promise<void> {
       if (!senderActive || !senderActive.socket) {
         console.warn(`[CrossChat] Sender session ${senderSessionId} not active. Aborting dialogue.`);
         activeDialogues.delete(dialogueId);
-        await scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForPair(pairKey);
         continue;
       }
 
@@ -126,7 +132,7 @@ async function processCrossChat(): Promise<void> {
       if (!senderSessionDoc || senderSessionDoc.status !== SessionStatus.CONNECTED) {
         console.warn(`[CrossChat] Sender session ${senderSessionId} disconnected in DB.`);
         activeDialogues.delete(dialogueId);
-        await scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForPair(pairKey);
         continue;
       }
 
@@ -146,7 +152,7 @@ async function processCrossChat(): Promise<void> {
       if (senderSessionDoc.current_message_count >= maxDailyMsgs) {
         console.log(`[CrossChat] Session ${senderSessionId} reached configured daily max message limit (${maxDailyMsgs}). Stopping dialogue.`);
         activeDialogues.delete(dialogueId);
-        await scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForPair(pairKey, userDoc);
         continue;
       }
 
@@ -169,7 +175,6 @@ async function processCrossChat(): Promise<void> {
 
       let messagesToSend = consecutiveTurns.map(t => t.text);
       if (messagesToSend.length < targetBubbles) {
-        // Try splitting the last message text by sentence boundaries (.?! followed by whitespace)
         const lastMsg = messagesToSend.pop();
         if (lastMsg) {
           const sentences = lastMsg.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -195,7 +200,6 @@ async function processCrossChat(): Promise<void> {
         const imagePercentage = userDoc?.cross_chat_image_percentage ?? 20;
 
         for (let i = 0; i < messagesToSend.length; i++) {
-          // Check daily limit for sender session again inside the loop
           const loopTodayStr = dayjs().format('YYYY-MM-DD');
           if (senderSessionDoc.current_day !== loopTodayStr) {
             senderSessionDoc.current_day = loopTodayStr;
@@ -261,13 +265,12 @@ async function processCrossChat(): Promise<void> {
             console.log(`💬 [CrossChat] ${senderSessionDoc.phone_number || senderSessionId} -> ${recipientPhone}: "${processedText}"`);
           }
 
-          // Delay between consecutive messages in the same turn
           if (i < messagesToSend.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 1500));
           }
         }
 
-        // Advance script index by the number of turns consumed
+        // Advance script index
         dialogue.current_turn_index += consumedTurnsCount;
         const targetTurns = dialogue.target_turns || userDoc?.cross_chat_max_turns || 5;
 
@@ -276,37 +279,20 @@ async function processCrossChat(): Promise<void> {
         } else {
           console.log(`✅ [CrossChat] Completed dialogue "${dialogue.script.topic}" (${dialogue.current_turn_index} turns) between ${dialogue.session_a_phone} & ${dialogue.session_b_phone}`);
           activeDialogues.delete(dialogueId);
-          await scheduleNextCycleForUser(dialogue.user_id, userDoc);
+          await scheduleNextCycleForPair(pairKey, userDoc);
         }
       } catch (err) {
         console.error(`❌ [CrossChat] Failed sending turn from ${senderSessionId}:`, err);
         activeDialogues.delete(dialogueId);
-        await scheduleNextCycleForUser(dialogue.user_id);
+        await scheduleNextCycleForPair(pairKey);
       }
     }
 
-    // Step 2: Check for users with Cross-Chat enabled and start new dialogues
+    // Step 2: Check for users with Cross-Chat enabled and start new dialogues per pair schedule
     const enabledUsers = await User.find({ cross_chat_enabled: true });
 
     for (const user of enabledUsers) {
       const userIdStr = user._id.toString();
-
-      // Check how many active dialogues this user currently has
-      let userActiveCount = 0;
-      for (const d of activeDialogues.values()) {
-        if (d.user_id === userIdStr) userActiveCount++;
-      }
-
-      // Limit to 1 active dialogue per user at a time
-      if (userActiveCount >= 1) continue;
-
-      // Check scheduled target time for this user
-      let scheduledTime = userNextScheduledTimeMap.get(userIdStr);
-      if (!scheduledTime) {
-        scheduledTime = await scheduleNextCycleForUser(userIdStr, user);
-      }
-
-      if (now < scheduledTime) continue;
 
       // Fetch active connected sessions for this user with phone numbers
       const connectedSessions = await WhatsAppSession.find({
@@ -317,14 +303,50 @@ async function processCrossChat(): Promise<void> {
 
       if (connectedSessions.length < 2) continue;
 
-      // Pick 2 random sessions
-      const shuffled = [...connectedSessions].sort(() => Math.random() - 0.5);
-      const sessionA = shuffled[0];
-      const sessionB = shuffled[1];
+      // Identify sessions currently engaged in active dialogues
+      const busySessionIds = new Set<string>();
+      for (const d of activeDialogues.values()) {
+        if (d.user_id === userIdStr) {
+          busySessionIds.add(d.session_a_id);
+          busySessionIds.add(d.session_b_id);
+        }
+      }
+
+      // Collect eligible candidate pairs whose scheduled send time has passed
+      const candidatePairs: { sessionA: any; sessionB: any; pairKey: string; scheduledTime: number }[] = [];
+      let staggerIdx = 0;
+
+      for (let i = 0; i < connectedSessions.length; i++) {
+        for (let j = i + 1; j < connectedSessions.length; j++) {
+          const sA = connectedSessions[i];
+          const sB = connectedSessions[j];
+
+          // Skip if either session is busy in an ongoing dialogue
+          if (busySessionIds.has(sA.session_id) || busySessionIds.has(sB.session_id)) {
+            continue;
+          }
+
+          const pairKey = getCanonicalPairKey(sA.session_id, sB.session_id);
+          let scheduledTime = pairNextScheduledTimeMap.get(pairKey);
+          if (!scheduledTime) {
+            scheduledTime = await scheduleNextCycleForPair(pairKey, user, staggerIdx++);
+          }
+
+          if (now >= scheduledTime) {
+            candidatePairs.push({ sessionA: sA, sessionB: sB, pairKey, scheduledTime });
+          }
+        }
+      }
+
+      if (candidatePairs.length === 0) continue;
+
+      // Sort candidate pairs by scheduledTime ascending (most overdue first)
+      candidatePairs.sort((a, b) => a.scheduledTime - b.scheduledTime);
+      const chosen = candidatePairs[0];
 
       // Ensure both sockets are available in memory
-      const activeA = getActiveSession(sessionA.session_id);
-      const activeB = getActiveSession(sessionB.session_id);
+      const activeA = getActiveSession(chosen.sessionA.session_id);
+      const activeB = getActiveSession(chosen.sessionB.session_id);
       if (!activeA || !activeB) continue;
 
       const script = getRandomScript();
@@ -337,19 +359,18 @@ async function processCrossChat(): Promise<void> {
       activeDialogues.set(dialogueId, {
         id: dialogueId,
         user_id: userIdStr,
-        session_a_id: sessionA.session_id,
-        session_a_phone: sessionA.phone_number || '',
-        session_b_id: sessionB.session_id,
-        session_b_phone: sessionB.phone_number || '',
+        session_a_id: chosen.sessionA.session_id,
+        session_a_phone: chosen.sessionA.phone_number || '',
+        session_b_id: chosen.sessionB.session_id,
+        session_b_phone: chosen.sessionB.phone_number || '',
         script,
         current_turn_index: 0,
         target_turns: targetTurns,
-        next_turn_at: Date.now() + 3000, // start first turn in 3s
+        next_turn_at: Date.now() + 3000,
       });
 
       userLastInitiatedMap.set(userIdStr, now);
-      userNextScheduledTimeMap.delete(userIdStr);
-      console.log(`🚀 [CrossChat] Started new warmup dialogue "${script.topic}" between ${sessionA.phone_number} & ${sessionB.phone_number}`);
+      console.log(`🚀 [CrossChat] Started new warmup dialogue "${script.topic}" between ${chosen.sessionA.phone_number} & ${chosen.sessionB.phone_number}`);
     }
   } catch (err) {
     console.error('Error in processCrossChat:', err);
@@ -415,12 +436,16 @@ export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endT
   return nextActive.getTime();
 }
 
-async function scheduleNextCycleForUser(userId: string, userDoc?: any): Promise<number> {
-  const doc = userDoc || await User.findById(userId);
+async function scheduleNextCycleForPair(pairKey: string, userDoc?: any, staggerIndex = 0): Promise<number> {
+  const doc = userDoc;
   const minMin = doc?.cross_chat_min_cooldown_min ?? doc?.cross_chat_cooldown_min ?? 5;
   const maxMin = doc?.cross_chat_max_cooldown_min ?? 720;
   const randomMin = Math.floor(Math.random() * (Math.max(minMin, maxMin) - Math.min(minMin, maxMin) + 1)) + Math.min(minMin, maxMin);
-  let nextTarget = Date.now() + randomMin * 60 * 1000;
+
+  // Stagger each pair when initializing multiple candidate pairs
+  const staggerOffsetMin = staggerIndex * (Math.floor(Math.random() * 3) + 2);
+  const totalOffsetMs = (randomMin + staggerOffsetMin) * 60 * 1000;
+  let nextTarget = Date.now() + totalOffsetMs;
 
   const startTime = doc?.cross_chat_active_start_time || '08:00';
   const endTime = doc?.cross_chat_active_end_time || '22:00';
@@ -428,22 +453,50 @@ async function scheduleNextCycleForUser(userId: string, userDoc?: any): Promise<
 
   nextTarget = adjustToActiveWindow(nextTarget, startTime, endTime, timezone);
 
-  userNextScheduledTimeMap.set(userId, nextTarget);
+  pairNextScheduledTimeMap.set(pairKey, nextTarget);
   return nextTarget;
 }
 
-export async function getUserNextScheduledTime(userId: string, minCooldownMin = 5): Promise<number> {
-  const dialogue = Array.from(activeDialogues.values()).find((d) => d.user_id === userId);
-  if (dialogue) {
-    return dialogue.next_turn_at;
+export async function getPairScheduledTimes(userId: string): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  const userSessions = await WhatsAppSession.find({
+    user: userId,
+    status: SessionStatus.CONNECTED,
+    phone_number: { $exists: true, $ne: '' },
+  });
+
+  const userDoc = await User.findById(userId);
+
+  for (let i = 0; i < userSessions.length; i++) {
+    for (let j = i + 1; j < userSessions.length; j++) {
+      const pairKey = getCanonicalPairKey(userSessions[i].session_id, userSessions[j].session_id);
+
+      const activeDialogue = Array.from(activeDialogues.values()).find(
+        (d) => d.user_id === userId && getCanonicalPairKey(d.session_a_id, d.session_b_id) === pairKey
+      );
+
+      if (activeDialogue) {
+        result[pairKey] = activeDialogue.next_turn_at;
+      } else {
+        let scheduled = pairNextScheduledTimeMap.get(pairKey);
+        if (!scheduled || scheduled <= Date.now()) {
+          scheduled = await scheduleNextCycleForPair(pairKey, userDoc, i + j);
+        }
+        result[pairKey] = scheduled;
+      }
+    }
   }
 
-  let scheduled = userNextScheduledTimeMap.get(userId);
-  if (!scheduled || scheduled <= Date.now()) {
-    scheduled = await scheduleNextCycleForUser(userId);
-  }
+  return result;
+}
 
-  return scheduled;
+export async function getUserNextScheduledTime(userId: string): Promise<number> {
+  const pairTimes = await getPairScheduledTimes(userId);
+  const times = Object.values(pairTimes);
+  if (times.length > 0) {
+    return Math.min(...times);
+  }
+  return Date.now() + 5 * 60 * 1000;
 }
 
 export function getCrossChatStatus(userId: string) {

@@ -66,9 +66,14 @@ interface CrossChatSettingsResponse {
   cross_chat_send_images_enabled?: boolean
   cross_chat_image_percentage?: number
   next_scheduled_at?: number
+  pair_scheduled_times?: Record<string, number>
   total_messages_today?: number
   session_daily_counts?: Record<string, number>
   active_dialogues: ActiveDialogueStatus[]
+}
+
+function getCanonicalPairKey(idA: string, idB: string): string {
+  return [idA, idB].sort().join('_')
 }
 
 function isTimeInWindow(startTime = '08:00', endTime = '22:00', date = new Date()): boolean {
@@ -726,7 +731,9 @@ function CrossChatPage() {
                         (currentDialogue.sender_phone === phoneB && currentDialogue.recipient_phone === phoneA)
                       )
 
-                      const scheduledTime = isMatch ? currentDialogue.next_turn_at : globalNextScheduledAt
+                      const pairKey = getCanonicalPairKey(link.sessionA.session_id, link.sessionB.session_id)
+                      const pairScheduledTime = settingsData?.pair_scheduled_times?.[pairKey] || globalNextScheduledAt
+                      const scheduledTime = isMatch ? currentDialogue.next_turn_at : pairScheduledTime
 
                       // Calculate sent count for Session A & B against max limit
                       const countA = sessionDailyCounts[link.sessionA.phone_number] || sessionDailyCounts[link.sessionA.session_id] || 0

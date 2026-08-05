@@ -4,7 +4,7 @@ import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone, IMasterPhone } from '../models/MasterPhone.js';
 import { User } from '../models/User.js';
 import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../services/baileysManager.js';
-import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime } from '../services/crossChatRunner.js';
+import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime, getPairScheduledTimes } from '../services/crossChatRunner.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
 import { Message } from '../models/Message.js';
 import dayjs from 'dayjs';
@@ -400,7 +400,8 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
 
   const user = await User.findById(userId);
   const activeDialogues = getCrossChatStatus(userId.toString());
-  const nextScheduledAt = await getUserNextScheduledTime(userId.toString(), user?.cross_chat_min_cooldown_min ?? 5);
+  const nextScheduledAt = await getUserNextScheduledTime(userId.toString());
+  const pairScheduledTimes = await getPairScheduledTimes(userId.toString());
 
   const userSessions = await WhatsAppSession.find({ user: userId });
   const sessionIds = userSessions.map((s) => s._id);
@@ -438,6 +439,7 @@ router.get('/cross-chat/settings', async (req: AuthRequest, res: Response) => {
     cross_chat_image_percentage: user?.cross_chat_image_percentage ?? 20,
     timezone: user?.timezone || 'Asia/Kuala_Lumpur',
     next_scheduled_at: nextScheduledAt,
+    pair_scheduled_times: pairScheduledTimes,
     total_messages_today: totalMessagesToday,
     session_daily_counts: sessionDailyCounts,
     active_dialogues: activeDialogues,
