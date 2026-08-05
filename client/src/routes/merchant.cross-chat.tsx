@@ -868,13 +868,8 @@ function CrossChatPage() {
                           </TableCell>
                           
                           <TableCell className="text-xs">
-                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                            <div className="font-bold text-slate-900 dark:text-white">
                               {link.sessionA.alias || link.sessionA.phone_number || link.sessionA.session_id}
-                              {isAMaxed && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-rose-50 text-rose-700 border-rose-200">
-                                  {countA}/{limitA}
-                                </Badge>
-                              )}
                             </div>
                             {link.sessionA.alias && (
                               <span className="text-[10px] text-slate-400 font-mono">{link.sessionA.phone_number}</span>
@@ -886,13 +881,8 @@ function CrossChatPage() {
                           </TableCell>
 
                           <TableCell className="text-xs">
-                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                            <div className="font-bold text-slate-900 dark:text-white">
                               {link.sessionB.alias || link.sessionB.phone_number || link.sessionB.session_id}
-                              {isBMaxed && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-rose-50 text-rose-700 border-rose-200">
-                                  {countB}/{limitB}
-                                </Badge>
-                              )}
                             </div>
                             {link.sessionB.alias && (
                               <span className="text-[10px] text-slate-400 font-mono">{link.sessionB.phone_number}</span>
