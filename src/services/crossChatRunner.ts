@@ -484,15 +484,13 @@ export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endT
   return nextActive.getTime();
 }
 
-async function scheduleNextCycleForPair(pairKey: string, userDoc?: any, staggerIndex = 0): Promise<number> {
+async function scheduleNextCycleForPair(pairKey: string, userDoc?: any, _staggerIndex = 0): Promise<number> {
   const doc = userDoc;
   const minMin = doc?.cross_chat_min_cooldown_min ?? doc?.cross_chat_cooldown_min ?? 5;
   const maxMin = doc?.cross_chat_max_cooldown_min ?? 720;
   const randomMin = Math.floor(Math.random() * (Math.max(minMin, maxMin) - Math.min(minMin, maxMin) + 1)) + Math.min(minMin, maxMin);
 
-  // Stagger each pair when initializing multiple candidate pairs
-  const staggerOffsetMin = staggerIndex * (Math.floor(Math.random() * 3) + 2);
-  const totalOffsetMs = (randomMin + staggerOffsetMin) * 60 * 1000;
+  const totalOffsetMs = randomMin * 60 * 1000;
   let nextTarget = Date.now() + totalOffsetMs;
 
   const startTime = doc?.cross_chat_active_start_time || '08:00';
