@@ -199,9 +199,13 @@ function CrossChatPage() {
   const totalMessagesToday = settingsData?.total_messages_today || 0
   const sessionDailyCounts = settingsData?.session_daily_counts || {}
 
+  const savedActiveStartTime = settingsData?.cross_chat_active_start_time || '08:00'
+  const savedActiveEndTime = settingsData?.cross_chat_active_end_time || '22:00'
+  const savedMaxDaily = settingsData?.cross_chat_max_daily_messages ?? DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_daily_messages
+
   const isWindowActive = useMemo(() => {
-    return isTimeInWindow(activeStartTime, activeEndTime, new Date(nowTs))
-  }, [activeStartTime, activeEndTime, nowTs])
+    return isTimeInWindow(savedActiveStartTime, savedActiveEndTime, new Date(nowTs))
+  }, [savedActiveStartTime, savedActiveEndTime, nowTs])
 
   // Compute if form has unsaved configuration changes
   const isDirty = useMemo(() => {
@@ -427,11 +431,11 @@ function CrossChatPage() {
                 </h3>
                 {!isWindowActive ? (
                   <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 text-[11px] font-semibold px-2.5 py-0.5">
-                    PAUSED ({activeStartTime} - {activeEndTime})
+                    PAUSED ({savedActiveStartTime} - {savedActiveEndTime})
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-semibold px-2.5 py-0.5">
-                    RUNNING ({activeStartTime} - {activeEndTime})
+                    RUNNING ({savedActiveStartTime} - {savedActiveEndTime})
                   </Badge>
                 )}
               </div>
@@ -843,8 +847,8 @@ function CrossChatPage() {
                       const countA = sessionDailyCounts[link.sessionA.phone_number] ?? sessionDailyCounts[link.sessionA.session_id] ?? (link.sessionA.current_day === todayStr ? link.sessionA.current_message_count || 0 : 0)
                       const countB = sessionDailyCounts[link.sessionB.phone_number] ?? sessionDailyCounts[link.sessionB.session_id] ?? (link.sessionB.current_day === todayStr ? link.sessionB.current_message_count || 0 : 0)
 
-                      const limitA = Number(maxDaily) || link.sessionA.max_message_count_per_day || 50
-                      const limitB = Number(maxDaily) || link.sessionB.max_message_count_per_day || 50
+                      const limitA = savedMaxDaily || link.sessionA.max_message_count_per_day || 50
+                      const limitB = savedMaxDaily || link.sessionB.max_message_count_per_day || 50
 
                       const isAMaxed = countA >= limitA
                       const isBMaxed = countB >= limitB
@@ -963,7 +967,7 @@ function CrossChatPage() {
                               <div className="space-y-0.5">
                                 <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 w-fit">
                                   <Clock className="w-3 h-3 animate-pulse" />
-                                  {!isWindowActive ? `Resume at ${activeStartTime}` : getTimeLeftStr(scheduledTime)}
+                                  {!isWindowActive ? `Resume at ${savedActiveStartTime}` : getTimeLeftStr(scheduledTime)}
                                 </span>
                                 <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                                   at {formatClockTime(scheduledTime)}

@@ -4,7 +4,7 @@ import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone, IMasterPhone } from '../models/MasterPhone.js';
 import { User } from '../models/User.js';
 import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../services/baileysManager.js';
-import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime, getPairScheduledTimes, getPairLastSentTimes } from '../services/crossChatRunner.js';
+import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime, getPairScheduledTimes, getPairLastSentTimes, rescheduleAllPairsForUser } from '../services/crossChatRunner.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
 import { Message } from '../models/Message.js';
 import dayjs from 'dayjs';
@@ -531,6 +531,9 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (timezone !== undefined) user.timezone = String(timezone);
 
   await user.save();
+
+  // Reschedule all message pairs with new configuration settings
+  await rescheduleAllPairsForUser(userId.toString());
 
   const payload = await getCrossChatSettingsPayload(userId.toString());
   return res.json({

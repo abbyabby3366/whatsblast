@@ -563,6 +563,36 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
   return result;
 }
 
+export async function rescheduleAllPairsForUser(userId: string): Promise<Record<string, number>> {
+  const userSessions = await WhatsAppSession.find({
+    user: userId,
+    status: SessionStatus.CONNECTED,
+    phone_number: { $exists: true, $ne: '' },
+  });
+
+  const userDoc = await User.findById(userId);
+
+  for (let i = 0; i < userSessions.length; i++) {
+    for (let j = i + 1; j < userSessions.length; j++) {
+      const sA = userSessions[i];
+      const sB = userSessions[j];
+      const pairKey = getCanonicalPairKey(sA.session_id, sB.session_id);
+
+      pairNextScheduledTimeMap.delete(pairKey);
+
+      const activeDialogue = Array.from(activeDialogues.values()).find(
+        (d) => d.user_id === userId && getCanonicalPairKey(d.session_a_id, d.session_b_id) === pairKey
+      );
+
+      if (!activeDialogue) {
+        await scheduleNextCycleForPair(pairKey, userDoc, i + j);
+      }
+    }
+  }
+
+  return getPairScheduledTimes(userId);
+}
+
 export async function getPairLastSentTimes(userId: string): Promise<Record<string, number>> {
   const result: Record<string, number> = {};
   const userSessions = await WhatsAppSession.find({
