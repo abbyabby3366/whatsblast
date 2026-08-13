@@ -139,8 +139,17 @@ async function processCrossChat(): Promise<void> {
         continue;
       }
 
-      // Fetch user configuration
       const userDoc = await User.findById(dialogue.user_id);
+      const startTime = userDoc?.cross_chat_active_start_time || '08:00';
+      const endTime = userDoc?.cross_chat_active_end_time || '22:00';
+      const timezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
+
+      if (!isCurrentTimeInActiveWindow(startTime, endTime, new Date(), timezone)) {
+        dialogue.next_turn_at = adjustToActiveWindow(Date.now(), startTime, endTime, timezone);
+        console.log(`⏸️ [CrossChat] Active dialogue ${dialogueId} paused outside active window (${startTime}-${endTime}). Rescheduling to next active window.`);
+        continue;
+      }
+
       const minDelaySec = userDoc?.cross_chat_min_delay_sec ?? 15;
       const maxDelaySec = userDoc?.cross_chat_max_delay_sec ?? 120;
       const maxDailyMsgs = userDoc?.cross_chat_max_daily_messages || senderSessionDoc.max_message_count_per_day || 50;
@@ -327,7 +336,8 @@ async function processCrossChat(): Promise<void> {
         const targetTurns = dialogue.target_turns || userDoc?.cross_chat_max_turns || 5;
 
         if (dialogue.current_turn_index < Math.min(dialogue.script.turns.length, targetTurns)) {
-          dialogue.next_turn_at = Date.now() + getRandomDelayMs(minDelaySec, maxDelaySec);
+          const rawNext = Date.now() + getRandomDelayMs(minDelaySec, maxDelaySec);
+          dialogue.next_turn_at = adjustToActiveWindow(rawNext, startTime, endTime, timezone);
         } else {
           console.log(`✅ [CrossChat] Completed dialogue "${dialogue.script.topic}" (${dialogue.current_turn_index} turns) between ${dialogue.session_a_phone} & ${dialogue.session_b_phone}`);
           activeDialogues.delete(dialogueId);
@@ -345,6 +355,13 @@ async function processCrossChat(): Promise<void> {
 
     for (const user of enabledUsers) {
       const userIdStr = user._id.toString();
+      const startTime = user.cross_chat_active_start_time || '08:00';
+      const endTime = user.cross_chat_active_end_time || '22:00';
+      const timezone = user.timezone || 'Asia/Kuala_Lumpur';
+
+      if (!isCurrentTimeInActiveWindow(startTime, endTime, new Date(), timezone)) {
+        continue;
+      }
 
       // Fetch active connected sessions for this user with phone numbers
       const connectedSessions = await WhatsAppSession.find({
@@ -393,6 +410,12 @@ async function processCrossChat(): Promise<void> {
           let scheduledTime = pairNextScheduledTimeMap.get(pairKey);
           if (!scheduledTime) {
             scheduledTime = await scheduleNextCycleForPair(pairKey, user, staggerIdx++);
+          } else if (scheduledTime <= now) {
+            const adjusted = adjustToActiveWindow(scheduledTime, startTime, endTime, timezone);
+            if (adjusted > now) {
+              pairNextScheduledTimeMap.set(pairKey, adjusted);
+              continue;
+            }
           }
 
           if (now >= scheduledTime) {
@@ -442,22 +465,55 @@ async function processCrossChat(): Promise<void> {
   }
 }
 
+export function getLocalTimeInTimezone(date: Date, timeZone: string = 'Asia/Kuala_Lumpur') {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    let year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    for (const part of parts) {
+      if (part.type === 'year') year = parseInt(part.value, 10);
+      if (part.type === 'month') month = parseInt(part.value, 10);
+      if (part.type === 'day') day = parseInt(part.value, 10);
+      if (part.type === 'hour') hour = parseInt(part.value, 10) % 24;
+      if (part.type === 'minute') minute = parseInt(part.value, 10);
+      if (part.type === 'second') second = parseInt(part.value, 10);
+    }
+    return { year, month, day, hour, minute, second };
+  } catch (e) {
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      day: date.getDate(),
+      hour: date.getHours(),
+      minute: date.getMinutes(),
+      second: date.getSeconds(),
+    };
+  }
+}
+
+export function getTimeInTimezoneMs(year: number, month: number, day: number, hour: number, minute: number, second: number, timeZone: string): number {
+  const utcEstimate = Date.UTC(year, month - 1, day, hour, minute, second);
+  const localOfUtc = getLocalTimeInTimezone(new Date(utcEstimate), timeZone);
+  const localOfUtcMs = Date.UTC(localOfUtc.year, localOfUtc.month - 1, localOfUtc.day, localOfUtc.hour, localOfUtc.minute, localOfUtc.second);
+  const offset = localOfUtcMs - utcEstimate;
+  return utcEstimate - offset;
+}
+
 export function isCurrentTimeInActiveWindow(startTime = '08:00', endTime = '22:00', targetDate = new Date(), userTimezone = 'Asia/Kuala_Lumpur'): boolean {
   const [startHour, startMin] = (startTime || '08:00').split(':').map(Number);
   const [endHour, endMin] = (endTime || '22:00').split(':').map(Number);
 
-  let curMinutes = targetDate.getHours() * 60 + targetDate.getMinutes();
-  if (userTimezone) {
-    try {
-      const timeStr = targetDate.toLocaleTimeString('en-GB', { timeZone: userTimezone, hour: '2-digit', minute: '2-digit', hour12: false });
-      const [h, m] = timeStr.split(':').map(Number);
-      if (!isNaN(h) && !isNaN(m)) {
-        curMinutes = h * 60 + m;
-      }
-    } catch (e) {
-      // Fallback to local server time
-    }
-  }
+  const local = getLocalTimeInTimezone(targetDate, userTimezone);
+  const curMinutes = local.hour * 60 + local.minute;
 
   const startMinutes = (startHour || 0) * 60 + (startMin || 0);
   const endMinutes = (endHour || 0) * 60 + (endMin || 0);
@@ -478,25 +534,32 @@ export function adjustToActiveWindow(targetMs: number, startTime = '08:00', endT
   const [startHour, startMin] = (startTime || '08:00').split(':').map(Number);
   const [endHour, endMin] = (endTime || '22:00').split(':').map(Number);
 
-  let curMinutes = date.getHours() * 60 + date.getMinutes();
-  if (userTimezone) {
-    try {
-      const timeStr = date.toLocaleTimeString('en-GB', { timeZone: userTimezone, hour: '2-digit', minute: '2-digit', hour12: false });
-      const [h, m] = timeStr.split(':').map(Number);
-      if (!isNaN(h) && !isNaN(m)) {
-        curMinutes = h * 60 + m;
-      }
-    } catch (e) {}
-  }
+  const local = getLocalTimeInTimezone(date, userTimezone);
+  const curMinutes = local.hour * 60 + local.minute;
+
+  const startMinutes = (startHour || 0) * 60 + (startMin || 0);
   const endMinutes = (endHour || 0) * 60 + (endMin || 0);
 
-  const nextActive = new Date(targetMs);
-  if (curMinutes > endMinutes) {
-    nextActive.setDate(nextActive.getDate() + 1);
-  }
-  nextActive.setHours(startHour || 8, (startMin || 0) + Math.floor(Math.random() * 5), 0, 0);
+  let targetYear = local.year;
+  let targetMonth = local.month;
+  let targetDay = local.day;
 
-  return nextActive.getTime();
+  if (startMinutes <= endMinutes) {
+    if (curMinutes > endMinutes) {
+      const nextDayDate = new Date(targetMs + 24 * 3600 * 1000);
+      const nextLocal = getLocalTimeInTimezone(nextDayDate, userTimezone);
+      targetYear = nextLocal.year;
+      targetMonth = nextLocal.month;
+      targetDay = nextLocal.day;
+    }
+  }
+
+  const jitterMinutes = Math.floor(Math.random() * 5);
+  const finalStartMin = (startMin || 0) + jitterMinutes;
+  const finalHour = (startHour || 8) + Math.floor(finalStartMin / 60);
+  const finalMin = finalStartMin % 60;
+
+  return getTimeInTimezoneMs(targetYear, targetMonth, targetDay, finalHour, finalMin, 0, userTimezone);
 }
 
 async function scheduleNextCycleForPair(pairKey: string, userDoc?: any, _staggerIndex = 0): Promise<number> {

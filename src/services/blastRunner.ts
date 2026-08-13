@@ -3,7 +3,9 @@ import { MessageTemplate } from '../models/MessageTemplate.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { FileModel } from '../models/File.js';
+import { User } from '../models/User.js';
 import { getActiveSession, pickUserSession, initWhatsAppSession, verifyAndFormatJid, markSystemSentMessageId } from './baileysManager.js';
+import { getLocalTimeInTimezone } from './crossChatRunner.js';
 import dayjs from 'dayjs';
 
 let runnerInterval: NodeJS.Timeout | null = null;
@@ -277,7 +279,7 @@ export async function sendBaileysTemplateMessage(
   return primarySendResult;
 }
 
-function isSessionQualified(sessionDoc: any): { qualified: boolean; reason?: string } {
+function isSessionQualified(sessionDoc: any, userTimezone = 'Asia/Kuala_Lumpur'): { qualified: boolean; reason?: string } {
   if (!sessionDoc || sessionDoc.status !== SessionStatus.CONNECTED) {
     return { qualified: false, reason: 'Session is disconnected or unavailable' };
   }
@@ -294,7 +296,8 @@ function isSessionQualified(sessionDoc: any): { qualified: boolean; reason?: str
 
   const startTime = sessionDoc.active_start_time || '00:00';
   const endTime = sessionDoc.active_end_time || '23:59';
-  const currentTime = dayjs().format('HH:mm');
+  const local = getLocalTimeInTimezone(new Date(), userTimezone);
+  const currentTime = `${String(local.hour).padStart(2, '0')}:${String(local.minute).padStart(2, '0')}`;
 
   let isWithinActiveHours = false;
   if (startTime <= endTime) {
@@ -304,7 +307,7 @@ function isSessionQualified(sessionDoc: any): { qualified: boolean; reason?: str
   }
 
   if (!isWithinActiveHours) {
-    return { qualified: false, reason: `Outside active sending window (${startTime} - ${endTime})` };
+    return { qualified: false, reason: `Outside active sending window (${startTime} - ${endTime}) in ${userTimezone}` };
   }
 
   return { qualified: true };
@@ -312,6 +315,8 @@ function isSessionQualified(sessionDoc: any): { qualified: boolean; reason?: str
 
 async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: any): Promise<{ sessionId?: string; sessionDoc?: any; errorMsg?: string }> {
   const allowedSessionIds = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
+  const userDoc = campaign.user ? await User.findById(campaign.user) : null;
+  const userTimezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
 
   if (targetPendingMsg && targetPendingMsg.session) {
     const preSessObj: any = targetPendingMsg.session.toObject ? targetPendingMsg.session.toObject() : targetPendingMsg.session;
@@ -319,7 +324,7 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
     if (sessId && (!allowedSessionIds || allowedSessionIds.length === 0 || allowedSessionIds.includes(sessId))) {
       const liveSessDoc = await WhatsAppSession.findOne({ session_id: sessId });
       if (liveSessDoc) {
-        const check = isSessionQualified(liveSessDoc);
+        const check = isSessionQualified(liveSessDoc, userTimezone);
         if (check.qualified) {
           await liveSessDoc.save();
           return { sessionId: sessId, sessionDoc: liveSessDoc };
@@ -340,7 +345,7 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
   const disqualificationReasons: string[] = [];
 
   for (const sessDoc of candidateSessions) {
-    const check = isSessionQualified(sessDoc);
+    const check = isSessionQualified(sessDoc, userTimezone);
     if (check.qualified) {
       await sessDoc.save();
       if (targetPendingMsg && targetPendingMsg._id) {
