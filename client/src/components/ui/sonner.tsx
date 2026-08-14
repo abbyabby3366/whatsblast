@@ -16,9 +16,9 @@ function ClearAllToastsButton({ position = 'bottom-right' }: { position?: Toaste
 
   if (activeToasts.length === 0) return null
 
-  const isBottom = !position || position.startsWith('bottom')
-  const isRight = !position || position.endsWith('right')
-  const isLeft = position?.endsWith('left')
+  const isBottom = position.startsWith('bottom')
+  const isRight = position.endsWith('right')
+  const isLeft = position.endsWith('left')
 
   let posClasses = 'bottom-2 right-4'
   if (isBottom && isRight) posClasses = 'bottom-2 right-4'

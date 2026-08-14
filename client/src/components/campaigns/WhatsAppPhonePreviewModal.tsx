@@ -244,7 +244,7 @@ export function WhatsAppPhonePreviewModal({ isOpen, campaign, templates, title, 
                         </div>
                       ) : null}
 
-                      {buttons?.length ? (
+                      {buttons.length ? (
                         <div className="clear-both mt-2 space-y-1 border-t border-black/10 pt-1 dark:border-white/10">
                           {buttons.map((button: any, bIdx: number) => {
                             let parsedParams: any = {}

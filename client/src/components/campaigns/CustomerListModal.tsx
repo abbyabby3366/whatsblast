@@ -335,7 +335,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                               onClick={() => campaign && retryRecipientMutation.mutate({ cId: campaign.id, phone: row.phone })}
                               title="Retry message for this customer"
                             >
-                              {retryRecipientMutation.isPending && retryRecipientMutation.variables?.phone === row.phone ? (
+                              {retryRecipientMutation.isPending && retryRecipientMutation.variables.phone === row.phone ? (
                                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
                               ) : (
                                 <RotateCcw className="mr-1.5 h-3.5 w-3.5 shrink-0" />

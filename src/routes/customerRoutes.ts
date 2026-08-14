@@ -90,24 +90,40 @@ const importCustomers = async (req: AuthRequest, res: Response) => {
       finalLabel = Array.from(new Set([...existingLabels, ...newLabels])).join(', ');
     }
 
-    const updateFields: any = {
+    const setFields: Record<string, any> = {
       label: finalLabel,
     };
-    if (c.name) updateFields.name = c.name;
-    if (c.notes !== undefined) updateFields.notes = c.notes;
-    if (c.custom_data) updateFields.custom_data = c.custom_data;
+    const setOnInsertFields: Record<string, any> = {};
+
+    if (c.name) {
+      setFields.name = c.name;
+    } else {
+      setOnInsertFields.name = '';
+    }
+
+    if (c.notes !== undefined && c.notes !== null) {
+      setFields.notes = c.notes;
+    } else {
+      setOnInsertFields.notes = '';
+    }
+
+    if (c.custom_data !== undefined && c.custom_data !== null) {
+      setFields.custom_data = c.custom_data;
+    } else {
+      setOnInsertFields.custom_data = {};
+    }
+
+    const updateDoc: Record<string, any> = {
+      $set: setFields,
+    };
+    if (Object.keys(setOnInsertFields).length > 0) {
+      updateDoc.$setOnInsert = setOnInsertFields;
+    }
 
     operations.push({
       updateOne: {
         filter: { merchant: req.user?._id, phone_number: cleanPhone },
-        update: {
-          $set: updateFields,
-          $setOnInsert: {
-            name: c.name || '',
-            notes: c.notes || '',
-            custom_data: c.custom_data || {},
-          },
-        },
+        update: updateDoc,
         upsert: true,
       },
     });

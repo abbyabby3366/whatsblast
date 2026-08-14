@@ -50,7 +50,7 @@ export const Route = createFileRoute('/merchant/campaigns/create')({
 function CreateCampaignPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const search = useSearch({ strict: false }) as { edit?: string; step?: string }
+  const search = useSearch({ strict: false })
 
   const editingCampaignId = search.edit || null
   const [step, setStep] = useState<number>(() => {
@@ -446,7 +446,7 @@ function CreateCampaignPage() {
   const fetchAllCustomerPhones = async (search = searchTerm) => {
     const phones: string[] = []
     let page = 1
-    while (true) {
+    for (;;) {
       const res = await api.get(`customers/?search=${encodeURIComponent(search)}&page=${page}`).json<any>()
       const results = Array.isArray(res) ? res : res.results || []
       const pagePhones = results.map((c: any) => c.phone_number || c.phone).filter(Boolean)

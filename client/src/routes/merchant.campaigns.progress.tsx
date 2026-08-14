@@ -473,7 +473,7 @@ function CampaignProgressPage() {
                             }
                           >
                             {retryRecipientMutation.isPending &&
-                            retryRecipientMutation.variables?.phone === row.phone ? (
+                            retryRecipientMutation.variables.phone === row.phone ? (
                               <Loader2 className="h-3 w-3 animate-spin mr-1" />
                             ) : (
                               <RotateCcw className="h-3 w-3 mr-1" />

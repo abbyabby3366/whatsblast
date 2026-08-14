@@ -89,8 +89,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
 
   const ownerDisplay = (userRef: any, msgObj: Message) => {
     if (userRef?.phone_number) return userRef.phone_number
-    if (msgObj?.campaign?.user?.phone_number) return msgObj.campaign.user.phone_number
-    if (msgObj?.session?.user?.phone_number) return msgObj.session.user.phone_number
+    if (msgObj.campaign?.user?.phone_number) return msgObj.campaign.user.phone_number
+    if (msgObj.session?.user?.phone_number) return msgObj.session.user.phone_number
     
     const userId = typeof userRef === 'object' ? userRef?.id || userRef?._id : userRef
     if (!userId) return '-'

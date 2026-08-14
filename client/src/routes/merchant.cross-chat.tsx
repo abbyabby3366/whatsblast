@@ -54,17 +54,17 @@ interface ActiveDialogueStatus {
 
 interface CrossChatSettingsResponse {
   cross_chat_enabled: boolean
-  cross_chat_min_delay_sec: number
-  cross_chat_max_delay_sec: number
-  cross_chat_cooldown_min: number
-  cross_chat_min_cooldown_min: number
-  cross_chat_max_cooldown_min: number
-  cross_chat_max_daily_messages: number
-  cross_chat_turns_per_dialogue: number
-  cross_chat_min_turns: number
-  cross_chat_max_turns: number
-  cross_chat_min_msgs_per_turn: number
-  cross_chat_max_msgs_per_turn: number
+  cross_chat_min_delay_sec?: number
+  cross_chat_max_delay_sec?: number
+  cross_chat_cooldown_min?: number
+  cross_chat_min_cooldown_min?: number
+  cross_chat_max_cooldown_min?: number
+  cross_chat_max_daily_messages?: number
+  cross_chat_turns_per_dialogue?: number
+  cross_chat_min_turns?: number
+  cross_chat_max_turns?: number
+  cross_chat_min_msgs_per_turn?: number
+  cross_chat_max_msgs_per_turn?: number
   cross_chat_active_start_time?: string
   cross_chat_active_end_time?: string
   cross_chat_send_images_enabled?: boolean
@@ -197,7 +197,7 @@ function CrossChatPage() {
   const activeDialogues = settingsData?.active_dialogues || []
   const globalNextScheduledAt = settingsData?.next_scheduled_at || (Date.now() + 10000)
   const totalMessagesToday = settingsData?.total_messages_today || 0
-  const sessionDailyCounts = settingsData?.session_daily_counts || {}
+  const sessionDailyCounts: Record<string, number | undefined> = settingsData?.session_daily_counts || {}
 
   const savedActiveStartTime = settingsData?.cross_chat_active_start_time || '08:00'
   const savedActiveEndTime = settingsData?.cross_chat_active_end_time || '22:00'

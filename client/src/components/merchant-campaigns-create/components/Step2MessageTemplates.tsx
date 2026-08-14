@@ -81,7 +81,7 @@ export function Step2MessageTemplates({
 
   const handleUpdateCurrent = (updates: Partial<TemplateDraft>) => {
     setTemplatesFn((prev) => {
-      const list = prev && prev.length ? prev : templatesList
+      const list = prev.length ? prev : templatesList
       const updated = [...list]
       updated[safeActiveIndex] = { ...updated[safeActiveIndex], ...updates }
       return updated
@@ -90,7 +90,7 @@ export function Step2MessageTemplates({
 
   const handleAddTemplate = () => {
     setTemplatesFn((prev) => {
-      const list = prev && prev.length ? prev : templatesList
+      const list = prev.length ? prev : templatesList
       return [...list, createEmptyTemplateDraft()]
     })
     setActiveIdxFn(templatesList.length)
@@ -107,7 +107,7 @@ export function Step2MessageTemplates({
   }
 
   const handleAddButton = () => {
-    if ((currentTmpl.buttons || []).length >= 3) {
+    if (currentTmpl.buttons.length >= 3) {
       toast.error('Maximum of 3 buttons allowed per template.')
       return
     }
@@ -116,16 +116,16 @@ export function Step2MessageTemplates({
       type: 'reply',
       display_text: 'Click Here',
     }
-    handleUpdateCurrent({ buttons: [...(currentTmpl.buttons || []), newBtn] })
+    handleUpdateCurrent({ buttons: [...currentTmpl.buttons, newBtn] })
   }
 
   const handleUpdateButton = (btnId: string, updates: Partial<ButtonDraft>) => {
-    const updated = (currentTmpl.buttons || []).map((b) => (b.id === btnId ? { ...b, ...updates } : b))
+    const updated = currentTmpl.buttons.map((b) => (b.id === btnId ? { ...b, ...updates } : b))
     handleUpdateCurrent({ buttons: updated })
   }
 
   const handleRemoveButton = (btnId: string) => {
-    const updated = (currentTmpl.buttons || []).filter((b) => b.id !== btnId)
+    const updated = currentTmpl.buttons.filter((b) => b.id !== btnId)
     handleUpdateCurrent({ buttons: updated })
   }
 
@@ -460,7 +460,7 @@ export function Step2MessageTemplates({
                 </Button>
               </div>
 
-              {(currentTmpl.buttons || []).map((btn) => (
+              {currentTmpl.buttons.map((btn) => (
                 <div key={btn.id} className="p-2.5 bg-slate-50 dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-800 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <Select

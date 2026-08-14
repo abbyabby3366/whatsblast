@@ -49,7 +49,7 @@ export function CrossChatWarmupCard({ connectedSessionsCount }: CrossChatWarmupC
 
   const isEnabled = Boolean(settingsData?.cross_chat_enabled)
   const activeDialogues = settingsData?.active_dialogues || []
-  const currentDialogue = activeDialogues[0]
+  const currentDialogue = activeDialogues.length > 0 ? activeDialogues[0] : undefined
 
   // Toggle Mutation
   const toggleMutation = useMutation({

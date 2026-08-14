@@ -10,6 +10,7 @@
     "build:client": "cd client && npm install --legacy-peer-deps && npm run build",
     "build:server": "tsc",
     "build": "npm run build:client && npm run build:server",
+    "test": "cd client && npm run test",
     "start": "node dist/index.js"
   },
   "dependencies": {
