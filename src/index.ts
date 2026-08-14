@@ -22,10 +22,12 @@ import templateRoutes from './routes/templateRoutes.js';
 import campaignRoutes from './routes/campaignRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import fileRoutes from './routes/fileRoutes.js';
+import workflowRoutes from './routes/workflowRoutes.js';
 
 import { restoreAllSessions } from './services/baileysManager.js';
 import { startBlastRunner } from './services/blastRunner.js';
 import { startCrossChatRunner } from './services/crossChatRunner.js';
+import { initWorkflowScheduler } from './services/workflowScheduler.js';
 import { sendDeployNotification } from './utils/whatsappNotifier.js';
 
 
@@ -55,6 +57,7 @@ app.use('/api', templateRoutes);
 app.use('/api', campaignRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', fileRoutes);
+app.use('/api/workflows', workflowRoutes);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
@@ -157,6 +160,7 @@ async function main() {
   await restoreAllSessions();
   startBlastRunner();
   startCrossChatRunner();
+  await initWorkflowScheduler();
 
   const serverDistPath = path.resolve(process.cwd(), 'client/dist/server/server.js');
   if (fs.existsSync(serverDistPath)) {

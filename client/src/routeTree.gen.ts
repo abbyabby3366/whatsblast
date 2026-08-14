@@ -28,9 +28,12 @@ import { Route as MerchantCustomersRouteImport } from './routes/merchant.custome
 import { Route as MerchantMessagesRouteImport } from './routes/merchant.messages'
 import { Route as MerchantProfileRouteImport } from './routes/merchant.profile'
 import { Route as MerchantWhatsappSessionsRouteImport } from './routes/merchant.whatsapp-sessions'
+import { Route as MerchantWorkflowsRouteImport } from './routes/merchant.workflows'
 import { Route as MerchantCampaignsIndexRouteImport } from './routes/merchant.campaigns.index'
 import { Route as MerchantCampaignsCreateRouteImport } from './routes/merchant.campaigns.create'
 import { Route as MerchantCampaignsProgressRouteImport } from './routes/merchant.campaigns.progress'
+import { Route as MerchantWorkflowsIndexRouteImport } from './routes/merchant.workflows.index'
+import { Route as MerchantWorkflowsCreateRouteImport } from './routes/merchant.workflows.create'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -128,6 +131,11 @@ const MerchantWhatsappSessionsRoute =
     path: '/whatsapp-sessions',
     getParentRoute: () => MerchantRoute,
   } as any)
+const MerchantWorkflowsRoute = MerchantWorkflowsRouteImport.update({
+  id: '/workflows',
+  path: '/workflows',
+  getParentRoute: () => MerchantRoute,
+} as any)
 const MerchantCampaignsIndexRoute = MerchantCampaignsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -144,6 +152,16 @@ const MerchantCampaignsProgressRoute =
     path: '/progress',
     getParentRoute: () => MerchantCampaignsRoute,
   } as any)
+const MerchantWorkflowsIndexRoute = MerchantWorkflowsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MerchantWorkflowsRoute,
+} as any)
+const MerchantWorkflowsCreateRoute = MerchantWorkflowsCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => MerchantWorkflowsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -163,11 +181,14 @@ export interface FileRoutesByFullPath {
   '/merchant/messages': typeof MerchantMessagesRoute
   '/merchant/profile': typeof MerchantProfileRoute
   '/merchant/whatsapp-sessions': typeof MerchantWhatsappSessionsRoute
+  '/merchant/workflows': typeof MerchantWorkflowsRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/merchant/': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
   '/merchant/campaigns/progress': typeof MerchantCampaignsProgressRoute
+  '/merchant/workflows/create': typeof MerchantWorkflowsCreateRoute
   '/merchant/campaigns/': typeof MerchantCampaignsIndexRoute
+  '/merchant/workflows/': typeof MerchantWorkflowsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -188,7 +209,9 @@ export interface FileRoutesByTo {
   '/merchant': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
   '/merchant/campaigns/progress': typeof MerchantCampaignsProgressRoute
+  '/merchant/workflows/create': typeof MerchantWorkflowsCreateRoute
   '/merchant/campaigns': typeof MerchantCampaignsIndexRoute
+  '/merchant/workflows': typeof MerchantWorkflowsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -209,11 +232,14 @@ export interface FileRoutesById {
   '/merchant/messages': typeof MerchantMessagesRoute
   '/merchant/profile': typeof MerchantProfileRoute
   '/merchant/whatsapp-sessions': typeof MerchantWhatsappSessionsRoute
+  '/merchant/workflows': typeof MerchantWorkflowsRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/merchant/': typeof MerchantIndexRoute
   '/merchant/campaigns/create': typeof MerchantCampaignsCreateRoute
   '/merchant/campaigns/progress': typeof MerchantCampaignsProgressRoute
+  '/merchant/workflows/create': typeof MerchantWorkflowsCreateRoute
   '/merchant/campaigns/': typeof MerchantCampaignsIndexRoute
+  '/merchant/workflows/': typeof MerchantWorkflowsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -235,11 +261,14 @@ export interface FileRouteTypes {
     | '/merchant/messages'
     | '/merchant/profile'
     | '/merchant/whatsapp-sessions'
+    | '/merchant/workflows'
     | '/admin/'
     | '/merchant/'
     | '/merchant/campaigns/create'
     | '/merchant/campaigns/progress'
+    | '/merchant/workflows/create'
     | '/merchant/campaigns/'
+    | '/merchant/workflows/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -260,7 +289,9 @@ export interface FileRouteTypes {
     | '/merchant'
     | '/merchant/campaigns/create'
     | '/merchant/campaigns/progress'
+    | '/merchant/workflows/create'
     | '/merchant/campaigns'
+    | '/merchant/workflows'
   id:
     | '__root__'
     | '/'
@@ -280,11 +311,14 @@ export interface FileRouteTypes {
     | '/merchant/messages'
     | '/merchant/profile'
     | '/merchant/whatsapp-sessions'
+    | '/merchant/workflows'
     | '/admin/'
     | '/merchant/'
     | '/merchant/campaigns/create'
     | '/merchant/campaigns/progress'
+    | '/merchant/workflows/create'
     | '/merchant/campaigns/'
+    | '/merchant/workflows/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -432,6 +466,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MerchantWhatsappSessionsRouteImport
       parentRoute: typeof MerchantRoute
     }
+    '/merchant/workflows': {
+      id: '/merchant/workflows'
+      path: '/workflows'
+      fullPath: '/merchant/workflows'
+      preLoaderRoute: typeof MerchantWorkflowsRouteImport
+      parentRoute: typeof MerchantRoute
+    }
     '/merchant/campaigns/': {
       id: '/merchant/campaigns/'
       path: '/'
@@ -452,6 +493,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/merchant/campaigns/progress'
       preLoaderRoute: typeof MerchantCampaignsProgressRouteImport
       parentRoute: typeof MerchantCampaignsRoute
+    }
+    '/merchant/workflows/': {
+      id: '/merchant/workflows/'
+      path: '/'
+      fullPath: '/merchant/workflows/'
+      preLoaderRoute: typeof MerchantWorkflowsIndexRouteImport
+      parentRoute: typeof MerchantWorkflowsRoute
+    }
+    '/merchant/workflows/create': {
+      id: '/merchant/workflows/create'
+      path: '/create'
+      fullPath: '/merchant/workflows/create'
+      preLoaderRoute: typeof MerchantWorkflowsCreateRouteImport
+      parentRoute: typeof MerchantWorkflowsRoute
     }
   }
 }
@@ -489,6 +544,19 @@ const MerchantCampaignsRouteChildren: MerchantCampaignsRouteChildren = {
 const MerchantCampaignsRouteWithChildren =
   MerchantCampaignsRoute._addFileChildren(MerchantCampaignsRouteChildren)
 
+interface MerchantWorkflowsRouteChildren {
+  MerchantWorkflowsCreateRoute: typeof MerchantWorkflowsCreateRoute
+  MerchantWorkflowsIndexRoute: typeof MerchantWorkflowsIndexRoute
+}
+
+const MerchantWorkflowsRouteChildren: MerchantWorkflowsRouteChildren = {
+  MerchantWorkflowsCreateRoute: MerchantWorkflowsCreateRoute,
+  MerchantWorkflowsIndexRoute: MerchantWorkflowsIndexRoute,
+}
+
+const MerchantWorkflowsRouteWithChildren =
+  MerchantWorkflowsRoute._addFileChildren(MerchantWorkflowsRouteChildren)
+
 interface MerchantRouteChildren {
   MerchantCampaignsRoute: typeof MerchantCampaignsRouteWithChildren
   MerchantCrossChatRoute: typeof MerchantCrossChatRoute
@@ -496,6 +564,7 @@ interface MerchantRouteChildren {
   MerchantMessagesRoute: typeof MerchantMessagesRoute
   MerchantProfileRoute: typeof MerchantProfileRoute
   MerchantWhatsappSessionsRoute: typeof MerchantWhatsappSessionsRoute
+  MerchantWorkflowsRoute: typeof MerchantWorkflowsRouteWithChildren
   MerchantIndexRoute: typeof MerchantIndexRoute
 }
 
@@ -506,6 +575,7 @@ const MerchantRouteChildren: MerchantRouteChildren = {
   MerchantMessagesRoute: MerchantMessagesRoute,
   MerchantProfileRoute: MerchantProfileRoute,
   MerchantWhatsappSessionsRoute: MerchantWhatsappSessionsRoute,
+  MerchantWorkflowsRoute: MerchantWorkflowsRouteWithChildren,
   MerchantIndexRoute: MerchantIndexRoute,
 }
 
