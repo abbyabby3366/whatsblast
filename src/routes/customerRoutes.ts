@@ -64,77 +64,82 @@ const createCustomer = async (req: AuthRequest, res: Response) => {
 router.post('/customers', createCustomer);
 
 const importCustomers = async (req: AuthRequest, res: Response) => {
-  const customers = req.body.customers || req.body;
-  if (!Array.isArray(customers)) {
-    return res.status(400).json({ error: 'customers array is required' });
+  try {
+    const customers = req.body.customers || req.body;
+    if (!Array.isArray(customers)) {
+      return res.status(400).json({ error: 'customers array is required' });
+    }
+
+    const validCustomers = customers.filter((c) => c.phone_number);
+    const phones = validCustomers.map((c) => String(c.phone_number).replace(/[^0-9]/g, '')).filter(Boolean);
+
+    const existingCustomers = await Customer.find({ merchant: req.user?._id, phone_number: { $in: phones } });
+    const existingMap = new Map(existingCustomers.map((c) => [c.phone_number, c]));
+
+    const operations = [];
+
+    for (const c of validCustomers) {
+      const cleanPhone = String(c.phone_number).replace(/[^0-9]/g, '');
+      if (!cleanPhone) continue;
+
+      const existing = existingMap.get(cleanPhone);
+      let finalLabel = c.label ? String(c.label).trim() : '';
+
+      if (existing && existing.label) {
+        const existingLabels = existing.label.split(',').map((s) => s.trim()).filter(Boolean);
+        const newLabels = finalLabel ? finalLabel.split(',').map((s) => s.trim()).filter(Boolean) : [];
+        finalLabel = Array.from(new Set([...existingLabels, ...newLabels])).join(', ');
+      }
+
+      const setFields: Record<string, any> = {
+        label: finalLabel,
+      };
+      const setOnInsertFields: Record<string, any> = {};
+
+      if (c.name) {
+        setFields.name = c.name;
+      } else {
+        setOnInsertFields.name = '';
+      }
+
+      if (c.notes !== undefined && c.notes !== null) {
+        setFields.notes = c.notes;
+      } else {
+        setOnInsertFields.notes = '';
+      }
+
+      if (c.custom_data !== undefined && c.custom_data !== null) {
+        setFields.custom_data = c.custom_data;
+      } else {
+        setOnInsertFields.custom_data = {};
+      }
+
+      const updateDoc: Record<string, any> = {
+        $set: setFields,
+      };
+      if (Object.keys(setOnInsertFields).length > 0) {
+        updateDoc.$setOnInsert = setOnInsertFields;
+      }
+
+      operations.push({
+        updateOne: {
+          filter: { merchant: req.user?._id, phone_number: cleanPhone },
+          update: updateDoc,
+          upsert: true,
+        },
+      });
+    }
+
+    if (operations.length > 0) {
+      await Customer.bulkWrite(operations);
+    }
+
+    const all = await Customer.find({ merchant: req.user?._id });
+    return res.json({ success: true, imported: operations.length, count: operations.length, total: all.length });
+  } catch (err: any) {
+    console.error('Error importing customers:', err);
+    return res.status(500).json({ error: err.message || 'Failed to import customers' });
   }
-
-  const validCustomers = customers.filter((c) => c.phone_number);
-  const phones = validCustomers.map((c) => String(c.phone_number).replace(/[^0-9]/g, '')).filter(Boolean);
-
-  const existingCustomers = await Customer.find({ merchant: req.user?._id, phone_number: { $in: phones } });
-  const existingMap = new Map(existingCustomers.map((c) => [c.phone_number, c]));
-
-  const operations = [];
-
-  for (const c of validCustomers) {
-    const cleanPhone = String(c.phone_number).replace(/[^0-9]/g, '');
-    if (!cleanPhone) continue;
-
-    const existing = existingMap.get(cleanPhone);
-    let finalLabel = c.label ? String(c.label).trim() : '';
-
-    if (existing && existing.label) {
-      const existingLabels = existing.label.split(',').map((s) => s.trim()).filter(Boolean);
-      const newLabels = finalLabel ? finalLabel.split(',').map((s) => s.trim()).filter(Boolean) : [];
-      finalLabel = Array.from(new Set([...existingLabels, ...newLabels])).join(', ');
-    }
-
-    const setFields: Record<string, any> = {
-      label: finalLabel,
-    };
-    const setOnInsertFields: Record<string, any> = {};
-
-    if (c.name) {
-      setFields.name = c.name;
-    } else {
-      setOnInsertFields.name = '';
-    }
-
-    if (c.notes !== undefined && c.notes !== null) {
-      setFields.notes = c.notes;
-    } else {
-      setOnInsertFields.notes = '';
-    }
-
-    if (c.custom_data !== undefined && c.custom_data !== null) {
-      setFields.custom_data = c.custom_data;
-    } else {
-      setOnInsertFields.custom_data = {};
-    }
-
-    const updateDoc: Record<string, any> = {
-      $set: setFields,
-    };
-    if (Object.keys(setOnInsertFields).length > 0) {
-      updateDoc.$setOnInsert = setOnInsertFields;
-    }
-
-    operations.push({
-      updateOne: {
-        filter: { merchant: req.user?._id, phone_number: cleanPhone },
-        update: updateDoc,
-        upsert: true,
-      },
-    });
-  }
-
-  if (operations.length > 0) {
-    await Customer.bulkWrite(operations);
-  }
-
-  const all = await Customer.find({ merchant: req.user?._id });
-  return res.json({ success: true, imported: operations.length, count: operations.length, total: all.length });
 };
 
 router.post('/customers/import', importCustomers);
