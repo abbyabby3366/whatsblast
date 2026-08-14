@@ -32,6 +32,7 @@ export interface IWhatsAppSession extends Document {
   active_end_time: string;
   last_phone_activity_at?: Date;
   last_physical_phone_sent_message_at?: Date;
+  cross_chat_enabled?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,6 +61,7 @@ const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
     max_interval_seconds: { type: Number, default: 15 },
     active_start_time: { type: String, default: '00:00' },
     active_end_time: { type: String, default: '23:59' },
+    cross_chat_enabled: { type: Boolean, default: false, index: true },
     last_phone_activity_at: { type: Date },
     last_physical_phone_sent_message_at: { type: Date },
   },

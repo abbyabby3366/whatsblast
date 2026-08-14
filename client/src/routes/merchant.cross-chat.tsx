@@ -9,16 +9,23 @@ import {
   Bot, 
   AlertCircle, 
   Loader2, 
-  ArrowLeft,
-  RefreshCw,
-  Smartphone,
-  Sliders,
-  Save,
-  BarChart3,
-  RotateCcw,
-  Image as ImageIcon,
-  Smile,
-  Ban
+  ArrowLeft, 
+  RefreshCw, 
+  Smartphone, 
+  Sliders, 
+  Save, 
+  BarChart3, 
+  RotateCcw, 
+  Image as ImageIcon, 
+  Smile, 
+  Ban,
+  Search,
+  CheckCheck,
+  XCircle,
+  Users,
+  Check,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 
 import { api, getErrorMessage } from '@/lib/api'
@@ -36,6 +43,14 @@ import {
   TableCell 
 } from '@/components/ui/table'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from '@/components/ui/dialog'
 
 export const Route = createFileRoute('/merchant/cross-chat')({
   component: CrossChatPage,
@@ -120,6 +135,17 @@ function CrossChatPage() {
   const queryClient = useQueryClient()
   const [nowTs, setNowTs] = useState<number>(Date.now())
 
+  // Session search and filter tab state
+  const [searchSession, setSearchSession] = useState<string>('')
+  const [sessionFilter, setSessionFilter] = useState<'all' | 'connected' | 'enabled'>('all')
+
+  // Accordion open/close states (both collapsed by default)
+  const [isSessionsOpen, setIsSessionsOpen] = useState<boolean>(false)
+  const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false)
+
+  // Batch action confirmation modal state ('enable_all' | 'disable_all' | null)
+  const [confirmBatchAction, setConfirmBatchAction] = useState<'enable_all' | 'disable_all' | null>(null)
+
   // Form State - All Intervals & Active Window & Image & Reaction Settings
   const [minDelay, setMinDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_min_delay_sec)
   const [maxDelay, setMaxDelay] = useState<number | string>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_max_delay_sec)
@@ -138,7 +164,7 @@ function CrossChatPage() {
   const [reactionPercentage, setReactionPercentage] = useState<number>(DEFAULT_CROSS_CHAT_CONFIGS.cross_chat_reaction_percentage)
   const [isFormInitialized, setIsFormInitialized] = useState<boolean>(false)
 
-  // Fetch connected sessions count
+  // Fetch all sessions
   const { data: sessionsResponse } = useQuery({
     queryKey: ['whatsapp-sessions'],
     queryFn: () => api.get('whatsapp-sessions/').json<any>(),
@@ -149,20 +175,92 @@ function CrossChatPage() {
   }, [sessions])
   const connectedCount = connectedSessions.length
 
-  // Calculate unique session pairing links: N*(N-1)/2
+  // Only connected sessions that are explicitly enabled participate in cross-chat pairings
+  const enabledConnectedSessions = useMemo(() => {
+    return connectedSessions.filter((s: any) => Boolean(s.cross_chat_enabled))
+  }, [connectedSessions])
+
+  // Calculate unique session pairing links from enabled connected sessions: N*(N-1)/2
   const sessionLinks = useMemo(() => {
     const links: { sessionA: any; sessionB: any; id: string }[] = []
-    for (let i = 0; i < connectedSessions.length; i++) {
-      for (let j = i + 1; j < connectedSessions.length; j++) {
+    for (let i = 0; i < enabledConnectedSessions.length; i++) {
+      for (let j = i + 1; j < enabledConnectedSessions.length; j++) {
         links.push({
-          sessionA: connectedSessions[i],
-          sessionB: connectedSessions[j],
-          id: `${connectedSessions[i].session_id}_${connectedSessions[j].session_id}`
+          sessionA: enabledConnectedSessions[i],
+          sessionB: enabledConnectedSessions[j],
+          id: `${enabledConnectedSessions[i].session_id}_${enabledConnectedSessions[j].session_id}`
         })
       }
     }
     return links
-  }, [connectedSessions])
+  }, [enabledConnectedSessions])
+
+  // Filter sessions for the session selection section
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((s: any) => {
+      const isConn = (s.status || '').toLowerCase() === 'connected'
+      const isEn = Boolean(s.cross_chat_enabled)
+      if (sessionFilter === 'connected' && !isConn) return false
+      if (sessionFilter === 'enabled' && !isEn) return false
+      if (searchSession.trim()) {
+        const q = searchSession.toLowerCase().trim()
+        const matchAlias = (s.alias || '').toLowerCase().includes(q)
+        const matchPhone = (s.phone_number || '').toLowerCase().includes(q)
+        const matchId = (s.session_id || '').toLowerCase().includes(q)
+        return matchAlias || matchPhone || matchId
+      }
+      return true
+    })
+  }, [sessions, sessionFilter, searchSession])
+
+  // Toggle individual session mutation with optimistic update
+  const toggleSessionMutation = useMutation({
+    mutationFn: async ({ sessionId, enabled }: { sessionId: string; enabled: boolean }) => {
+      return api.patch(`whatsapp-sessions/${sessionId}`, { json: { cross_chat_enabled: enabled } }).json<any>()
+    },
+    onMutate: async ({ sessionId, enabled }) => {
+      await queryClient.cancelQueries({ queryKey: ['whatsapp-sessions'] })
+      const prev = queryClient.getQueryData(['whatsapp-sessions'])
+      queryClient.setQueryData(['whatsapp-sessions'], (old: any) => {
+        if (!old) return old
+        if (Array.isArray(old)) {
+          return old.map((s: any) => (s.session_id === sessionId || s.id === sessionId ? { ...s, cross_chat_enabled: enabled } : s))
+        }
+        if (old.results) {
+          return {
+            ...old,
+            results: old.results.map((s: any) => (s.session_id === sessionId || s.id === sessionId ? { ...s, cross_chat_enabled: enabled } : s)),
+          }
+        }
+        return old
+      })
+      return { prev }
+    },
+    onError: (err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(['whatsapp-sessions'], context.prev)
+      toast.error(getErrorMessage(err))
+    },
+    onSuccess: (data, vars) => {
+      const name = data?.alias || data?.phone_number || data?.session_id || 'Session'
+      toast.success(vars.enabled ? `Cross-chat engaged for ${name}` : `Cross-chat turned off for ${name}`)
+      queryClient.invalidateQueries({ queryKey: ['cross-chat-settings'] })
+    },
+  })
+
+  // Batch toggle mutation (enable all connected / disable all)
+  const batchToggleMutation = useMutation({
+    mutationFn: async ({ enabled, onlyConnected }: { enabled: boolean; onlyConnected: boolean }) => {
+      return api.post('whatsapp-sessions/cross-chat-batch-toggle', { json: { enabled, only_connected: onlyConnected } }).json<any>()
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['cross-chat-settings'] })
+      toast.success(vars.enabled ? 'Enabled cross-chat for all connected WhatsApp accounts' : 'Disabled cross-chat for all WhatsApp accounts')
+    },
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
+    },
+  })
 
   // Fetch cross-chat settings & next message info
   const { data: settingsData, refetch } = useQuery({
@@ -449,7 +547,7 @@ function CrossChatPage() {
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-1.5 text-center shadow-2xs">
               <div className="text-[10px] uppercase font-bold text-slate-400">Connected Pool</div>
               <div className="text-xs font-bold text-slate-900 dark:text-white font-mono">
-                {connectedCount} Sessions ({sessionLinks.length} Pairs)
+                {enabledConnectedSessions.length} of {connectedCount} Sessions ({sessionLinks.length} Pairs)
               </div>
             </div>
 
@@ -465,15 +563,272 @@ function CrossChatPage() {
           </div>
         </div>
 
-        {/* Configurations Form Panel */}
-        <div className="bg-slate-50/50 dark:bg-slate-950/40 rounded-xl border border-slate-200/80 dark:border-slate-800 p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-emerald-600" />
-              Warmup Configuration Intervals
-            </h3>
-
+        {/* Participating Session Selection & Management Section Accordion */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-300 dark:border-slate-700 transition-all overflow-hidden shadow-2xs">
+          <div
+            onClick={() => setIsSessionsOpen(!isSessionsOpen)}
+            className="flex flex-col sm:flex-row sm:items-center justify-between p-4 cursor-pointer select-none bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200/80 dark:hover:bg-slate-750 transition-colors gap-3 border-b border-slate-200 dark:border-slate-700"
+          >
             <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-300/80 dark:border-emerald-800 shrink-0">
+                <Users className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Participating Session Selection
+                </h3>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Choose which WhatsApp accounts participate in cross-chat warmup. Newly added accounts are turned off by default.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-end sm:self-center" onClick={(e) => e.stopPropagation()}>
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-semibold">
+                {enabledConnectedSessions.length} of {connectedSessions.length} Connected Engaged
+              </Badge>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsSessionsOpen(!isSessionsOpen)
+                }}
+                className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-transform"
+                title={isSessionsOpen ? 'Collapse Sessions' : 'Expand Sessions'}
+              >
+                <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isSessionsOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {isSessionsOpen && (
+            <div className="p-5 pt-4 bg-slate-50/40 dark:bg-slate-950/30 space-y-4">
+              {/* Warning banner if < 2 enabled connected sessions */}
+              {enabledConnectedSessions.length < 2 && (
+                <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-xs">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Warmup Inactive:</span> At least <strong>2 connected and enabled</strong> WhatsApp sessions are required to form cross-chat pairs. Please toggle ON at least two connected accounts below.
+                  </div>
+                </div>
+              )}
+
+              {/* Search, filter, and action controls */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    placeholder="Search by phone, alias, or ID..."
+                    value={searchSession}
+                    onChange={(e) => setSearchSession(e.target.value)}
+                    className="h-8 pl-8 text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                  />
+                  {searchSession && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchSession('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap justify-between sm:justify-end">
+                  <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setSessionFilter('all')}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                        sessionFilter === 'all'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      All ({sessions.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSessionFilter('connected')}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                        sessionFilter === 'connected'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Connected ({connectedSessions.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSessionFilter('enabled')}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                        sessionFilter === 'enabled'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Engaged ({enabledConnectedSessions.length})
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmBatchAction('enable_all')}
+                      disabled={batchToggleMutation.isPending || connectedSessions.length === 0}
+                      className="h-8 px-2.5 text-xs font-semibold gap-1.5 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      Enable All Connected
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmBatchAction('disable_all')}
+                      disabled={batchToggleMutation.isPending || sessions.length === 0}
+                      className="h-8 px-2.5 text-xs font-semibold gap-1.5 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      Disable All
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sessions List Table */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs bg-white dark:bg-slate-900">
+                <Table>
+                  <TableHeader className="bg-slate-50 dark:bg-slate-950">
+                    <TableRow>
+                      <TableHead className="font-bold text-xs">WhatsApp Account / Phone</TableHead>
+                      <TableHead className="font-bold text-xs">Connection Status</TableHead>
+                      <TableHead className="font-bold text-xs">Sent Today</TableHead>
+                      <TableHead className="font-bold text-xs">Daily Limit</TableHead>
+                      <TableHead className="font-bold text-xs text-right pr-6">Warmup Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSessions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-6 text-xs text-slate-500">
+                          No WhatsApp sessions match your search or filter.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredSessions.map((s: any) => {
+                        const isConnected = (s.status || '').toLowerCase() === 'connected'
+                        const isSessionEnabled = Boolean(s.cross_chat_enabled)
+                        const todayStr = dayjs().format('YYYY-MM-DD')
+                        const sentCount = sessionDailyCounts[s.phone_number] ?? sessionDailyCounts[s.session_id] ?? (s.current_day === todayStr ? s.current_message_count || 0 : 0)
+                        const limit = savedMaxDaily || s.max_message_count_per_day || 50
+
+                        return (
+                          <TableRow
+                            key={s.session_id || s.id}
+                            className={isSessionEnabled && isConnected ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''}
+                          >
+                            <TableCell className="text-xs">
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                                  isConnected
+                                    ? isSessionEnabled
+                                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                                      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    : 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400'
+                                }`}>
+                                  <Smartphone className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                    {s.alias || s.phone_number || s.session_id}
+                                    {isSessionEnabled && isConnected && (
+                                      <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0 h-4 font-semibold">
+                                        WARMING UP
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+                                    <span>{s.phone_number || 'No phone number'}</span>
+                                    {s.alias && <span className="text-slate-300 dark:text-slate-600">• {s.session_id}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              {isConnected ? (
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 text-[10px] font-semibold">
+                                  CONNECTED
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-semibold">
+                                  {s.status || 'DISCONNECTED'}
+                                </Badge>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              <span className={`font-mono font-bold ${sentCount >= limit ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                {sentCount}
+                              </span>
+                              <span className="text-slate-400 text-[11px]"> / {limit} msgs</span>
+                            </TableCell>
+
+                            <TableCell className="text-xs text-slate-500 font-mono">
+                              {limit} / day
+                            </TableCell>
+
+                            <TableCell className="text-right pr-6">
+                              <div className="flex items-center justify-end gap-2.5">
+                                <span className={`text-xs font-semibold ${isSessionEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                  {isSessionEnabled ? 'ENGAGED' : 'OFF'}
+                                </span>
+                                <Switch
+                                  checked={isSessionEnabled}
+                                  disabled={toggleSessionMutation.isPending}
+                                  onCheckedChange={(checked) => {
+                                    toggleSessionMutation.mutate({
+                                      sessionId: s.session_id || s.id,
+                                      enabled: checked,
+                                    })
+                                  }}
+                                />
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Warmup Configuration Accordion Panel */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-300 dark:border-slate-700 transition-all overflow-hidden shadow-2xs">
+          <div
+            onClick={() => setIsConfigOpen(!isConfigOpen)}
+            className="flex flex-col sm:flex-row sm:items-center justify-between p-4 cursor-pointer select-none bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200/80 dark:hover:bg-slate-750 transition-colors gap-3 border-b border-slate-200 dark:border-slate-700"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-300/80 dark:border-emerald-800 shrink-0">
+                <Sliders className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Warmup Configuration
+                </h3>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Configure cooldown intervals, turn counts, active window schedule, images, and reactions.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-end sm:self-center" onClick={(e) => e.stopPropagation()}>
               {isDirty && (
                 <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/40 border-amber-300 text-amber-800 dark:text-amber-300 text-xs font-semibold gap-1.5 px-2.5 py-1 animate-pulse">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
@@ -500,10 +855,24 @@ function CrossChatPage() {
                 {saveConfigMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 Save Configurations
               </Button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsConfigOpen(!isConfigOpen)
+                }}
+                className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-transform"
+                title={isConfigOpen ? 'Collapse Configuration' : 'Expand Configuration'}
+              >
+                <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isConfigOpen ? 'rotate-180' : ''}`} />
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          {isConfigOpen && (
+            <div className="p-5 pt-4 bg-slate-50/40 dark:bg-slate-950/30 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
             {/* 1. Chat Session Cooldown Interval */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -783,6 +1152,8 @@ function CrossChatPage() {
             </div>
           </div>
         </div>
+        )}
+      </div>
 
         {/* Next Scheduled Message & Session Pairing Links Table Section */}
         {isEnabled && (
@@ -798,12 +1169,12 @@ function CrossChatPage() {
               </Badge>
             </div>
 
-            {connectedCount < 2 ? (
-              <div className="flex items-center gap-3 text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs">
-                <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
+            {enabledConnectedSessions.length < 2 ? (
+              <div className="flex items-center gap-3 text-amber-800 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-300 rounded-xl p-4 text-xs">
+                <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
                 <div>
-                  <strong>At least 2 connected WhatsApp sessions are required for automated cross-chatting.</strong>
-                  <p className="text-amber-700 mt-0.5">Please add or connect another WhatsApp account on the WhatsApp Sessions page.</p>
+                  <strong>At least 2 connected and cross-chat enabled WhatsApp accounts are required for automated cross-chatting.</strong>
+                  <p className="text-amber-700 dark:text-amber-400/80 mt-0.5">Please engage at least 2 connected accounts in the Participating Session Selection section above.</p>
                 </div>
               </div>
             ) : (
@@ -1042,6 +1413,73 @@ function CrossChatPage() {
           </div>
         )}
       </div>
+
+      {/* Batch Action Confirmation Modal */}
+      <Dialog
+        open={confirmBatchAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !batchToggleMutation.isPending) {
+            setConfirmBatchAction(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                confirmBatchAction === 'enable_all'
+                  ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                  : 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+              }`}>
+                {confirmBatchAction === 'enable_all' ? <CheckCheck className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+              </div>
+              <div className="text-left">
+                <DialogTitle className="text-base font-bold text-slate-900 dark:text-white">
+                  {confirmBatchAction === 'enable_all' ? 'Enable All Connected Sessions?' : 'Disable All Sessions?'}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {confirmBatchAction === 'enable_all'
+                    ? `This will engage all ${connectedSessions.length} connected WhatsApp accounts into automatic cross-chat warmup.`
+                    : `This will turn off cross-chat warmup for all ${sessions.length} WhatsApp accounts. Ongoing pairs and scheduled chats will be stopped.`}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmBatchAction(null)}
+              disabled={batchToggleMutation.isPending}
+              className="h-8 text-xs font-semibold text-slate-700 dark:text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={batchToggleMutation.isPending}
+              onClick={() => {
+                const isEnable = confirmBatchAction === 'enable_all'
+                batchToggleMutation.mutate(
+                  { enabled: isEnable, onlyConnected: isEnable },
+                  {
+                    onSettled: () => setConfirmBatchAction(null),
+                  }
+                )
+              }}
+              className={`h-8 text-xs font-semibold gap-1.5 shadow-2xs ${
+                confirmBatchAction === 'enable_all'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white'
+              }`}
+            >
+              {batchToggleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {confirmBatchAction === 'enable_all' ? 'Yes, Enable All' : 'Yes, Disable All'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

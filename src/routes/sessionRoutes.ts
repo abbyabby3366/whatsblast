@@ -161,6 +161,7 @@ const patchSession = async (req: AuthRequest, res: Response) => {
     max_interval_seconds,
     active_start_time,
     active_end_time,
+    cross_chat_enabled,
     user: userId,
   } = req.body;
   if (status) {
@@ -189,14 +190,60 @@ const patchSession = async (req: AuthRequest, res: Response) => {
   if (max_interval_seconds !== undefined) session.max_interval_seconds = Number(max_interval_seconds);
   if (active_start_time !== undefined) session.active_start_time = String(active_start_time);
   if (active_end_time !== undefined) session.active_end_time = String(active_end_time);
+  if (cross_chat_enabled !== undefined) session.cross_chat_enabled = Boolean(cross_chat_enabled);
   if (userId && req.user?.role === 'admin') session.user = userId;
 
   await session.save();
+
+  if (cross_chat_enabled !== undefined && session.user) {
+    try {
+      await rescheduleAllPairsForUser(session.user.toString());
+    } catch (e) {
+      console.warn('[CrossChat] Reschedule on session cross_chat_enabled change error:', e);
+    }
+  }
+
   const updated = await WhatsAppSession.findById(session._id).populate('user', 'phone_number role');
   return res.json(formatSession(updated || session));
 };
 
 router.patch('/whatsapp-sessions/:id', patchSession);
+
+// Batch toggle cross_chat_enabled for sessions
+const batchToggleCrossChat = async (req: AuthRequest, res: Response) => {
+  const { session_ids, enabled, only_connected } = req.body;
+  const userId = req.user?._id;
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const query: any = req.user?.role === 'admin' && req.body.user_id ? { user: req.body.user_id } : { user: userId };
+  if (Array.isArray(session_ids) && session_ids.length > 0) {
+    query.session_id = { $in: session_ids };
+  }
+  if (only_connected) {
+    query.status = SessionStatus.CONNECTED;
+  }
+
+  await WhatsAppSession.updateMany(query, {
+    $set: { cross_chat_enabled: Boolean(enabled) },
+  });
+
+  const targetUserId = query.user ? query.user.toString() : userId.toString();
+  try {
+    await rescheduleAllPairsForUser(targetUserId);
+  } catch (e) {
+    console.warn('[CrossChat] Reschedule on batch toggle error:', e);
+  }
+
+  const updatedSessions = await WhatsAppSession.find(req.user?.role === 'admin' && req.body.user_id ? { user: req.body.user_id } : { user: userId }).populate('user', 'phone_number role');
+  return res.json({
+    success: true,
+    sessions: updatedSessions.map(formatSession),
+  });
+};
+
+router.post('/whatsapp-sessions/cross-chat-batch-toggle', batchToggleCrossChat);
 
 // Reconnect session
 const reconnectSession = async (req: AuthRequest, res: Response) => {

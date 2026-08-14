@@ -363,10 +363,11 @@ async function processCrossChat(): Promise<void> {
         continue;
       }
 
-      // Fetch active connected sessions for this user with phone numbers
+      // Fetch active connected sessions for this user with phone numbers and cross_chat_enabled = true
       const connectedSessions = await WhatsAppSession.find({
         user: user._id,
         status: SessionStatus.CONNECTED,
+        cross_chat_enabled: true,
         phone_number: { $exists: true, $ne: '' },
       });
 
@@ -586,6 +587,7 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
   const userSessions = await WhatsAppSession.find({
     user: userId,
     status: SessionStatus.CONNECTED,
+    cross_chat_enabled: true,
     phone_number: { $exists: true, $ne: '' },
   });
 
@@ -630,6 +632,7 @@ export async function rescheduleAllPairsForUser(userId: string): Promise<Record<
   const userSessions = await WhatsAppSession.find({
     user: userId,
     status: SessionStatus.CONNECTED,
+    cross_chat_enabled: true,
     phone_number: { $exists: true, $ne: '' },
   });
 
@@ -661,6 +664,7 @@ export async function getPairLastSentTimes(userId: string): Promise<Record<strin
   const userSessions = await WhatsAppSession.find({
     user: userId,
     status: SessionStatus.CONNECTED,
+    cross_chat_enabled: true,
     phone_number: { $exists: true, $ne: '' },
   });
 
@@ -803,11 +807,12 @@ export async function forceSendNextTurn(
     const connectedSessions = await WhatsAppSession.find({
       user: userId,
       status: SessionStatus.CONNECTED,
+      cross_chat_enabled: true,
       phone_number: { $exists: true, $ne: '' },
     });
 
     if (connectedSessions.length < 2) {
-      return { success: false, message: 'Need at least 2 connected WhatsApp sessions for cross-chat' };
+      return { success: false, message: 'Need at least 2 connected and cross-chat enabled WhatsApp sessions' };
     }
 
     const shuffled = [...connectedSessions].sort(() => Math.random() - 0.5);
