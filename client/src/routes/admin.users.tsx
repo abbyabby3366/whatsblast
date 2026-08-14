@@ -144,14 +144,14 @@ function AdminUsersPage() {
           
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
-              <Label className="text-sm font-medium">Message Interval (Minutes)</Label>
+              <Label className="text-sm font-medium">Default Message Interval (Minutes)</Label>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-xs">
-                    Set the minimum and maximum delay (in minutes) between messages to reduce WhatsApp ban risk.
+                    Set the account default minimum and maximum delay (in minutes) between messages to reduce WhatsApp ban risk. Individual sessions can override this.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

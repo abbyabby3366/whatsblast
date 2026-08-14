@@ -74,8 +74,6 @@ router.get('/whatsapp-sessions', getSessions);
 // Create WhatsApp Session
 const createSession = async (req: AuthRequest, res: Response) => {
   const sessionId = req.body.session_id || `session_${Date.now()}`;
-  const minInterval = req.body.min_interval_seconds !== undefined ? Number(req.body.min_interval_seconds) : 10;
-  const maxInterval = req.body.max_interval_seconds !== undefined ? Number(req.body.max_interval_seconds) : 15;
   const activeStart = req.body.active_start_time || '00:00';
   const activeEnd = req.body.active_end_time || '23:59';
   const alias = req.body.alias ? String(req.body.alias).trim() : undefined;
@@ -83,10 +81,28 @@ const createSession = async (req: AuthRequest, res: Response) => {
     ? (req.body.user || req.body.user_id)
     : req.user?._id;
 
+  const ownerUser = await User.findById(targetUserId);
+
+  let minInterval = req.body.min_interval_seconds !== undefined ? Number(req.body.min_interval_seconds) : undefined;
+  let maxInterval = req.body.max_interval_seconds !== undefined ? Number(req.body.max_interval_seconds) : undefined;
+
+  if (minInterval === undefined || maxInterval === undefined) {
+    if (ownerUser?.min_interval_minutes) {
+      const parts = ownerUser.min_interval_minutes.split('-');
+      if (minInterval === undefined && parts[0] && !isNaN(Number(parts[0]))) {
+        minInterval = Number(parts[0]);
+      }
+      if (maxInterval === undefined && parts[1] && !isNaN(Number(parts[1]))) {
+        maxInterval = Number(parts[1]);
+      }
+    }
+  }
+  if (minInterval === undefined) minInterval = 10;
+  if (maxInterval === undefined) maxInterval = 15;
+
   // Use user's cross_chat_max_daily_messages as the default for new sessions
   let maxMessages = req.body.max_message_count_per_day;
   if (!maxMessages) {
-    const ownerUser = await User.findById(targetUserId);
     maxMessages = ownerUser?.cross_chat_max_daily_messages || 50;
   }
 

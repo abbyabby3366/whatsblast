@@ -100,7 +100,7 @@ function ProfilePage() {
             Account Information
           </CardTitle>
           <CardDescription className="text-xs">
-            Update your sending interval configurations.
+            Manage your account details and default sending interval.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -112,9 +112,9 @@ function ProfilePage() {
 
           <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
             <div>
-              <h4 className="text-sm font-medium mb-1">Message Interval</h4>
+              <h4 className="text-sm font-medium mb-1">Default Message Interval</h4>
               <p className="text-xs text-slate-500 mb-4">
-                Set the minimum and maximum delay (in minutes) between each WhatsApp message sent in your campaigns to prevent ban.
+                Set the default minimum and maximum delay (in minutes) between messages. This serves as the default fallback for new WhatsApp sessions and campaigns. You can also customize intervals for each session independently.
               </p>
             </div>
             
