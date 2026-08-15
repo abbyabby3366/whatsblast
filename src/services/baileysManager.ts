@@ -152,6 +152,9 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     browser: Browsers.macOS('Chrome'),
     printQRInTerminal: false,
     logger,
+    syncFullHistory: false,
+    generateHighQualityLinkPreview: false,
+    defaultQueryTimeoutMs: 60_000,
   });
 
   // Intercept all socket.sendMessage calls to automatically track system-sent message IDs
@@ -439,7 +442,13 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
 export async function restoreAllSessions(): Promise<void> {
   const sessions = await WhatsAppSession.find({ status: { $in: [SessionStatus.CONNECTED, SessionStatus.STARTING, SessionStatus.QR_READY] } });
   for (const s of sessions) {
-    initWhatsAppSession(s.session_id).catch((err) => console.error(`Error restoring session ${s.session_id}:`, err));
+    try {
+      await initWhatsAppSession(s.session_id);
+      // Stagger session initialization to prevent memory spikes on boot
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (err) {
+      console.error(`Error restoring session ${s.session_id}:`, err);
+    }
   }
 }
 
