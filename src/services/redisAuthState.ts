@@ -16,6 +16,7 @@ function getRedisClient(): Redis | null {
   const host = process.env.REDIS_HOST;
   const port = parseInt(process.env.REDIS_PORT || '6379');
   const password = process.env.REDIS_PASSWORD;
+  const useTls = process.env.REDIS_TLS === 'true' || (host ? host.includes('upstash.io') : false);
 
   if (!host) {
     return null;
@@ -26,6 +27,7 @@ function getRedisClient(): Redis | null {
       host,
       port,
       password,
+      tls: useTls ? {} : undefined,
       retryStrategy: (times) => Math.min(times * 50, 2000),
     });
 
