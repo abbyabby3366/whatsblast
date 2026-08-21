@@ -76,11 +76,12 @@ export function MerchantCampaignViews({
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50/80 dark:bg-slate-900/60">
-                  <TableHead className="w-[220px]">Campaign Name</TableHead>
+                  <TableHead className="w-[200px]">Campaign Name</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Recipients</TableHead>
                   <TableHead>Contents</TableHead>
-                  <TableHead className="w-[140px]">Progress</TableHead>
+                  <TableHead>Delivery Stats</TableHead>
+                  <TableHead className="w-[130px]">Progress</TableHead>
                   <TableHead>Created / Completed</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -90,9 +91,10 @@ export function MerchantCampaignViews({
                   const cStatus = (c.status || 'draft').toLowerCase()
                   const stats = c.stats || {}
                   const total = stats.total || c.recipient_phones?.length || c.contacts?.length || 0
-                  const sent = stats.sent || c.current_index || 0
+                  const sent = stats.sent || 0
                   const failed = stats.failed || 0
-                  const percent = total > 0 ? Math.min(100, Math.round(((sent + failed) / total) * 100)) : 0
+                  const processed = sent + failed
+                  const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
 
                   return (
                     <TableRow key={c.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/50">
@@ -104,7 +106,9 @@ export function MerchantCampaignViews({
                           <span
                             className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                               cStatus === 'completed'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                ? failed > 0
+                                  ? 'bg-rose-50 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                                  : 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                                 : cStatus === 'scheduled'
                                 ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                                 : cStatus === 'running'
@@ -118,7 +122,7 @@ export function MerchantCampaignViews({
                                 : 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
                             }`}
                           >
-                            {cStatus.toUpperCase()}
+                            {cStatus === 'completed' && failed > 0 ? `COMPLETED (${failed} FAILED)` : cStatus.toUpperCase()}
                           </span>
                           {c.error_message && (cStatus === 'paused' || cStatus === 'failed') && (
                             <Link
@@ -153,18 +157,48 @@ export function MerchantCampaignViews({
                       </TableCell>
                       <TableCell>
                         {cStatus === 'draft' ? (
+                          <span className="text-xs text-slate-400">-</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle2 className="h-3 w-3 shrink-0" /> {sent} Sent
+                            </span>
+                            {failed > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                <AlertCircle className="h-3 w-3 shrink-0" /> {failed} Failed
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800/60 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                0 Failed
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {cStatus === 'draft' ? (
                           <span className="text-xs text-slate-400">Not Launched</span>
                         ) : (
-                          <div className="w-24 space-y-1">
+                          <div className="w-28 space-y-1">
                             <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
-                              <span>{sent}/{total}</span>
-                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}%</span>
+                              <span>{processed}/{total}</span>
+                              <span className={failed > 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'}>
+                                {percent}%
+                              </span>
                             </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800 flex">
                               <div
                                 className="h-full bg-emerald-500 transition-all duration-300"
-                                style={{ width: `${percent}%` }}
+                                style={{ width: `${total > 0 ? (sent / total) * 100 : 0}%` }}
+                                title={`Sent: ${sent}`}
                               />
+                              {failed > 0 && (
+                                <div
+                                  className="h-full bg-rose-500 transition-all duration-300"
+                                  style={{ width: `${total > 0 ? (failed / total) * 100 : 0}%` }}
+                                  title={`Failed: ${failed}`}
+                                />
+                              )}
                             </div>
                           </div>
                         )}
@@ -275,9 +309,10 @@ export function MerchantCampaignViews({
         const cStatus = (c.status || 'draft').toLowerCase()
         const stats = c.stats || {}
         const total = stats.total || c.recipient_phones?.length || c.contacts?.length || 0
-        const sent = stats.sent || c.current_index || 0
+        const sent = stats.sent || 0
         const failed = stats.failed || 0
-        const percent = total > 0 ? Math.min(100, Math.round(((sent + failed) / total) * 100)) : 0
+        const processed = sent + failed
+        const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
 
         return (
           <Card
@@ -298,7 +333,9 @@ export function MerchantCampaignViews({
                   <span
                     className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
                       cStatus === 'completed'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                        ? failed > 0
+                          ? 'bg-rose-50 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                         : cStatus === 'scheduled'
                         ? 'bg-amber-100 text-amber-800 border border-amber-300'
                         : cStatus === 'running'
@@ -312,9 +349,10 @@ export function MerchantCampaignViews({
                   >
                     {cStatus === 'draft' && <Clock className="mr-1 h-3 w-3" />}
                     {cStatus === 'running' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                    {cStatus === 'completed' && <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
+                    {cStatus === 'completed' && failed === 0 && <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
+                    {cStatus === 'completed' && failed > 0 && <AlertCircle className="mr-1 h-3 w-3 text-rose-600 dark:text-rose-400" />}
                     {cStatus === 'paused' && <Pause className="mr-1 h-3 w-3" />}
-                    {cStatus.toUpperCase()}
+                    {cStatus === 'completed' && failed > 0 ? `COMPLETED (${failed} FAILED)` : cStatus.toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -355,17 +393,49 @@ export function MerchantCampaignViews({
               </div>
 
               {cStatus !== 'draft' && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500">Delivery Stats:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" /> {sent} Sent
+                    </span>
+                    {failed > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                        <AlertCircle className="h-3 w-3 shrink-0" /> {failed} Failed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800/60 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        0 Failed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {cStatus !== 'draft' && (
                 <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
-                      <span>Progress ({sent}/{total})</span>
+                  <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
+                    <span>Progress ({processed}/{total})</span>
+                    {failed > 0 ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-bold">{failed} failed</span>
+                    ) : (
                       <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    )}
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 flex">
+                    <div
+                      className="h-full bg-emerald-500 transition-all duration-300"
+                      style={{ width: `${total > 0 ? (sent / total) * 100 : 0}%` }}
+                      title={`Sent: ${sent}`}
+                    />
+                    {failed > 0 && (
                       <div
-                        className="h-full bg-emerald-500 transition-all duration-300"
-                        style={{ width: `${percent}%` }}
+                        className="h-full bg-rose-500 transition-all duration-300"
+                        style={{ width: `${total > 0 ? (failed / total) * 100 : 0}%` }}
+                        title={`Failed: ${failed}`}
                       />
-                    </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -403,6 +473,23 @@ export function MerchantCampaignViews({
                     onClick={() => onProgress(c.id)}
                   >
                     <Activity className="mr-1 h-3.5 w-3.5" /> Progress
+                  </Button>
+                )}
+                {Boolean(failed) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 font-medium"
+                    disabled={isRetrying}
+                    onClick={() => onRetryFailed(c.id)}
+                  >
+                    {isRetrying && actionId === c.id ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="mr-1 h-3.5 w-3.5 text-rose-600" />
+                    )}
+                    Retry ({failed})
                   </Button>
                 )}
                 <Button

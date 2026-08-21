@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import mongoose from 'mongoose';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { MessageTemplate } from '../models/MessageTemplate.js';
@@ -12,7 +13,35 @@ const router = Router();
 
 router.use(authenticateToken);
 
-async function formatCampaign(c: any) {
+export async function computeCampaignsStats(campaignIds: any[]): Promise<Map<string, { total?: number; sent: number; failed: number; pending: number }>> {
+  if (!campaignIds || campaignIds.length === 0) return new Map();
+  const objectIds = campaignIds.map((id) => (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id));
+  const msgStats = await Message.aggregate([
+    { $match: { campaign: { $in: objectIds } } },
+    { $group: { _id: { campaign: '$campaign', status: '$status' }, count: { $sum: 1 } } },
+  ]);
+
+  const statsMap = new Map<string, { sent: number; failed: number; pending: number }>();
+  for (const s of msgStats) {
+    const cId = s._id.campaign?.toString();
+    if (!cId) continue;
+    if (!statsMap.has(cId)) {
+      statsMap.set(cId, { sent: 0, failed: 0, pending: 0 });
+    }
+    const entry = statsMap.get(cId)!;
+    const st = String(s._id.status || '').toLowerCase();
+    if (st === 'sent' || st === 'delivered' || st === 'read') {
+      entry.sent += s.count;
+    } else if (st === 'failed' || st === 'error') {
+      entry.failed += s.count;
+    } else if (st === 'pending' || st === 'queued') {
+      entry.pending += s.count;
+    }
+  }
+  return statsMap;
+}
+
+async function formatCampaign(c: any, overrideStats?: any) {
   const obj = c.toObject ? c.toObject() : c;
   const { _id, __v, ...rest } = obj;
 
@@ -82,10 +111,36 @@ async function formatCampaign(c: any) {
     };
   }
 
+  let calculatedStats = rest.stats || { total: 0, sent: 0, failed: 0, pending: 0 };
+  const totalContacts = rest.recipient_phones?.length || rest.contacts?.length || 0;
+
+  if (overrideStats) {
+    calculatedStats = {
+      total: Math.max(totalContacts, (overrideStats.sent || 0) + (overrideStats.failed || 0) + (overrideStats.pending || 0)),
+      sent: overrideStats.sent || 0,
+      failed: overrideStats.failed || 0,
+      pending: overrideStats.pending !== undefined ? overrideStats.pending : Math.max(0, totalContacts - (overrideStats.sent || 0) - (overrideStats.failed || 0)),
+    };
+  } else if (_id) {
+    try {
+      const statsMap = await computeCampaignsStats([_id]);
+      const single = statsMap.get(_id.toString());
+      if (single) {
+        calculatedStats = {
+          total: Math.max(totalContacts, (single.sent || 0) + (single.failed || 0) + (single.pending || 0)),
+          sent: single.sent || 0,
+          failed: single.failed || 0,
+          pending: single.pending !== undefined ? single.pending : Math.max(0, totalContacts - (single.sent || 0) - (single.failed || 0)),
+        };
+      }
+    } catch (_) {}
+  }
+
   return {
     id: _id ? _id.toString() : obj.id,
     created_at: obj.createdAt,
     ...rest,
+    stats: calculatedStats,
     user: formattedUser,
   };
 }
@@ -121,7 +176,11 @@ const getCampaigns = async (req: AuthRequest, res: Response) => {
   }
 
   const campaigns = await query;
-  const formatted = await Promise.all(campaigns.map(formatCampaign));
+  const campaignIds = campaigns.map((c) => c._id);
+  const statsMap = await computeCampaignsStats(campaignIds);
+  const formatted = await Promise.all(
+    campaigns.map((c) => formatCampaign(c, statsMap.get(c._id.toString())))
+  );
   return res.json(formatted);
 };
 

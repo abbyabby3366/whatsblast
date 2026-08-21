@@ -7,6 +7,7 @@ import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { Customer } from '../models/Customer.js';
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
+import { computeCampaignsStats } from './campaignRoutes.js';
 
 const router = Router();
 
@@ -256,15 +257,30 @@ const getMerchantDashboardStats = async (req: AuthRequest, res: Response) => {
       .sort({ createdAt: -1 })
       .limit(5);
 
+    const recentIds = recentCampaignsDocs.map((c) => c._id);
+    const recentStatsMap = await computeCampaignsStats(recentIds);
+
     const recentCampaigns = recentCampaignsDocs.map((c: any) => {
       const obj = c.toObject ? c.toObject() : c;
+      const cId = obj._id ? obj._id.toString() : obj.id;
+      const liveStats = recentStatsMap.get(cId);
+      const totalRecips = obj.recipient_phones?.length || obj.contacts?.length || 0;
+      const stats = liveStats
+        ? {
+            total: Math.max(totalRecips, liveStats.sent + liveStats.failed + liveStats.pending),
+            sent: liveStats.sent,
+            failed: liveStats.failed,
+            pending: liveStats.pending,
+          }
+        : obj.stats || {};
+
       return {
-        id: obj._id ? obj._id.toString() : obj.id,
+        id: cId,
         name: obj.name,
         status: obj.status,
         created_at: obj.createdAt,
         error_message: obj.error_message,
-        stats: obj.stats || {},
+        stats,
         recipient_phones: obj.recipient_phones || [],
         contacts: obj.contacts || [],
         recipients: obj.recipients || [],

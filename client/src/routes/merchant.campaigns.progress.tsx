@@ -149,19 +149,7 @@ function CampaignProgressPage() {
     )
   }
 
-  const stats = campaign.stats || {}
-  const total =
-    stats.total ||
-    campaign.recipient_phones?.length ||
-    campaign.contacts?.length ||
-    0
-  const sent = stats.sent || campaign.current_index || 0
-  const failed = stats.failed || 0
-  const pending = Math.max(0, total - sent - failed)
-  const percent =
-    total > 0 ? Math.min(100, Math.round(((sent + failed) / total) * 100)) : 0
-  const cStatus = (campaign.status || 'draft').toUpperCase()
-
+  const rawStats = campaign.stats || {}
   const logs: any[] = campaignLogsData?.results || []
   const recipientPhones: string[] =
     campaign.recipient_phones ||
@@ -236,6 +224,32 @@ function CampaignProgressPage() {
           message: safeText(l.content?.text || l.content, 'Message'),
         }))
 
+  // Calculate live accurate counts from logs when available, falling back to campaign.stats
+  const logSentCount = reportRows.filter((r) =>
+    ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())
+  ).length
+  const logFailedCount = reportRows.filter((r) =>
+    ['failed', 'error'].includes((r.status || '').toLowerCase())
+  ).length
+  const logPendingCount = reportRows.filter((r) =>
+    ['pending', 'queued'].includes((r.status || '').toLowerCase())
+  ).length
+
+  const hasLogData = logs.length > 0 || reportRows.length > 0
+  const total =
+    rawStats.total ||
+    recipientPhones.length ||
+    (hasLogData ? reportRows.length : 0) ||
+    0
+  const sent = hasLogData ? logSentCount : (rawStats.sent || 0)
+  const failed = hasLogData ? logFailedCount : (rawStats.failed || 0)
+  const pending = hasLogData
+    ? logPendingCount
+    : (rawStats.pending !== undefined ? rawStats.pending : Math.max(0, total - sent - failed))
+  const processed = sent + failed
+  const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
+  const cStatus = (campaign.status || 'draft').toUpperCase()
+
   return (
     <div className="space-y-4 max-w-6xl mx-auto pb-8">
       {/* Top Header / Navigation */}
@@ -266,7 +280,7 @@ function CampaignProgressPage() {
               size="sm"
               onClick={() => retryFailedMutation.mutate(campaign.id)}
               disabled={retryFailedMutation.isPending}
-              className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs font-medium"
+              className="bg-rose-600 hover:bg-rose-700 text-white h-8 text-xs font-medium shadow-xs"
             >
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
               Retry All Failed ({failed})
@@ -299,7 +313,9 @@ function CampaignProgressPage() {
             <span
               className={`inline-block rounded-full px-3.5 py-1 text-xs font-semibold border ${
                 cStatus === 'COMPLETED' || cStatus === 'completed'
-                  ? 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                  ? failed > 0
+                    ? 'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                   : cStatus === 'RUNNING' || cStatus === 'running'
                   ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800 animate-pulse'
                   : cStatus === 'PAUSED' || cStatus === 'paused'
@@ -311,10 +327,32 @@ function CampaignProgressPage() {
                   : 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
               }`}
             >
-              {cStatus}
+              {cStatus === 'COMPLETED' && failed > 0 ? `COMPLETED (${failed} FAILED)` : cStatus}
             </span>
           </div>
         </div>
+
+        {/* Failed messages banner if any */}
+        {failed > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <span>
+                <strong>{failed} message(s) failed</strong> during delivery. You can click <strong>"Retry All Failed"</strong> or retry individual recipients below.
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => retryFailedMutation.mutate(campaign.id)}
+              disabled={retryFailedMutation.isPending}
+              className="bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 text-xs font-medium shrink-0 self-start sm:self-auto"
+            >
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              Retry All Failed ({failed})
+            </Button>
+          </div>
+        )}
 
         {/* Error message notice if any */}
         {campaign.error_message && (
@@ -340,15 +378,30 @@ function CampaignProgressPage() {
         <div className="space-y-2">
           <div className="flex justify-between text-sm font-medium">
             <span className="text-slate-700 dark:text-slate-300">Blast Progress</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-              {percent}% ({sent + failed}/{total})
-            </span>
+            <div className="flex items-center gap-2">
+              {failed > 0 && (
+                <span className="text-rose-600 dark:text-rose-400 font-semibold text-xs bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/50">
+                  {failed} Failed
+                </span>
+              )}
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                {percent}% ({processed}/{total})
+              </span>
+            </div>
           </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+          <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 flex">
             <div
               className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-              style={{ width: `${percent}%` }}
+              style={{ width: `${total > 0 ? (sent / total) * 100 : 0}%` }}
+              title={`Success / Sent: ${sent}`}
             />
+            {failed > 0 && (
+              <div
+                className="h-full bg-rose-500 transition-all duration-500"
+                style={{ width: `${total > 0 ? (failed / total) * 100 : 0}%` }}
+                title={`Failed: ${failed}`}
+              />
+            )}
           </div>
         </div>
 
