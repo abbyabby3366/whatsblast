@@ -371,15 +371,13 @@ const deleteCampaign = async (req: AuthRequest, res: Response) => {
 
 router.delete('/blast-campaigns/:id', deleteCampaign);
 
-const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
-  const filter: any = { _id: req.params.id };
-  if (req.user?.role !== 'admin') {
-    filter.user = req.user?._id;
-  }
+export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<{ success: boolean; count: number; message: string; campaign?: any }> => {
+  const campaign = typeof campaignDocOrId === 'string'
+    ? await BlastCampaign.findById(campaignDocOrId)
+    : campaignDocOrId;
 
-  const campaign = await BlastCampaign.findOne(filter);
   if (!campaign) {
-    return res.status(404).json({ error: 'Campaign not found' });
+    return { success: false, count: 0, message: 'Campaign not found' };
   }
 
   const allContacts = campaign.contacts || campaign.recipient_phones || [];
@@ -400,7 +398,7 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
   }
 
   if (retryContacts.length === 0) {
-    return res.json({ success: true, message: 'No failed messages to retry', campaign: formatCampaign(campaign) });
+    return { success: true, count: 0, message: 'No failed messages to retry', campaign };
   }
 
   const now = new Date();
@@ -481,10 +479,30 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
 
   await campaign.save();
 
-  return res.json({
+  return {
     success: true,
+    count: retryContacts.length,
     message: `Retrying ${retryContacts.length} failed recipient(s)`,
-    campaign: formatCampaign(campaign),
+    campaign,
+  };
+};
+
+const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
+  const filter: any = { _id: req.params.id };
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+
+  const campaign = await BlastCampaign.findOne(filter);
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  const result = await executeCampaignRetryFailed(campaign);
+  return res.json({
+    success: result.success,
+    message: result.message,
+    campaign: await formatCampaign(result.campaign || campaign),
   });
 };
 

@@ -74,6 +74,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
 
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false)
+  const [isRetryAllConfirmOpen, setIsRetryAllConfirmOpen] = useState(false)
   const [isTestSendOpen, setIsTestSendOpen] = useState(false)
 
   // Fetch users for admin merchant filter & display
@@ -107,6 +108,37 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     },
     onError: async (err) => {
       toast.error(await getErrorMessage(err, 'Failed to clear messages.'))
+    },
+  })
+
+  const retryAllFailedMutation = useMutation({
+    mutationFn: () => {
+      const searchParams = new URLSearchParams()
+      if (isAdmin && selectedMerchant && selectedMerchant !== 'ALL') {
+        searchParams.set('user', selectedMerchant)
+      }
+      return api.post('messages/retry-all-failed', { searchParams }).json<any>()
+    },
+    onSuccess: (data) => {
+      toast.success(data?.message || 'Queued retry for all failed messages!')
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      setIsRetryAllConfirmOpen(false)
+    },
+    onError: async (err) => {
+      toast.error(await getErrorMessage(err, 'Failed to retry failed messages.'))
+    },
+  })
+
+  const retrySingleMessageMutation = useMutation({
+    mutationFn: (msgId: string) => api.post(`messages/${msgId}/retry`).json<any>(),
+    onSuccess: (data) => {
+      toast.success(data?.message || 'Message retried successfully!')
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+    },
+    onError: async (err) => {
+      toast.error(await getErrorMessage(err, 'Failed to retry message.'))
     },
   })
 
@@ -363,23 +395,45 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       columnHelper.display({
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
-        cell: (info) => (
-          <div className="flex items-center justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedMessage(info.row.original)}
-              className="h-8 px-2.5 text-xs gap-1.5"
-            >
-              <Eye className="w-3.5 h-3.5" /> Preview
-            </Button>
-          </div>
-        ),
+        cell: (info) => {
+          const row = info.row.original
+          const isFailed = (row.status || '').toLowerCase() === 'failed'
+          const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables === row.id
+
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              {isFailed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isRetryingThis}
+                  onClick={() => retrySingleMessageMutation.mutate(row.id)}
+                  className="h-8 px-2.5 text-xs gap-1.5 text-amber-600 border-amber-200 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400"
+                >
+                  {isRetryingThis ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  )}
+                  Retry
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedMessage(row)}
+                className="h-8 px-2.5 text-xs gap-1.5"
+              >
+                <Eye className="w-3.5 h-3.5" /> Preview
+              </Button>
+            </div>
+          )
+        },
       })
     )
 
     return cols
-  }, [isAdmin, allUsers])
+  }, [isAdmin, allUsers, retrySingleMessageMutation.isPending, retrySingleMessageMutation.variables])
 
   const table = useReactTable({
     data: messages,
@@ -416,6 +470,21 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     <div className="space-y-4 max-w-7xl mx-auto pb-10">
       {/* Header / Actions Bar */}
       <div className="flex items-center justify-end gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsRetryAllConfirmOpen(true)}
+          disabled={retryAllFailedMutation.isPending}
+          className="text-amber-600 border-amber-200 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400 text-xs font-medium gap-1.5"
+        >
+          {retryAllFailedMutation.isPending ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <RotateCcw className="w-3.5 h-3.5" />
+          )}
+          Retry All Failed
+        </Button>
+
         <Button
           variant="outline"
           size="sm"
@@ -748,6 +817,29 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           }
         />
       )}
+
+      {/* Retry All Failed Confirm Modal */}
+      <Dialog open={isRetryAllConfirmOpen} onOpenChange={setIsRetryAllConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Retry All Failed Messages?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500">
+            This will restart and re-queue all failed campaign and direct messages to be sent according to campaign intervals.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRetryAllConfirmOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={retryAllFailedMutation.isPending}
+              onClick={() => retryAllFailedMutation.mutate()}
+            >
+              {retryAllFailedMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Retry All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Admin Clear Confirm Modal */}
       <Dialog open={isClearConfirmOpen} onOpenChange={setIsClearConfirmOpen}>

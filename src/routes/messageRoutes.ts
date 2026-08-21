@@ -6,10 +6,9 @@ import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { BlastCampaign } from '../models/BlastCampaign.js';
 import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
-import { retryCampaignRecipient } from './campaignRoutes.js';
+import { retryCampaignRecipient, executeCampaignRetryFailed } from './campaignRoutes.js';
 
 const router = Router();
-
 router.use(authenticateToken);
 
 function formatMessage(m: any) {
@@ -447,6 +446,106 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
   }
 };
 
+const retryAllFailed = async (req: AuthRequest, res: Response) => {
+  try {
+    const filter: any = { status: MessageStatus.FAILED };
+    const { user_id, merchant_id, user } = req.query as any;
+
+    if (req.user?.role !== 'admin') {
+      const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
+      const sessionIds = userSessions.map((s) => s._id);
+
+      const userCampaigns = await BlastCampaign.find({ user: req.user?._id }).select('_id');
+      const campaignIds = userCampaigns.map((c) => c._id);
+
+      filter.$or = [
+        { session: { $in: sessionIds } },
+        { campaign: { $in: campaignIds } },
+      ];
+    } else {
+      const targetUserId = user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
+      if (targetUserId && targetUserId !== 'all') {
+        const uSessions = await WhatsAppSession.find({ user: targetUserId }).select('_id');
+        const uCampaigns = await BlastCampaign.find({ user: targetUserId }).select('_id');
+        filter.$or = [
+          { session: { $in: uSessions.map((s) => s._id) } },
+          { campaign: { $in: uCampaigns.map((c) => c._id) } },
+        ];
+      }
+    }
+
+    const failedMessages = await Message.find(filter);
+    if (failedMessages.length === 0) {
+      return res.json({ success: true, count: 0, message: 'No failed messages found to retry' });
+    }
+
+    const campaignIdSet = new Set<string>();
+    const nonCampaignMsgs: any[] = [];
+
+    for (const msg of failedMessages) {
+      if (msg.campaign) {
+        campaignIdSet.add(msg.campaign.toString());
+      } else {
+        nonCampaignMsgs.push(msg);
+      }
+    }
+
+    let retriedCount = 0;
+    let retriedCampaignsCount = 0;
+
+    for (const cId of Array.from(campaignIdSet)) {
+      const campRes = await executeCampaignRetryFailed(cId);
+      if (campRes.success && campRes.count > 0) {
+        retriedCount += campRes.count;
+        retriedCampaignsCount += 1;
+      }
+    }
+
+    for (const msg of nonCampaignMsgs) {
+      const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
+      if (recipientPhone) {
+        try {
+          let sessionId: string;
+          if (msg.session) {
+            const sDoc = await WhatsAppSession.findById(msg.session);
+            sessionId = sDoc?.session_id || await pickUserSession(req.user?._id?.toString() || '');
+          } else {
+            sessionId = await pickUserSession(req.user?._id?.toString() || '');
+          }
+          let activeSession = getActiveSession(sessionId);
+          if (!activeSession) {
+            activeSession = await initWhatsAppSession(sessionId);
+          }
+          const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
+          const targetJid = `${cleanPhone}@s.whatsapp.net`;
+          const textContent = msg.content?.text || msg.content?.caption || 'Hello';
+          const result = await activeSession.socket.sendMessage(targetJid, { text: textContent });
+
+          msg.status = MessageStatus.SENT;
+          msg.sent_at = new Date();
+          msg.wa_timestamp = new Date();
+          msg.message_id = result?.key?.id || msg.message_id;
+          msg.error = undefined;
+          msg.retry_count = (msg.retry_count || 0) + 1;
+          await msg.save();
+          retriedCount += 1;
+        } catch (_) {}
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: retriedCount || failedMessages.length,
+      campaignsCount: retriedCampaignsCount,
+      message: `Successfully queued retry for ${retriedCount || failedMessages.length} failed message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to retry all failed messages' });
+  }
+};
+
+router.post('/messages/retry-all-failed', retryAllFailed);
+router.post('/messages/retry-all', retryAllFailed);
 router.post('/messages/:id/retry', retryMessage);
 router.delete('/messages', clearMessages);
 router.delete('/messages/clear-all', clearMessages);
