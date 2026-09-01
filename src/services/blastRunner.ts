@@ -475,6 +475,16 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
         campaign.stats.failed += 1;
         campaign.current_index += 1;
+
+        if (campaign.current_index >= campaign.contacts.length) {
+          campaign.status = CampaignStatus.COMPLETED;
+          campaign.completed_at = new Date();
+          campaign.error_message = undefined;
+          await campaign.save();
+          console.log(`🎉 Campaign "${campaign.name}" completed!`);
+          break;
+        }
+
         await campaign.save();
 
         console.log(`❌ Campaign "${campaign.name}": Failed to send to ${rawPhone} (Not on WhatsApp) (${campaign.current_index}/${campaign.contacts.length})`);
@@ -693,6 +703,16 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
           campaign.current_index += 1;
           await campaign.save();
         }
+      }
+
+      // Check if all contacts are finished before waiting for interval
+      if (campaign.current_index >= campaign.contacts.length) {
+        campaign.status = CampaignStatus.COMPLETED;
+        campaign.completed_at = new Date();
+        campaign.error_message = undefined;
+        await campaign.save();
+        console.log(`🎉 Campaign "${campaign.name}" completed!`);
+        break;
       }
 
       // Random delay between contacts (inherits campaign 10-15 minute settings or session defaults)
