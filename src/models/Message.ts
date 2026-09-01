@@ -13,6 +13,7 @@ export enum MessageStatus {
   READ = 'read',
   FAILED = 'failed',
   RECEIVED = 'received',
+  EXPIRED = 'expired',
 }
 
 export interface IMessage extends Document {

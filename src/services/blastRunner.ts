@@ -414,7 +414,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       const existingPendingMsg = await Message.findOne({
         campaign: campaign._id,
         recipient_phone: cleanRecip,
-        status: MessageStatus.PENDING,
+        status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] },
       }).populate('session');
 
       const qualifiedRes = await getQualifiedSessionForCampaign(campaign, existingPendingMsg);
@@ -445,7 +445,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         const targetPhone = cleanPhone || rawPhone;
         const now = new Date();
         const updatedMsg = await Message.findOneAndUpdate(
-          { campaign: campaign._id, recipient_phone: targetPhone, status: MessageStatus.PENDING },
+          { campaign: campaign._id, recipient_phone: targetPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
           {
             session: sessionDoc?._id,
             status: MessageStatus.FAILED,
@@ -549,7 +549,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
           const now = new Date();
           const updatedMsg = await Message.findOneAndUpdate(
-            { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+            { campaign: campaign._id, recipient_phone: cleanPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
             {
               session: sessionDoc?._id,
               type: tplItem.messageType || tplItem.type || 'text',
@@ -636,7 +636,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
                 const now = new Date();
                 await Message.findOneAndUpdate(
-                  { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+                  { campaign: campaign._id, recipient_phone: cleanPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
                   {
                     session: retrySessionDoc?._id,
                     type: tplItem.messageType || tplItem.type || 'text',
@@ -668,7 +668,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
           try {
             const now = new Date();
             const updatedMsg = await Message.findOneAndUpdate(
-              { campaign: campaign._id, recipient_phone: cleanPhone, status: MessageStatus.PENDING },
+              { campaign: campaign._id, recipient_phone: cleanPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
               {
                 session: sessionDoc?._id,
                 status: MessageStatus.FAILED,

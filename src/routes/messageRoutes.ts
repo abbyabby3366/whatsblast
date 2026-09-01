@@ -21,7 +21,15 @@ function formatMessage(m: any) {
     : (typeof obj.session === 'object' && obj.session && obj.session.user)
       ? obj.session.user
       : null;
-  const isSentOrFailed = obj.status === MessageStatus.SENT || obj.status === MessageStatus.FAILED || obj.status === MessageStatus.DELIVERED || obj.status === MessageStatus.READ;
+  const rawStatus = (obj.status || '').toLowerCase();
+  const isSent = rawStatus === 'sent' || rawStatus === 'delivered' || rawStatus === 'read';
+  const isFailed = rawStatus === 'failed';
+  const isPendingOrQueued = rawStatus === 'pending' || rawStatus === 'queued';
+  const targetScheduled = obj.scheduled_at || obj.createdAt;
+  const isExpired = rawStatus === 'expired' || (isPendingOrQueued && targetScheduled && new Date(targetScheduled).getTime() < Date.now());
+
+  const computedStatus = isExpired ? 'expired' : rawStatus || MessageStatus.PENDING;
+  const isSentOrFailed = isSent || isFailed;
 
   return {
     id: _id ? _id.toString() : obj.id,
@@ -35,6 +43,7 @@ function formatMessage(m: any) {
     user: user,
     retry_count: obj.retry_count || 0,
     ...rest,
+    status: computedStatus,
   };
 }
 
@@ -83,6 +92,13 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     const s = String(status).toLowerCase();
     if (s === 'sent') {
       filter.status = { $in: ['sent', 'delivered', 'read'] };
+    } else if (s === 'expired') {
+      filter.$or = [
+        { status: MessageStatus.EXPIRED },
+        { status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] }, scheduled_at: { $lt: new Date() } },
+      ];
+    } else if (s === 'pending') {
+      filter.status = { $in: ['pending', 'queued'] };
     } else {
       filter.status = s;
     }
@@ -412,22 +428,40 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
       return retryCampaignRecipient(req, res);
     }
 
-    // Direct message retry
-    let sessionId: string;
-    if (msg.session) {
-      const sDoc = await WhatsAppSession.findById(msg.session);
-      sessionId = sDoc?.session_id || await pickUserSession(req.user?._id?.toString() || '');
-    } else {
-      sessionId = await pickUserSession(req.user?._id?.toString() || '');
+    const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
+    const targetJid = `${cleanPhone}@s.whatsapp.net`;
+
+    let sessionId: string | null = null;
+    try {
+      if (msg.session) {
+        const sDoc = await WhatsAppSession.findById(msg.session);
+        sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
+      } else {
+        sessionId = await pickUserSession(req.user?._id?.toString() || '');
+      }
+    } catch (_) {}
+
+    if (!sessionId) {
+      msg.status = MessageStatus.PENDING;
+      msg.scheduled_at = new Date();
+      msg.error = undefined;
+      msg.retry_count = (msg.retry_count || 0) + 1;
+      await msg.save();
+      return res.json({ success: true, message: `Message rescheduled for ${cleanPhone}. Will send when WhatsApp connects.` });
     }
 
     let activeSession = getActiveSession(sessionId);
     if (!activeSession) {
-      activeSession = await initWhatsAppSession(sessionId);
+      try { activeSession = await initWhatsAppSession(sessionId); } catch (_) {}
     }
 
-    const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
-    const targetJid = `${cleanPhone}@s.whatsapp.net`;
+    if (!activeSession?.socket) {
+      msg.status = MessageStatus.PENDING;
+      msg.scheduled_at = new Date();
+      msg.retry_count = (msg.retry_count || 0) + 1;
+      await msg.save();
+      return res.json({ success: true, message: `Message rescheduled for ${cleanPhone}.` });
+    }
 
     const textContent = msg.content?.text || msg.content?.caption || 'Hello';
     const result = await activeSession.socket.sendMessage(targetJid, { text: textContent });
@@ -435,6 +469,7 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
     msg.status = MessageStatus.SENT;
     msg.sent_at = new Date();
     msg.wa_timestamp = new Date();
+    msg.scheduled_at = new Date();
     msg.message_id = result?.key?.id || msg.message_id;
     msg.error = undefined;
     msg.retry_count = (msg.retry_count || 0) + 1;
@@ -448,29 +483,32 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
 
 const retryAllFailed = async (req: AuthRequest, res: Response) => {
   try {
-    const filter: any = { status: MessageStatus.FAILED };
+    const statusOrCond = [
+      { status: MessageStatus.FAILED },
+      { status: MessageStatus.EXPIRED },
+      { status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] }, scheduled_at: { $lt: new Date() } },
+    ];
+    const filter: any = { $or: statusOrCond };
     const { user_id, merchant_id, user } = req.query as any;
 
     if (req.user?.role !== 'admin') {
       const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
-      const sessionIds = userSessions.map((s) => s._id);
-
       const userCampaigns = await BlastCampaign.find({ user: req.user?._id }).select('_id');
-      const campaignIds = userCampaigns.map((c) => c._id);
-
-      filter.$or = [
-        { session: { $in: sessionIds } },
-        { campaign: { $in: campaignIds } },
+      filter.$and = [
+        { $or: statusOrCond },
+        { $or: [{ session: { $in: userSessions.map((s) => s._id) } }, { campaign: { $in: userCampaigns.map((c) => c._id) } }] },
       ];
+      delete filter.$or;
     } else {
       const targetUserId = user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
       if (targetUserId && targetUserId !== 'all') {
         const uSessions = await WhatsAppSession.find({ user: targetUserId }).select('_id');
         const uCampaigns = await BlastCampaign.find({ user: targetUserId }).select('_id');
-        filter.$or = [
-          { session: { $in: uSessions.map((s) => s._id) } },
-          { campaign: { $in: uCampaigns.map((c) => c._id) } },
+        filter.$and = [
+          { $or: statusOrCond },
+          { $or: [{ session: { $in: uSessions.map((s) => s._id) } }, { campaign: { $in: uCampaigns.map((c) => c._id) } }] },
         ];
+        delete filter.$or;
       }
     }
 
@@ -481,18 +519,13 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
 
     const campaignIdSet = new Set<string>();
     const nonCampaignMsgs: any[] = [];
-
     for (const msg of failedMessages) {
-      if (msg.campaign) {
-        campaignIdSet.add(msg.campaign.toString());
-      } else {
-        nonCampaignMsgs.push(msg);
-      }
+      if (msg.campaign) campaignIdSet.add(msg.campaign.toString());
+      else nonCampaignMsgs.push(msg);
     }
 
     let retriedCount = 0;
     let retriedCampaignsCount = 0;
-
     for (const cId of Array.from(campaignIdSet)) {
       const campRes = await executeCampaignRetryFailed(cId);
       if (campRes.success && campRes.count > 0) {
@@ -508,14 +541,12 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
           let sessionId: string;
           if (msg.session) {
             const sDoc = await WhatsAppSession.findById(msg.session);
-            sessionId = sDoc?.session_id || await pickUserSession(req.user?._id?.toString() || '');
+            sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
           } else {
             sessionId = await pickUserSession(req.user?._id?.toString() || '');
           }
           let activeSession = getActiveSession(sessionId);
-          if (!activeSession) {
-            activeSession = await initWhatsAppSession(sessionId);
-          }
+          if (!activeSession) activeSession = await initWhatsAppSession(sessionId);
           const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
           const targetJid = `${cleanPhone}@s.whatsapp.net`;
           const textContent = msg.content?.text || msg.content?.caption || 'Hello';

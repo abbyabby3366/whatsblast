@@ -265,6 +265,10 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const st = (info.getValue() || 'sent').toLowerCase()
           const msg = info.row.original
           const isFailed = st === 'failed'
+          const isSent = st === 'delivered' || st === 'sent' || st === 'read'
+          const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
+          const isPending = (st === 'pending' || st === 'queued') && !isExpired
+
           const failedReason =
             msg.error ||
             msg.error_message ||
@@ -279,18 +283,20 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const badge = (
             <span
               className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium uppercase ${
-                st === 'delivered' || st === 'sent' || st === 'read'
+                isSent
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                  : st === 'pending' || st === 'queued'
+                  : isExpired
+                  ? 'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-950/50 dark:text-orange-300 dark:border-orange-800 cursor-pointer'
+                  : isPending
                   ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
                   : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800 cursor-pointer'
               }`}
             >
-              {st}
+              {isExpired ? 'expired' : st}
             </span>
           )
 
-          if (isFailed) {
+          if (isFailed || isExpired) {
             return (
               <TooltipProvider>
                 <Tooltip>
@@ -298,8 +304,14 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
                     {badge}
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs bg-slate-900 text-slate-100 shadow-md">
-                    <p className="font-semibold text-rose-400 mb-0.5">Failed Reason:</p>
-                    <p className="break-words">{failedReason}</p>
+                    <p className={`font-semibold ${isExpired ? 'text-orange-400' : 'text-rose-400'} mb-0.5`}>
+                      {isExpired ? 'Expired Status:' : 'Failed Reason:'}
+                    </p>
+                    <p className="break-words">
+                      {isExpired
+                        ? (msg.error || 'Scheduled time passed without being sent. Click Retry to reschedule.')
+                        : failedReason}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -327,6 +339,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const st = (msg.status || '').toLowerCase()
           const isSent = st === 'sent' || st === 'delivered' || st === 'read'
           const isFailed = st === 'failed'
+          const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
           const targetTime = isSent
             ? (msg.sent_at || msg.wa_timestamp || msg.updatedAt)
             : (msg.scheduled_at || msg.created_at)
@@ -345,25 +358,29 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
             'Message delivery failed'
 
           const content = (
-            <div className={`flex flex-col ${isFailed ? 'cursor-pointer' : ''}`}>
+            <div className={`flex flex-col ${(isFailed || isExpired) ? 'cursor-pointer' : ''}`}>
               <span
                 className={`font-mono text-xs font-medium ${
                   isSent
                     ? 'text-emerald-700 dark:text-emerald-400'
                     : isFailed
                     ? 'text-rose-700 dark:text-rose-400'
+                    : isExpired
+                    ? 'text-orange-700 dark:text-orange-400'
                     : 'text-amber-700 dark:text-amber-400'
                 }`}
               >
                 {dayjs(targetTime).format('DD/MM/YY hh:mm:ss A')}
               </span>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                {isSent ? 'Sent' : isFailed ? 'Failed' : 'Scheduled'}
+              <span className={`text-[10px] font-medium ${
+                isExpired ? 'text-orange-600 dark:text-orange-400 font-semibold' : 'text-slate-400 dark:text-slate-500'
+              }`}>
+                {isSent ? 'Sent' : isFailed ? 'Failed' : isExpired ? 'Expired' : 'Scheduled'}
               </span>
             </div>
           )
 
-          if (isFailed) {
+          if (isFailed || isExpired) {
             return (
               <TooltipProvider>
                 <Tooltip>
@@ -371,8 +388,14 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
                     {content}
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs bg-slate-900 text-slate-100 shadow-md">
-                    <p className="font-semibold text-rose-400 mb-0.5">Failed Reason:</p>
-                    <p className="break-words">{failedReason}</p>
+                    <p className={`font-semibold ${isExpired ? 'text-orange-400' : 'text-rose-400'} mb-0.5`}>
+                      {isExpired ? 'Expired Details:' : 'Failed Reason:'}
+                    </p>
+                    <p className="break-words">
+                      {isExpired
+                        ? (msg.error || 'Scheduled time passed while waiting in queue. Click Retry to reschedule.')
+                        : failedReason}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -397,18 +420,22 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         header: () => <div className="text-right">Actions</div>,
         cell: (info) => {
           const row = info.row.original
-          const isFailed = (row.status || '').toLowerCase() === 'failed'
+          const rowSt = (row.status || '').toLowerCase()
+          const isRowExpired = rowSt === 'expired' || ((rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).isBefore(dayjs()))
+          const isFailed = rowSt === 'failed'
+          const canRetry = isFailed || isRowExpired
           const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables === row.id
 
           return (
             <div className="flex items-center justify-end gap-1.5">
-              {isFailed && (
+              {canRetry && (
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={isRetryingThis}
                   onClick={() => retrySingleMessageMutation.mutate(row.id)}
                   className="h-8 px-2.5 text-xs gap-1.5 text-amber-600 border-amber-200 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400"
+                  title={isRowExpired ? 'Reschedule and retry this message' : 'Retry sending this message'}
                 >
                   {isRetryingThis ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -527,6 +554,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               <SelectItem value="ALL">All Statuses</SelectItem>
               <SelectItem value="SENT">Sent / Delivered / Read</SelectItem>
               <SelectItem value="PENDING">Pending / Queued</SelectItem>
+              <SelectItem value="EXPIRED">Expired</SelectItem>
               <SelectItem value="FAILED">Failed</SelectItem>
             </SelectContent>
           </Select>

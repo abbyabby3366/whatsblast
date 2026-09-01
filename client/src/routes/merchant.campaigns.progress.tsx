@@ -453,6 +453,8 @@ function CampaignProgressPage() {
                   const st = (row.status || 'pending').toLowerCase()
                   const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
                   const isFailed = st === 'failed' || st === 'error'
+                  const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).isBefore(dayjs()))
+                  const canRetry = isFailed || isExpired
 
                   return (
                     <TableRow key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 text-xs">
@@ -464,6 +466,8 @@ function CampaignProgressPage() {
                           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                             isSuccess
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                              : isExpired
+                              ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
                               : isFailed
                               ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
                               : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
@@ -471,7 +475,7 @@ function CampaignProgressPage() {
                         >
                           {isSuccess && <CheckCircle2 className="h-3 w-3" />}
                           {isFailed && <AlertCircle className="h-3 w-3" />}
-                          {row.status ? row.status.toUpperCase() : 'PENDING'}
+                          {isExpired ? 'EXPIRED' : row.status ? row.status.toUpperCase() : 'PENDING'}
                         </span>
                         {row.error && (
                           <p className="mt-0.5 text-[10px] text-rose-600 dark:text-rose-400 font-normal">
@@ -495,13 +499,17 @@ function CampaignProgressPage() {
                                     ? 'text-emerald-700 dark:text-emerald-400'
                                     : isFailed
                                     ? 'text-rose-700 dark:text-rose-400'
+                                    : isExpired
+                                    ? 'text-orange-700 dark:text-orange-400'
                                     : 'text-amber-700 dark:text-amber-400'
                                 }`}
                               >
                                 {dayjs(targetTime).format('DD/MM/YY hh:mm:ss A')}
                               </span>
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                                {isSuccess ? 'Sent' : isFailed ? 'Failed' : 'Scheduled'}
+                              <span className={`text-[10px] font-medium ${
+                                isExpired ? 'text-orange-600 dark:text-orange-400 font-semibold' : 'text-slate-400 dark:text-slate-500'
+                              }`}>
+                                {isSuccess ? 'Sent' : isFailed ? 'Failed' : isExpired ? 'Expired' : 'Scheduled'}
                               </span>
                             </div>
                           )
@@ -511,12 +519,13 @@ function CampaignProgressPage() {
                         {safeText(row.message)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {isFailed ? (
+                        {canRetry ? (
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-7 px-2 text-xs border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                            className="h-7 px-2 text-xs border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                            title={isExpired ? 'Reschedule and retry message' : 'Retry sending message'}
                             disabled={retryRecipientMutation.isPending}
                             onClick={() =>
                               retryRecipientMutation.mutate({
