@@ -248,14 +248,21 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
       status: SessionStatus.CONNECTED,
     }).sort({ createdAt: 1 });
 
+    const matchesAllowed = (s: any) => {
+      if (sessionModeVal !== 'SPECIFIC' || selectedSessionsList.length === 0) return true;
+      const sId = s.session_id;
+      const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
+      return (sId && selectedSessionsList.includes(sId)) || (mongoId ? selectedSessionsList.includes(mongoId) : false);
+    };
+
     if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-      availableSessions = availableSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+      availableSessions = availableSessions.filter(matchesAllowed);
     }
 
     if (availableSessions.length === 0) {
       let fallbackSessions = await WhatsAppSession.find({ user: targetUser }).sort({ createdAt: 1 });
       if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-        fallbackSessions = fallbackSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+        fallbackSessions = fallbackSessions.filter(matchesAllowed);
       }
       availableSessions = fallbackSessions;
     }
@@ -469,13 +476,20 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
   const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
 
   let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
+  const matchesAllowed = (s: any) => {
+    if (sessionModeVal !== 'SPECIFIC' || selectedSessionsList.length === 0) return true;
+    const sId = s.session_id;
+    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
+    return (sId && selectedSessionsList.includes(sId)) || (mongoId ? selectedSessionsList.includes(mongoId) : false);
+  };
+
   if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-    availableSessions = availableSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+    availableSessions = availableSessions.filter(matchesAllowed);
   }
   if (availableSessions.length === 0) {
     let fallbackSessions = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
     if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-      fallbackSessions = fallbackSessions.filter((s) => selectedSessionsList.includes(s.session_id));
+      fallbackSessions = fallbackSessions.filter(matchesAllowed);
     }
     availableSessions = fallbackSessions;
   }

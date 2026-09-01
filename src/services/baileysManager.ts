@@ -32,17 +32,54 @@ interface ActiveSession {
 }
 
 const activeSessions = new Map<string, ActiveSession>();
+const pendingInits = new Map<string, Promise<ActiveSession>>();
+const reconnectAttempts = new Map<string, number>();
+const reconnectTimers = new Map<string, NodeJS.Timeout>();
+const MAX_RECONNECT_ATTEMPTS = 10;
+
+let cachedBaileysVersion: [number, number, number] | null = null;
+async function getBaileysVersion(): Promise<[number, number, number]> {
+  if (cachedBaileysVersion) return cachedBaileysVersion;
+  try {
+    const { version } = await fetchLatestBaileysVersion();
+    cachedBaileysVersion = version as [number, number, number];
+    return cachedBaileysVersion;
+  } catch (err) {
+    console.warn('⚠️ Failed to fetch latest Baileys version, using default fallback', err);
+    return [2, 3000, 1015901307];
+  }
+}
+
+export function destroySocket(sock: any): void {
+  if (!sock) return;
+  try {
+    sock.ev?.removeAllListeners('creds.update');
+    sock.ev?.removeAllListeners('connection.update');
+    sock.ev?.removeAllListeners('messages.upsert');
+    sock.ev?.removeAllListeners('messages.update');
+    sock.ws?.removeAllListeners();
+    if (typeof sock.end === 'function') {
+      sock.end(undefined);
+    }
+  } catch (_) { }
+}
 
 export function getActiveSession(sessionId: string): ActiveSession | undefined {
   return activeSessions.get(sessionId);
 }
 
 export function removeActiveSession(sessionId: string): void {
+  const timer = reconnectTimers.get(sessionId);
+  if (timer) {
+    clearTimeout(timer);
+    reconnectTimers.delete(sessionId);
+  }
+  reconnectAttempts.delete(sessionId);
+  pendingInits.delete(sessionId);
+
   const active = activeSessions.get(sessionId);
   if (active) {
-    try {
-      active.socket.end(undefined);
-    } catch (_) { }
+    destroySocket(active.socket);
     activeSessions.delete(sessionId);
   }
 }
@@ -99,7 +136,34 @@ export async function updateLastPhysicalPhoneSentMessage(sessionId: string, time
 }
 
 export async function initWhatsAppSession(sessionId: string): Promise<ActiveSession> {
-  // Check if session document exists in DB before initializing or returning cached
+  const existingTimer = reconnectTimers.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    reconnectTimers.delete(sessionId);
+  }
+
+  if (activeSessions.has(sessionId)) {
+    return activeSessions.get(sessionId)!;
+  }
+
+  if (pendingInits.has(sessionId)) {
+    return pendingInits.get(sessionId)!;
+  }
+
+  const initPromise = (async () => {
+    try {
+      return await _createSession(sessionId);
+    } finally {
+      pendingInits.delete(sessionId);
+    }
+  })();
+
+  pendingInits.set(sessionId, initPromise);
+  return initPromise;
+}
+
+async function _createSession(sessionId: string): Promise<ActiveSession> {
+  // Check if session document exists in DB before initializing
   const dbSession = await WhatsAppSession.findOne({ session_id: sessionId });
   if (!dbSession) {
     console.log(`🛑 Session ${sessionId} does not exist in DB, purging active socket.`);
@@ -107,8 +171,11 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     throw new Error(`WhatsApp session ${sessionId} not found`);
   }
 
-  if (activeSessions.has(sessionId)) {
-    return activeSessions.get(sessionId)!;
+  // Clean up any stale active socket instance for this session before creating new one
+  const existingActive = activeSessions.get(sessionId);
+  if (existingActive) {
+    destroySocket(existingActive.socket);
+    activeSessions.delete(sessionId);
   }
 
   let state: AuthenticationState;
@@ -141,7 +208,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
   }
 
   const logger = pino({ level: 'silent' });
-  const { version } = await fetchLatestBaileysVersion();
+  const version = await getBaileysVersion();
 
   const sock = makeWASocket({
     version,
@@ -203,6 +270,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     }
 
     if (connection === 'open') {
+      reconnectAttempts.delete(sessionId);
       const rawUserJid = sock.user?.id || '';
       const phoneNumber = rawUserJid.split(':')[0].replace(/[^0-9]/g, '');
       const pushName = sock.user?.name || '';
@@ -226,17 +294,23 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
     }
 
     if (connection === 'close') {
-      activeSessions.delete(sessionId);
+      const currentActive = activeSessions.get(sessionId);
+      if (currentActive?.socket === sock) {
+        activeSessions.delete(sessionId);
+      }
+      destroySocket(sock);
 
       // Verify if session still exists in MongoDB and check status
       const dbSession = await WhatsAppSession.findOne({ session_id: sessionId });
       if (!dbSession) {
         console.log(`🛑 Session ${sessionId} was deleted from DB, halting reconnection.`);
+        reconnectAttempts.delete(sessionId);
         return;
       }
 
       if (dbSession.status === SessionStatus.DISCONNECTED) {
         console.log(`🛑 Session ${sessionId} status is DISCONNECTED, halting reconnection.`);
+        reconnectAttempts.delete(sessionId);
         return;
       }
 
@@ -245,6 +319,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
 
       if (isLoggedOut) {
         console.log(`❌ WhatsApp Session logged out (401): ${sessionId}`);
+        reconnectAttempts.delete(sessionId);
         await WhatsAppSession.updateOne(
           { session_id: sessionId },
           { $set: { status: SessionStatus.DISCONNECTED, qr_code: '' } }
@@ -258,18 +333,37 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
           } catch (_) { }
         }
       } else {
-        console.log(`🔄 Reconnecting session ${sessionId} (reason: ${statusCode || 'unknown'})...`);
+        const attempts = (reconnectAttempts.get(sessionId) || 0) + 1;
+        reconnectAttempts.set(sessionId, attempts);
+
+        if (attempts > MAX_RECONNECT_ATTEMPTS) {
+          console.warn(`🛑 Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) exceeded for session ${sessionId}. Stopping auto-reconnect.`);
+          reconnectAttempts.delete(sessionId);
+          await WhatsAppSession.updateOne(
+            { session_id: sessionId },
+            { $set: { status: SessionStatus.DISCONNECTED, qr_code: '' } }
+          );
+          return;
+        }
+
+        const delay = Math.min(Math.round(3000 * Math.pow(1.5, attempts - 1)), 60000) + Math.floor(Math.random() * 1500);
+        console.log(`🔄 Reconnecting session ${sessionId} (attempt ${attempts}/${MAX_RECONNECT_ATTEMPTS}, reason: ${statusCode || 'unknown'}, delay: ${delay}ms)...`);
+
         await WhatsAppSession.updateOne(
           { session_id: sessionId },
           { $set: { status: SessionStatus.STARTING } }
         );
-        setTimeout(() => {
+
+        const timer = setTimeout(() => {
+          reconnectTimers.delete(sessionId);
           WhatsAppSession.findOne({ session_id: sessionId }).then((latest) => {
             if (latest && latest.status !== SessionStatus.DISCONNECTED) {
               initWhatsAppSession(sessionId).catch(console.error);
             }
           }).catch(console.error);
-        }, 3000);
+        }, delay);
+
+        reconnectTimers.set(sessionId, timer);
       }
     }
   });
@@ -304,55 +398,34 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
       const waSession = await WhatsAppSession.findOne({ session_id: sessionId }).populate('user');
       if (!waSession) continue;
 
-      // Extract real phone number (handling WhatsApp @lid /Linked Identity Device)
+      // Extract real phone number (handling WhatsApp @lid / Linked Identity Device)
       let senderPhone = '';
-
-      // 1. Direct phone JID (@s.whatsapp.net or @c.us)
       if (fromJid.endsWith('@s.whatsapp.net') || fromJid.endsWith('@c.us')) {
         senderPhone = fromJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
       }
 
-      // 2. If fromJid is LID or group, check alternative participant properties provided by Baileys
       if (!senderPhone || fromJid.endsWith('@lid') || fromJid.endsWith('@g.us')) {
-        const candidates = [
-          (msg.key as any)?.remoteJidAlt,
-          (msg.key as any)?.participant,
-          (msg as any)?.participant,
-          (msg.key as any)?.participantPn,
-          (msg as any)?.sender,
-          (msg.key as any)?.senderPn,
-        ];
+        const candidates = [(msg.key as any)?.remoteJidAlt, (msg.key as any)?.participant, (msg as any)?.participant, (msg.key as any)?.participantPn, (msg as any)?.sender, (msg.key as any)?.senderPn];
         for (const cand of candidates) {
           if (typeof cand === 'string' && (cand.includes('@s.whatsapp.net') || cand.includes('@c.us'))) {
             const p = cand.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-            if (p.length >= 8 && p.length <= 15) {
-              senderPhone = p;
-              break;
-            }
+            if (p.length >= 8 && p.length <= 15) { senderPhone = p; break; }
           }
         }
       }
 
-      // 3. Try resolving via Baileys signalRepository LID-to-PN mapping
       if (!senderPhone || fromJid.endsWith('@lid')) {
         try {
           const lidClean = fromJid.includes('@') ? fromJid : `${fromJid}@lid`;
           const pn = await (sock as any).signalRepository?.lidMapping?.getPNForLID?.(lidClean);
           if (typeof pn === 'string' && (pn.includes('@s.whatsapp.net') || pn.includes('@c.us'))) {
-            const p = pn.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-            if (p.length >= 8 && p.length <= 15) {
-              senderPhone = p;
-            }
+            senderPhone = pn.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
           }
-
           if (!senderPhone) {
             const pns = await (sock as any).signalRepository?.lidMapping?.getPNsForLIDs?.([lidClean]);
             const firstPn = pns?.[0]?.pn;
             if (typeof firstPn === 'string' && (firstPn.includes('@s.whatsapp.net') || firstPn.includes('@c.us'))) {
-              const p = firstPn.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-              if (p.length >= 8 && p.length <= 15) {
-                senderPhone = p;
-              }
+              senderPhone = firstPn.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
             }
           }
         } catch (err) {
@@ -360,11 +433,7 @@ export async function initWhatsAppSession(sessionId: string): Promise<ActiveSess
         }
       }
 
-      // 4. Default to fromJid digits if no phone JID is found
-      if (!senderPhone) {
-        senderPhone = fromJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-      }
-
+      if (!senderPhone) senderPhone = fromJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
       console.log(`[Baileys Inbound] fromJid: ${fromJid}, resolved senderPhone: ${senderPhone}, pushName: ${pushName}`);
 
       let textContent =
@@ -461,12 +530,26 @@ export async function pickUserSession(userId: string, allowedSessionIds?: string
     status: SessionStatus.CONNECTED,
   }).sort({ createdAt: 1 });
 
+  const matchesAllowed = (s: any) => {
+    if (!allowedSessionIds || allowedSessionIds.length === 0) return true;
+    const sId = s.session_id;
+    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
+    return (sId && allowedSessionIds.includes(sId)) || (mongoId ? allowedSessionIds.includes(mongoId) : false);
+  };
+
+  const isExcluded = (s: any) => {
+    if (!excludeSessionIds || excludeSessionIds.length === 0) return false;
+    const sId = s.session_id;
+    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
+    return (sId && excludeSessionIds.includes(sId)) || (mongoId ? excludeSessionIds.includes(mongoId) : false);
+  };
+
   if (allowedSessionIds && allowedSessionIds.length > 0) {
-    connectedSessions = connectedSessions.filter((s) => allowedSessionIds.includes(s.session_id));
+    connectedSessions = connectedSessions.filter(matchesAllowed);
   }
 
   if (excludeSessionIds && excludeSessionIds.length > 0) {
-    connectedSessions = connectedSessions.filter((s) => !excludeSessionIds.includes(s.session_id));
+    connectedSessions = connectedSessions.filter((s) => !isExcluded(s));
   }
 
   if (connectedSessions.length === 0) {
@@ -500,15 +583,10 @@ export async function verifyAndFormatJid(
   phone: string
 ): Promise<{ jid: string; exists: boolean; cleanPhone: string }> {
   let clean = String(phone || '').replace(/[^0-9]/g, '');
-  if (!clean) {
-    return { jid: '', exists: false, cleanPhone: '' };
-  }
+  if (!clean) return { jid: '', exists: false, cleanPhone: '' };
 
   // Normalize Malaysian phone number format: convert leading 0 to 60 (e.g. 01222733418 -> 601222733418)
-  if (clean.startsWith('0')) {
-    clean = '60' + clean.slice(1);
-  }
-
+  if (clean.startsWith('0')) clean = '60' + clean.slice(1);
   const defaultJid = `${clean}@s.whatsapp.net`;
 
   try {
@@ -517,11 +595,9 @@ export async function verifyAndFormatJid(
       if (Array.isArray(results) && results.length > 0) {
         const match = results.find((r: any) => r.exists) || results[0];
         if (match && match.exists && match.jid) {
-          const verifiedPhone = match.jid.split('@')[0];
-          return { jid: match.jid, exists: true, cleanPhone: verifiedPhone };
-        } else {
-          return { jid: defaultJid, exists: false, cleanPhone: clean };
+          return { jid: match.jid, exists: true, cleanPhone: match.jid.split('@')[0] };
         }
+        return { jid: defaultJid, exists: false, cleanPhone: clean };
       }
     }
   } catch (err) {

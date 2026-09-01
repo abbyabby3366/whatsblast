@@ -39,10 +39,19 @@ export function Step3SendingSessions({
 }: Step3Props) {
   const sessions = connectedSessions || availableSessions || []
 
-  const toggleSession = (id: string) => {
-    setSelectedSessions((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    )
+  const toggleSession = (sess: any) => {
+    const sessionId = sess.session_id || sess.id
+    const mongoId = sess.id || sess._id
+    setSelectedSessions((prev) => {
+      const isAlreadySelected = Boolean(
+        (sessionId && prev.includes(sessionId)) || (mongoId && prev.includes(mongoId))
+      )
+      if (isAlreadySelected) {
+        return prev.filter((id) => id !== sessionId && id !== mongoId)
+      } else {
+        return [...prev, sessionId || mongoId]
+      }
+    })
   }
 
   const isAutoMode = sessionMode === 'ALL' || sessionMode === 'AUTO'
@@ -130,14 +139,18 @@ export function Step3SendingSessions({
                       </Link>
                     ) : (
                       sessions.map((s: any) => {
-                        const sId = s.id || s.session_id
-                        const isSelected = selectedSessions.includes(sId)
+                        const sId = s.session_id || s.id || s._id
+                        const isSelected = Boolean(
+                          (s.session_id && selectedSessions.includes(s.session_id)) ||
+                          (s.id && selectedSessions.includes(s.id)) ||
+                          (s._id && selectedSessions.includes(s._id))
+                        )
                         return (
                           <div
                             key={sId}
                             onClick={(e) => {
                               e.stopPropagation()
-                              toggleSession(sId)
+                              toggleSession(s)
                             }}
                             className={`p-3 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${
                               isSelected

@@ -6,7 +6,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Plus, Trash2, Search, Loader2, FileSpreadsheet, Upload, Download } from 'lucide-react'
+import { Plus, Trash2, Search, Loader2, Upload, Download } from 'lucide-react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
@@ -326,7 +326,7 @@ function CustomersPage() {
             className="flex-1 sm:flex-initial text-xs sm:text-sm px-2.5 sm:px-3"
             onClick={handleExportTemplate}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+            <Download className="w-3.5 h-3.5 mr-1.5 shrink-0" />
             <span>Template</span>
           </Button>
           <Button 

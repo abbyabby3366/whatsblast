@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import mongoose from 'mongoose';
 import { Workflow, IWorkflow } from '../models/Workflow.js';
 import { WorkflowLog } from '../models/WorkflowLog.js';
-import { WhatsAppSession } from '../models/WhatsAppSession.js';
+import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { getActiveSession, markSystemSentMessageId } from './baileysManager.js';
 import { sendBaileysTemplateMessage } from './blastRunner.js';
@@ -93,15 +93,20 @@ export async function executeWorkflowForRecipients(
   // Find candidate sessions for this user
   let candidateSessions: any[] = [];
   if (workflow.action_config.session_mode === 'SPECIFIC' && (workflow.action_config.selected_sessions || []).length > 0) {
+    const selected = workflow.action_config.selected_sessions || [];
+    const mongoIds = selected.filter((id: string) => mongoose.Types.ObjectId.isValid(id));
     candidateSessions = await WhatsAppSession.find({
       user: workflow.user,
-      session_id: { $in: workflow.action_config.selected_sessions },
-      status: 'WORKING',
+      $or: [
+        { session_id: { $in: selected } },
+        { _id: { $in: mongoIds } },
+      ],
+      status: SessionStatus.CONNECTED,
     });
   } else {
     candidateSessions = await WhatsAppSession.find({
       user: workflow.user,
-      status: 'WORKING',
+      status: SessionStatus.CONNECTED,
     });
   }
 
@@ -351,10 +356,14 @@ export async function handleIncomingMessageWorkflow(
       // Match found! Resolve session to send reply from
       let targetSessionId = sessionId;
       if (workflow.action_config.reply_session_id) {
+        const replyId = workflow.action_config.reply_session_id;
         const customSession = await WhatsAppSession.findOne({
-          session_id: workflow.action_config.reply_session_id,
+          $or: [
+            { session_id: replyId },
+            ...(mongoose.Types.ObjectId.isValid(replyId) ? [{ _id: replyId }] : []),
+          ],
           user: waSession.user,
-          status: 'WORKING',
+          status: SessionStatus.CONNECTED,
         });
         if (customSession) targetSessionId = customSession.session_id;
       }

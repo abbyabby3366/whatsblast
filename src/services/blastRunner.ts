@@ -314,20 +314,31 @@ function isSessionQualified(sessionDoc: any, userTimezone = 'Asia/Kuala_Lumpur')
 }
 
 async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: any): Promise<{ sessionId?: string; sessionDoc?: any; errorMsg?: string }> {
-  const allowedSessionIds = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
+  const allowedSessionIds: string[] | undefined = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
   const userDoc = campaign.user ? await User.findById(campaign.user) : null;
   const userTimezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
+
+  const matchesAllowed = (s: any) => {
+    if (!allowedSessionIds || allowedSessionIds.length === 0) return true;
+    const sId = s.session_id;
+    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
+    return (sId && allowedSessionIds.includes(sId)) || (mongoId ? allowedSessionIds.includes(mongoId) : false);
+  };
 
   if (targetPendingMsg && targetPendingMsg.session) {
     const preSessObj: any = targetPendingMsg.session.toObject ? targetPendingMsg.session.toObject() : targetPendingMsg.session;
     const sessId = preSessObj.session_id;
-    if (sessId && (!allowedSessionIds || allowedSessionIds.length === 0 || allowedSessionIds.includes(sessId))) {
-      const liveSessDoc = await WhatsAppSession.findOne({ session_id: sessId });
+    const sessMongoId = preSessObj._id ? preSessObj._id.toString() : (preSessObj.id ? preSessObj.id.toString() : null);
+    if ((sessId || sessMongoId) && matchesAllowed(preSessObj)) {
+      const orConditions: any[] = [];
+      if (sessId) orConditions.push({ session_id: sessId });
+      if (sessMongoId) orConditions.push({ _id: sessMongoId });
+      const liveSessDoc = await WhatsAppSession.findOne({ $or: orConditions });
       if (liveSessDoc) {
         const check = isSessionQualified(liveSessDoc, userTimezone);
         if (check.qualified) {
           await liveSessDoc.save();
-          return { sessionId: sessId, sessionDoc: liveSessDoc };
+          return { sessionId: liveSessDoc.session_id, sessionDoc: liveSessDoc };
         }
       }
     }
@@ -335,7 +346,7 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
 
   let candidateSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
   if (allowedSessionIds && allowedSessionIds.length > 0) {
-    candidateSessions = candidateSessions.filter((s) => allowedSessionIds.includes(s.session_id));
+    candidateSessions = candidateSessions.filter(matchesAllowed);
   }
 
   if (candidateSessions.length === 0) {

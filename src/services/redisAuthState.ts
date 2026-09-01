@@ -5,7 +5,7 @@ import {
   initAuthCreds,
   proto,
   BufferJSON,
-} from '@whiskeysockets/baileys';
+} from 'baileys';
 import { Redis } from 'ioredis';
 
 let redisClient: Redis | null = null;
