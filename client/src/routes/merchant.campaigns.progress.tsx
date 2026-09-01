@@ -49,6 +49,9 @@ function CampaignProgressPage() {
       (data?.status || '').toLowerCase() === 'running' ? 3000 : false,
   })
 
+  // Track whether a retry recently happened, to keep auto-refresh active
+  const campaignStatus = (campaign?.status || '').toLowerCase()
+
   // Fetch campaign execution logs
   const {
     data: campaignLogsData,
@@ -63,8 +66,7 @@ function CampaignProgressPage() {
         })
         .json<any>(),
     enabled: Boolean(campaignId),
-    refetchInterval: () =>
-      (campaign?.status || '').toLowerCase() === 'running' ? 3000 : false,
+    refetchInterval: campaignStatus === 'running' ? 3000 : false,
   })
 
   // Retry failed mutation
@@ -75,6 +77,9 @@ function CampaignProgressPage() {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['campaign-logs', campaignId] })
+      // Explicit refetch to ensure logs update immediately with new scheduled times
+      refetchCampaign()
+      refetchLogs()
       toast.success(data?.message || 'Retrying failed campaign messages...')
     },
     onError: async (err: any) => {
@@ -100,6 +105,9 @@ function CampaignProgressPage() {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['campaign-logs', campaignId] })
+      // Explicit refetch to ensure logs update immediately with new scheduled times
+      refetchCampaign()
+      refetchLogs()
       toast.success(data?.message || 'Message retried successfully!')
     },
     onError: async (err: any) => {
@@ -453,7 +461,7 @@ function CampaignProgressPage() {
                   const st = (row.status || 'pending').toLowerCase()
                   const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
                   const isFailed = st === 'failed' || st === 'error'
-                  const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).isBefore(dayjs()))
+                  const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs()))
                   const canRetry = isFailed || isExpired
 
                   return (

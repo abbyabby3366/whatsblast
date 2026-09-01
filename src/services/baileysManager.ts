@@ -476,6 +476,18 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
     }
   });
 
+  // Status hierarchy for downgrade protection (higher number = more advanced status)
+  const STATUS_RANK: Record<string, number> = {
+    [MessageStatus.QUEUED]: 0,
+    [MessageStatus.PENDING]: 1,
+    [MessageStatus.SENT]: 2,
+    [MessageStatus.DELIVERED]: 3,
+    [MessageStatus.READ]: 4,
+    [MessageStatus.RECEIVED]: 4, // Inbound messages; treat same rank as READ
+    [MessageStatus.FAILED]: -1, // Special: only allowed if current status is queued/pending
+    [MessageStatus.EXPIRED]: -2,
+  };
+
   sock.ev.on('messages.update', async (updates) => {
     if (updates.length > 0) {
       updateLastPhoneActivity(sessionId).catch(console.error);
@@ -488,15 +500,38 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
       const updateStatus: any = update.update?.status;
 
       let newStatus: MessageStatus | null = null;
-      if (updateStatus === 3 || updateStatus === 'DELIVERED' || updateStatus === 'DELIVERY_ACK') {
+      // Baileys WebMessageInfo.Status: 0=ERROR, 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ, 5=PLAYED
+      if (updateStatus === 2 || updateStatus === 'SERVER_ACK') {
+        newStatus = MessageStatus.SENT;
+      } else if (updateStatus === 3 || updateStatus === 'DELIVERED' || updateStatus === 'DELIVERY_ACK') {
         newStatus = MessageStatus.DELIVERED;
-      } else if (updateStatus === 4 || updateStatus === 'READ') {
+      } else if (updateStatus === 4 || updateStatus === 5 || updateStatus === 'READ' || updateStatus === 'PLAYED') {
         newStatus = MessageStatus.READ;
       } else if (updateStatus === 0 || updateStatus === 'FAILED' || updateStatus === 'ERROR') {
         newStatus = MessageStatus.FAILED;
       }
 
       if (newStatus) {
+        // Downgrade protection: don't overwrite a more-advanced status with a lesser one
+        const existingMsg = await Message.findOne({ message_id: messageId }).select('status').lean();
+        if (existingMsg) {
+          const currentRank = STATUS_RANK[existingMsg.status] ?? -99;
+          const newRank = STATUS_RANK[newStatus] ?? -99;
+
+          // Block FAILED from overwriting sent/delivered/read (stale ERROR updates from Baileys)
+          if (newStatus === MessageStatus.FAILED && currentRank >= STATUS_RANK[MessageStatus.SENT]) {
+            console.log(`[Baileys] Ignoring stale FAILED update for message ${messageId} (current status: ${existingMsg.status})`);
+            continue;
+          }
+
+          // Block any downgrade (e.g. SENT shouldn't overwrite DELIVERED)
+          if (newRank < currentRank && newRank >= 0) {
+            console.log(`[Baileys] Ignoring status downgrade for message ${messageId}: ${existingMsg.status} → ${newStatus}`);
+            continue;
+          }
+        }
+
+        console.log(`[Baileys] Status update for message ${messageId}: ${existingMsg?.status || 'unknown'} → ${newStatus} (raw: ${updateStatus})`);
         await Message.updateOne(
           { message_id: messageId },
           { $set: { status: newStatus } }

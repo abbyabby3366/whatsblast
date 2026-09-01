@@ -26,7 +26,9 @@ function formatMessage(m: any) {
   const isFailed = rawStatus === 'failed';
   const isPendingOrQueued = rawStatus === 'pending' || rawStatus === 'queued';
   const targetScheduled = obj.scheduled_at || obj.createdAt;
-  const isExpired = rawStatus === 'expired' || (isPendingOrQueued && targetScheduled && new Date(targetScheduled).getTime() < Date.now());
+  // Allow 2 minute grace period before marking as expired (so retried messages don't immediately show expired)
+  const EXPIRED_GRACE_MS = 2 * 60 * 1000;
+  const isExpired = rawStatus === 'expired' || (isPendingOrQueued && targetScheduled && new Date(targetScheduled).getTime() + EXPIRED_GRACE_MS < Date.now());
 
   const computedStatus = isExpired ? 'expired' : rawStatus || MessageStatus.PENDING;
   const isSentOrFailed = isSent || isFailed;
@@ -95,7 +97,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     } else if (s === 'expired') {
       filter.$or = [
         { status: MessageStatus.EXPIRED },
-        { status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] }, scheduled_at: { $lt: new Date() } },
+        { status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] }, scheduled_at: { $lt: new Date(Date.now() - 2 * 60 * 1000) } },
       ];
     } else if (s === 'pending') {
       filter.status = { $in: ['pending', 'queued'] };

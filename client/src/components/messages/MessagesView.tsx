@@ -266,7 +266,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const msg = info.row.original
           const isFailed = st === 'failed'
           const isSent = st === 'delivered' || st === 'sent' || st === 'read'
-          const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
+          const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).add(2, 'minute').isBefore(dayjs()))
           const isPending = (st === 'pending' || st === 'queued') && !isExpired
 
           const failedReason =
@@ -339,7 +339,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const st = (msg.status || '').toLowerCase()
           const isSent = st === 'sent' || st === 'delivered' || st === 'read'
           const isFailed = st === 'failed'
-          const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
+          const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).add(2, 'minute').isBefore(dayjs()))
           const targetTime = isSent
             ? (msg.sent_at || msg.wa_timestamp || msg.updatedAt)
             : (msg.scheduled_at || msg.created_at)
@@ -421,7 +421,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         cell: (info) => {
           const row = info.row.original
           const rowSt = (row.status || '').toLowerCase()
-          const isRowExpired = rowSt === 'expired' || ((rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).isBefore(dayjs()))
+          const isRowExpired = rowSt === 'expired' || ((rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs()))
           const isFailed = rowSt === 'failed'
           const canRetry = isFailed || isRowExpired
           const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables === row.id
