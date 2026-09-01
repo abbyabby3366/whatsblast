@@ -437,7 +437,7 @@ const deleteCampaign = async (req: AuthRequest, res: Response) => {
 
 router.delete('/blast-campaigns/:id', deleteCampaign);
 
-export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<{ success: boolean; count: number; message: string; campaign?: any }> => {
+export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<{ success: boolean; count: number; message: string; warning?: string; campaign?: any }> => {
   const campaign = typeof campaignDocOrId === 'string'
     ? await BlastCampaign.findById(campaignDocOrId)
     : campaignDocOrId;
@@ -544,6 +544,8 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
     }
   }
 
+  let hasConnectedSession = availableSessions.some((s) => s.status === SessionStatus.CONNECTED);
+
   campaign.contacts = [...successfulContacts, ...retryContacts];
   campaign.recipient_phones = campaign.contacts;
   campaign.current_index = successfulContacts.length;
@@ -551,14 +553,21 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
   campaign.stats.sent = successfulContacts.length;
   campaign.stats.failed = 0;
   campaign.status = CampaignStatus.RUNNING;
+  campaign.scheduled_at = new Date();
   campaign.completed_at = undefined;
+  campaign.error_message = undefined;
 
   await campaign.save();
+
+  const warningMsg = !hasConnectedSession
+    ? ' (Note: No connected WhatsApp session found. Messages will send once WhatsApp connects.)'
+    : '';
 
   return {
     success: true,
     count: retryContacts.length,
-    message: `Retrying ${retryContacts.length} failed recipient(s)`,
+    message: `Retrying ${retryContacts.length} failed recipient(s)${warningMsg}`,
+    warning: !hasConnectedSession ? 'No connected WhatsApp session found' : undefined,
     campaign,
   };
 };
@@ -578,6 +587,7 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
   return res.json({
     success: result.success,
     message: result.message,
+    warning: result.warning,
     campaign: await formatCampaign(result.campaign || campaign),
   });
 };

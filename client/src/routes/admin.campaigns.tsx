@@ -110,7 +110,15 @@ function AdminCampaignsPage() {
 
   const retryFailedMutation = useMutation({
     mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/retry-failed/`).json<any>(),
-    onSuccess: (res: any) => { refresh(); toast.success(res?.message || 'Retrying failed messages...') },
+    onSuccess: (res: any) => {
+      refresh()
+      const msg = res?.message || 'Retrying failed messages...'
+      if (res?.warning) {
+        toast.warning(msg, { duration: 6000 })
+      } else {
+        toast.success(msg)
+      }
+    },
     onError: async (err: any) => { toast.error(await getErrorMessage(err, 'Failed to retry campaign.')) },
   })
 

@@ -120,7 +120,18 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       return api.post('messages/retry-all-failed', { searchParams }).json<any>()
     },
     onSuccess: (data) => {
-      toast.success(data?.message || 'Queued retry for all failed messages!')
+      const msg = data?.message || 'Queued retry for all failed messages!'
+      if (data?.warning) {
+        toast.warning(msg, { duration: 6000 })
+      } else {
+        toast.success(msg)
+      }
+
+      // If user is currently looking at FAILED or EXPIRED, auto-switch to PENDING so they see the rescheduled messages
+      if (statusFilter === 'FAILED' || statusFilter === 'EXPIRED') {
+        setStatusFilter('PENDING')
+      }
+
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       setIsRetryAllConfirmOpen(false)
@@ -134,6 +145,9 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     mutationFn: (msgId: string) => api.post(`messages/${msgId}/retry`).json<any>(),
     onSuccess: (data) => {
       toast.success(data?.message || 'Message retried successfully!')
+      if (statusFilter === 'FAILED' || statusFilter === 'EXPIRED') {
+        setStatusFilter('PENDING')
+      }
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
     },
@@ -502,14 +516,20 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           size="sm"
           onClick={() => setIsRetryAllConfirmOpen(true)}
           disabled={retryAllFailedMutation.isPending}
+          title="Re-queue all failed and expired messages into the sending queue"
           className="text-amber-600 border-amber-200 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400 text-xs font-medium gap-1.5"
         >
           {retryAllFailedMutation.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Retrying All...
+            </>
           ) : (
-            <RotateCcw className="w-3.5 h-3.5" />
+            <>
+              <RotateCcw className="w-3.5 h-3.5" />
+              Retry All Failed
+            </>
           )}
-          Retry All Failed
         </Button>
 
         <Button
@@ -848,22 +868,70 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
 
       {/* Retry All Failed Confirm Modal */}
       <Dialog open={isRetryAllConfirmOpen} onOpenChange={setIsRetryAllConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Retry All Failed Messages?</DialogTitle>
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/60 text-amber-600 dark:text-amber-400">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Retry All Failed Messages?
+                </DialogTitle>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Re-queue all failed and expired messages back into the sending pipeline.
+                </p>
+              </div>
+            </div>
           </DialogHeader>
-          <p className="text-sm text-slate-500">
-            This will restart and re-queue all failed campaign and direct messages to be sent according to campaign intervals.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRetryAllConfirmOpen(false)}>Cancel</Button>
+
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+            <div className="flex items-start gap-2">
+              <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">1.</span>
+              <span>
+                <strong>Re-queued to Pending:</strong> All failed & expired messages will be reset to <strong>Pending</strong> status with updated schedule times.
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">2.</span>
+              <span>
+                <strong>Interval Protection:</strong> Messages will be dispatched progressively according to your campaign minute intervals to protect your WhatsApp accounts.
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">3.</span>
+              <span>
+                <strong>Automatic View Switch:</strong> Your table will automatically switch to the <strong>Pending</strong> filter upon confirmation so you can monitor progress.
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
             <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRetryAllConfirmOpen(false)}
+              disabled={retryAllFailedMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5"
               disabled={retryAllFailedMutation.isPending}
               onClick={() => retryAllFailedMutation.mutate()}
             >
-              {retryAllFailedMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Retry All
+              {retryAllFailedMutation.isPending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Retrying Messages...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Yes, Retry All Failed
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

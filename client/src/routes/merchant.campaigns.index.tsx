@@ -73,7 +73,12 @@ function CampaignsPage() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['campaign-logs'] })
-      toast.success(data?.message || 'Retrying failed campaign messages...')
+      const msg = data?.message || 'Retrying failed campaign messages...'
+      if (data?.warning) {
+        toast.warning(msg, { duration: 6000 })
+      } else {
+        toast.success(msg)
+      }
     },
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to retry campaign.'))

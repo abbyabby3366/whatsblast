@@ -48,7 +48,15 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
       queryClient.invalidateQueries({ queryKey: ['customer-list-logs', campaign?.id] })
-      toast.success(data?.message || 'Retrying failed campaign messages...')
+      if (customerStatusFilter === 'FAILED') {
+        setCustomerStatusFilter('PENDING')
+      }
+      const msg = data?.message || 'Retrying failed campaign messages...'
+      if (data?.warning) {
+        toast.warning(msg, { duration: 6000 })
+      } else {
+        toast.success(msg)
+      }
     },
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to retry campaign.'))
@@ -61,7 +69,15 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
       queryClient.invalidateQueries({ queryKey: ['customer-list-logs', campaign?.id] })
-      toast.success(data?.message || 'Message retried successfully!')
+      if (customerStatusFilter === 'FAILED') {
+        setCustomerStatusFilter('PENDING')
+      }
+      const msg = data?.message || 'Message retried successfully!'
+      if (data?.warning) {
+        toast.warning(msg, { duration: 6000 })
+      } else {
+        toast.success(msg)
+      }
     },
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to retry message.'))
@@ -175,16 +191,21 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                 type="button"
                 variant="destructive"
                 size="sm"
-                className="h-8 px-3 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-xs"
+                className="h-8 px-3 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-xs gap-1.5"
                 disabled={retryFailedMutation.isPending}
                 onClick={() => campaign && retryFailedMutation.mutate(campaign.id)}
               >
                 {retryFailedMutation.isPending ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Retrying All...
+                  </>
                 ) : (
-                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  <>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Retry All Failed ({failedCount})
+                  </>
                 )}
-                Retry All Failed ({failedCount})
               </Button>
             )}
           </div>
@@ -328,7 +349,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                               type="button"
                               variant={isFailed ? 'destructive' : 'outline'}
                               size="sm"
-                              className={`h-7 px-2.5 text-xs font-medium ${
+                              className={`h-7 px-2.5 text-xs font-medium gap-1 ${
                                 isFailed ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-slate-200'
                               }`}
                               disabled={retryRecipientMutation.isPending}
@@ -336,11 +357,16 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                               title="Retry message for this customer"
                             >
                               {retryRecipientMutation.isPending && retryRecipientMutation.variables.phone === row.phone ? (
-                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                                  Retrying...
+                                </>
                               ) : (
-                                <RotateCcw className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                                <>
+                                  <RotateCcw className="h-3 w-3 shrink-0" />
+                                  Retry
+                                </>
                               )}
-                              Retry
                             </Button>
                           )}
                           {Boolean(row.retryCount) && (

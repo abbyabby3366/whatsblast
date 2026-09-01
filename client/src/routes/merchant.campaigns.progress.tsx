@@ -80,7 +80,12 @@ function CampaignProgressPage() {
       // Explicit refetch to ensure logs update immediately with new scheduled times
       refetchCampaign()
       refetchLogs()
-      toast.success(data?.message || 'Retrying failed campaign messages...')
+      const msg = data?.message || 'Retrying failed campaign messages...'
+      if (data?.warning) {
+        toast.warning(msg, { duration: 6000 })
+      } else {
+        toast.success(msg)
+      }
     },
     onError: async (err: any) => {
       toast.error(await getErrorMessage(err, 'Failed to retry campaign.'))
@@ -288,10 +293,19 @@ function CampaignProgressPage() {
               size="sm"
               onClick={() => retryFailedMutation.mutate(campaign.id)}
               disabled={retryFailedMutation.isPending}
-              className="bg-rose-600 hover:bg-rose-700 text-white h-8 text-xs font-medium shadow-xs"
+              className="bg-rose-600 hover:bg-rose-700 text-white h-8 text-xs font-medium shadow-xs gap-1.5"
             >
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-              Retry All Failed ({failed})
+              {retryFailedMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Retrying All...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Retry All Failed ({failed})
+                </>
+              )}
             </Button>
           )}
         </div>
@@ -354,10 +368,19 @@ function CampaignProgressPage() {
               size="sm"
               onClick={() => retryFailedMutation.mutate(campaign.id)}
               disabled={retryFailedMutation.isPending}
-              className="bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 text-xs font-medium shrink-0 self-start sm:self-auto"
+              className="bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 text-xs font-medium shrink-0 self-start sm:self-auto gap-1"
             >
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-              Retry All Failed ({failed})
+              {retryFailedMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Retrying...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-3 w-3" />
+                  Retry All Failed ({failed})
+                </>
+              )}
             </Button>
           </div>
         )}
@@ -532,7 +555,7 @@ function CampaignProgressPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-7 px-2 text-xs border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                            className="h-7 px-2 text-xs border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-950/40 gap-1"
                             title={isExpired ? 'Reschedule and retry message' : 'Retry sending message'}
                             disabled={retryRecipientMutation.isPending}
                             onClick={() =>
@@ -544,11 +567,16 @@ function CampaignProgressPage() {
                           >
                             {retryRecipientMutation.isPending &&
                             retryRecipientMutation.variables.phone === row.phone ? (
-                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Retrying...
+                              </>
                             ) : (
-                              <RotateCcw className="h-3 w-3 mr-1" />
+                              <>
+                                <RotateCcw className="h-3 w-3" />
+                                Retry
+                              </>
                             )}
-                            Retry
                           </Button>
                         ) : (
                           <span className="text-slate-400">-</span>

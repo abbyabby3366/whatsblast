@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { getActiveSession, initWhatsAppSession, verifyAndFormatJid, pickUserSession } from '../services/baileysManager.js';
-import { WhatsAppSession } from '../models/WhatsAppSession.js';
+import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { BlastCampaign } from '../models/BlastCampaign.js';
 import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
@@ -536,41 +536,78 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    let hasAnyConnectedSession = false;
+    if (req.user?.role !== 'admin') {
+      const liveSessions = await WhatsAppSession.countDocuments({ user: req.user?._id, status: SessionStatus.CONNECTED });
+      hasAnyConnectedSession = liveSessions > 0;
+    } else {
+      const targetUserId = user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
+      if (targetUserId && targetUserId !== 'all') {
+        const liveSessions = await WhatsAppSession.countDocuments({ user: targetUserId, status: SessionStatus.CONNECTED });
+        hasAnyConnectedSession = liveSessions > 0;
+      } else {
+        const liveSessions = await WhatsAppSession.countDocuments({ status: SessionStatus.CONNECTED });
+        hasAnyConnectedSession = liveSessions > 0;
+      }
+    }
+
     for (const msg of nonCampaignMsgs) {
       const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
       if (recipientPhone) {
         try {
-          let sessionId: string;
+          let sessionId: string | null = null;
           if (msg.session) {
             const sDoc = await WhatsAppSession.findById(msg.session);
             sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
           } else {
             sessionId = await pickUserSession(req.user?._id?.toString() || '');
           }
-          let activeSession = getActiveSession(sessionId);
-          if (!activeSession) activeSession = await initWhatsAppSession(sessionId);
+
+          let activeSession = sessionId ? getActiveSession(sessionId) : null;
+          if (!activeSession && sessionId) {
+            try { activeSession = await initWhatsAppSession(sessionId); } catch (_) {}
+          }
+
           const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
           const targetJid = `${cleanPhone}@s.whatsapp.net`;
           const textContent = msg.content?.text || msg.content?.caption || 'Hello';
-          const result = await activeSession.socket.sendMessage(targetJid, { text: textContent });
 
-          msg.status = MessageStatus.SENT;
-          msg.sent_at = new Date();
-          msg.wa_timestamp = new Date();
-          msg.message_id = result?.key?.id || msg.message_id;
-          msg.error = undefined;
+          if (activeSession?.socket) {
+            const result = await activeSession.socket.sendMessage(targetJid, { text: textContent });
+            msg.status = MessageStatus.SENT;
+            msg.sent_at = new Date();
+            msg.wa_timestamp = new Date();
+            msg.message_id = result?.key?.id || msg.message_id;
+            msg.error = undefined;
+          } else {
+            msg.status = MessageStatus.PENDING;
+            msg.scheduled_at = new Date();
+            msg.error = undefined;
+          }
+
           msg.retry_count = (msg.retry_count || 0) + 1;
           await msg.save();
           retriedCount += 1;
-        } catch (_) {}
+        } catch (err: any) {
+          msg.status = MessageStatus.PENDING;
+          msg.scheduled_at = new Date();
+          msg.retry_count = (msg.retry_count || 0) + 1;
+          await msg.save();
+          retriedCount += 1;
+        }
       }
     }
+
+    const warningText = !hasAnyConnectedSession
+      ? ' (Note: No connected WhatsApp session found. Messages will send once WhatsApp connects.)'
+      : '';
 
     return res.json({
       success: true,
       count: retriedCount || failedMessages.length,
       campaignsCount: retriedCampaignsCount,
-      message: `Successfully queued retry for ${retriedCount || failedMessages.length} failed message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}`,
+      warning: !hasAnyConnectedSession ? 'No connected WhatsApp session found' : undefined,
+      message: `Successfully queued retry for ${retriedCount || failedMessages.length} failed message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}${warningText}`,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to retry all failed messages' });
