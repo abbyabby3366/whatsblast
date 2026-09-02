@@ -497,21 +497,19 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
     availableSessions = fallbackSessions;
   }
 
-  const sessionLastTimeMap = new Map<string, number>();
+  let lastScheduledMs = now.getTime();
 
   for (let idx = 0; idx < retryContacts.length; idx++) {
     const contact = retryContacts[idx];
     const clean = contact.replace(/[^0-9]/g, '');
     const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
-    const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
 
     let scheduledTimeMs = now.getTime();
-    if (sessionLastTimeMap.has(sessKey)) {
-      const prevMs = sessionLastTimeMap.get(sessKey)!;
+    if (idx > 0) {
       const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
-      scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
+      scheduledTimeMs = lastScheduledMs + randomMinutes * 60 * 1000;
     }
-    sessionLastTimeMap.set(sessKey, scheduledTimeMs);
+    lastScheduledMs = scheduledTimeMs;
 
     const scheduledTime = new Date(scheduledTimeMs);
 
@@ -612,156 +610,110 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
   }
 
   const cleanPhone = phone.replace(/[^0-9]/g, '');
-  const targetJid = `${cleanPhone}@s.whatsapp.net`;
+  const now = new Date();
+  const minInterval = Number(campaign.min_interval_seconds) || 10;
+  const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
 
-  let sessionId: string | null = null;
-  try {
-    sessionId = await pickUserSession(campaign.user.toString());
-  } catch (err: any) {
-    const now = new Date();
-    await Message.findOneAndUpdate(
-      { campaign: campaign._id, recipient_phone: cleanPhone },
-      {
-        status: MessageStatus.PENDING,
-        scheduled_at: now,
-        $unset: { error: 1 },
-        $inc: { retry_count: 1 },
-      }
-    );
-    if (campaign.status === CampaignStatus.PAUSED || campaign.status === CampaignStatus.COMPLETED) {
-      campaign.status = CampaignStatus.RUNNING;
-      await campaign.save();
+  // Determine scheduled_at time based on any future pending messages in this campaign
+  const lastPending = await Message.findOne({
+    campaign: campaign._id,
+    recipient_phone: { $ne: cleanPhone },
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+    scheduled_at: { $gt: now },
+  }).sort({ scheduled_at: -1 });
+
+  let scheduledTimeMs = now.getTime();
+  if (lastPending && lastPending.scheduled_at) {
+    const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
+    scheduledTimeMs = new Date(lastPending.scheduled_at).getTime() + randomMinutes * 60 * 1000;
+  }
+  const scheduledTime = new Date(scheduledTimeMs);
+
+  // Fetch available sessions for session assignment
+  const sessionModeVal = (campaign as any).session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
+  const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
+
+  let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
+  const matchesAllowed = (s: any) => {
+    if (sessionModeVal !== 'SPECIFIC' || selectedSessionsList.length === 0) return true;
+    const sId = s.session_id;
+    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
+    return (sId && selectedSessionsList.includes(sId)) || (mongoId ? selectedSessionsList.includes(mongoId) : false);
+  };
+
+  if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
+    availableSessions = availableSessions.filter(matchesAllowed);
+  }
+  if (availableSessions.length === 0) {
+    let fallbackSessions = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
+    if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
+      fallbackSessions = fallbackSessions.filter(matchesAllowed);
     }
-    return res.json({ success: true, message: `Message rescheduled for ${cleanPhone}. Will send once WhatsApp connects.` });
+    availableSessions = fallbackSessions;
   }
 
-  let activeSession = getActiveSession(sessionId);
-  if (!activeSession) {
-    try {
-      activeSession = await initWhatsAppSession(sessionId);
-    } catch (_) {}
+  const assignedSession = availableSessions.length > 0 ? availableSessions[0] : null;
+
+  // Update or create message in PENDING status
+  const updatedMsg = await Message.findOneAndUpdate(
+    { campaign: campaign._id, recipient_phone: cleanPhone },
+    {
+      status: MessageStatus.PENDING,
+      session: assignedSession ? assignedSession._id : undefined,
+      sender_phone: assignedSession ? assignedSession.phone_number : undefined,
+      $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
+      scheduled_at: scheduledTime,
+      $inc: { retry_count: 1 },
+    },
+    { new: true }
+  );
+
+  if (!updatedMsg) {
+    await Message.create({
+      campaign: campaign._id,
+      session: assignedSession ? assignedSession._id : undefined,
+      sender_phone: assignedSession ? assignedSession.phone_number : undefined,
+      direction: MessageDirection.OUTBOUND,
+      type: 'text',
+      status: MessageStatus.PENDING,
+      recipient_phone: cleanPhone,
+      to_jid: `${cleanPhone}@s.whatsapp.net`,
+      template: campaign.template || null,
+      scheduled_at: scheduledTime,
+      retry_count: 1,
+    });
   }
 
-  let templatesToSend: any[] = [];
-  if (Array.isArray(campaign.templates) && campaign.templates.length > 0) {
-    templatesToSend = campaign.templates;
-  } else if (campaign.template) {
-    const tplDoc = await MessageTemplate.findById(campaign.template);
-    if (tplDoc) templatesToSend = [tplDoc];
+  // Ensure contact is queued in campaign.contacts for the background blastRunner
+  const currentContacts = campaign.contacts || campaign.recipient_phones || [];
+  const cleanContacts = currentContacts.map((c: string) => c.replace(/[^0-9]/g, ''));
+
+  const isUpcoming = cleanContacts.slice(campaign.current_index).includes(cleanPhone);
+  if (!isUpcoming) {
+    const remaining = currentContacts.slice(campaign.current_index);
+    const past = currentContacts.slice(0, campaign.current_index).filter((c: string) => c.replace(/[^0-9]/g, '') !== cleanPhone);
+    const originalPhoneEntry = currentContacts.find((c: string) => c.replace(/[^0-9]/g, '') === cleanPhone) || cleanPhone;
+
+    campaign.contacts = [...past, ...remaining, originalPhoneEntry];
+    campaign.recipient_phones = campaign.contacts;
+    campaign.current_index = past.length;
+    campaign.stats.total = campaign.contacts.length;
   }
 
-  if (templatesToSend.length === 0) {
-    return res.status(400).json({ error: 'No templates configured for this campaign' });
+  if (campaign.stats.failed > 0) {
+    campaign.stats.failed = Math.max(0, campaign.stats.failed - 1);
   }
 
-  const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
+  campaign.status = CampaignStatus.RUNNING;
+  campaign.completed_at = undefined;
+  campaign.error_message = undefined;
+  await campaign.save();
 
-  try {
-    if (activeSession?.socket) {
-      for (let i = 0; i < templatesToSend.length; i++) {
-        const tplItem = templatesToSend[i];
-        const result = await sendBaileysTemplateMessage(activeSession.socket, targetJid, tplItem, cleanPhone);
-
-        if (sessionDoc) {
-          sessionDoc.current_message_count += 1;
-          await sessionDoc.save();
-        }
-
-        const fileId = tplItem.file_id || tplItem.fileId || tplItem.file;
-        const buttonMediaId = tplItem.button_image_id || tplItem.buttonImageId || tplItem.button_image;
-        const mainMedia = await getFileUrl(fileId);
-        const buttonMedia = await getFileUrl(buttonMediaId);
-        const activeMedia = buttonMedia?.url ? buttonMedia : mainMedia;
-
-        const fullContent = {
-          text: tplItem.text || tplItem.template || '',
-          buttons: tplItem.buttons || [],
-          footer: tplItem.footer || tplItem.footer_text || '',
-          file: activeMedia?.url || mainMedia?.url || (typeof tplItem.file === 'string' ? tplItem.file : null),
-          file_type: activeMedia?.type || tplItem.messageType || tplItem.type || 'text',
-          file_name: activeMedia?.filename || null,
-          button_image: buttonMedia?.url || (typeof tplItem.button_image === 'string' ? tplItem.button_image : null),
-        };
-
-        const now = new Date();
-        const updatedMsg = await Message.findOneAndUpdate(
-          { campaign: campaign._id, recipient_phone: cleanPhone },
-          {
-            session: sessionDoc?._id,
-            direction: MessageDirection.OUTBOUND,
-            type: tplItem.messageType || tplItem.type || 'text',
-            status: MessageStatus.SENT,
-            to_jid: targetJid,
-            template: campaign.template || null,
-            content: fullContent,
-            message_id: result?.key?.id || '',
-            sent_at: now,
-            wa_timestamp: now,
-            scheduled_at: now,
-            $unset: { error: 1 },
-            $inc: { retry_count: 1 },
-          },
-          { new: true }
-        );
-
-        if (!updatedMsg) {
-          await Message.create({
-            session: sessionDoc?._id,
-            campaign: campaign._id,
-            direction: MessageDirection.OUTBOUND,
-            type: tplItem.messageType || tplItem.type || 'text',
-            status: MessageStatus.SENT,
-            recipient_phone: cleanPhone,
-            to_jid: targetJid,
-            template: campaign.template || null,
-            content: fullContent,
-            message_id: result?.key?.id || '',
-            sent_at: now,
-            wa_timestamp: now,
-            scheduled_at: now,
-            retry_count: 1,
-          });
-        }
-      }
-
-      if (campaign.stats.failed > 0) {
-        campaign.stats.failed = Math.max(0, campaign.stats.failed - 1);
-        campaign.stats.sent += 1;
-        await campaign.save();
-      }
-
-      return res.json({ success: true, message: `Successfully retried and sent message to ${cleanPhone}` });
-    } else {
-      // If socket not active, reschedule for campaign runner
-      const now = new Date();
-      await Message.findOneAndUpdate(
-        { campaign: campaign._id, recipient_phone: cleanPhone },
-        {
-          status: MessageStatus.PENDING,
-          scheduled_at: now,
-          $unset: { error: 1 },
-          $inc: { retry_count: 1 },
-        }
-      );
-      if (campaign.status === CampaignStatus.PAUSED || campaign.status === CampaignStatus.COMPLETED) {
-        campaign.status = CampaignStatus.RUNNING;
-        await campaign.save();
-      }
-      return res.json({ success: true, message: `Message rescheduled for ${cleanPhone}.` });
-    }
-  } catch (err: any) {
-    console.error(`❌ Single recipient retry error for ${cleanPhone}:`, err);
-    const now = new Date();
-    await Message.findOneAndUpdate(
-      { campaign: campaign._id, recipient_phone: cleanPhone },
-      {
-        status: MessageStatus.PENDING,
-        scheduled_at: now,
-        $inc: { retry_count: 1 },
-      }
-    );
-    return res.json({ success: true, message: `Message rescheduled for retry: ${err.message || 'Queued'}` });
-  }
+  return res.json({
+    success: true,
+    message: `Message rescheduled for ${cleanPhone}. It will be sent via campaign scheduler.`,
+    scheduled_at: scheduledTime,
+  });
 };
 
 router.post('/blast-campaigns/:id/retry-recipient', retryCampaignRecipient);
