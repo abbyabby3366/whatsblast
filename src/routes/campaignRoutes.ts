@@ -270,7 +270,8 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     const sessionLastTimeMap = new Map<string, number>();
 
     const pendingMessages = phoneList.map((contact: string, idx: number) => {
-      const cleanPhone = contact.replace(/[^0-9]/g, '');
+      let cleanPhone = contact.replace(/[^0-9]/g, '');
+      if (cleanPhone.startsWith('0')) cleanPhone = '60' + cleanPhone.slice(1);
       const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
       const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
 
@@ -452,14 +453,23 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
     campaign: campaign._id,
     status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
   });
-  const sentPhones = new Set(sentMessages.map((m) => (m.recipient_phone ? m.recipient_phone.replace(/[^0-9]/g, '') : '')));
+  const sentPhones = new Set<string>();
+  sentMessages.forEach((m) => {
+    const raw = m.recipient_phone ? m.recipient_phone.replace(/[^0-9]/g, '') : '';
+    if (raw) {
+      sentPhones.add(raw);
+      if (raw.startsWith('0')) sentPhones.add('60' + raw.slice(1));
+      if (raw.startsWith('60')) sentPhones.add('0' + raw.slice(2));
+    }
+  });
 
   const retryContacts: string[] = [];
   const successfulContacts: string[] = [];
 
   for (const c of allContacts) {
     const clean = c.replace(/[^0-9]/g, '');
-    if (sentPhones.has(clean)) {
+    const norm = clean.startsWith('0') ? '60' + clean.slice(1) : (clean.startsWith('60') ? '0' + clean.slice(2) : clean);
+    if (sentPhones.has(clean) || sentPhones.has(norm)) {
       successfulContacts.push(c);
     } else {
       retryContacts.push(c);
@@ -501,7 +511,10 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
 
   for (let idx = 0; idx < retryContacts.length; idx++) {
     const contact = retryContacts[idx];
-    const clean = contact.replace(/[^0-9]/g, '');
+    const rawRecip = contact.replace(/[^0-9]/g, '');
+    const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
+    const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
+    const clean = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
     const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
 
     let scheduledTimeMs = now.getTime();
@@ -514,7 +527,7 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
     const scheduledTime = new Date(scheduledTimeMs);
 
     const updated = await Message.findOneAndUpdate(
-      { campaign: campaign._id, recipient_phone: clean },
+      { campaign: campaign._id, recipient_phone: { $in: possiblePhones } },
       {
         status: MessageStatus.PENDING,
         session: assignedSession ? assignedSession._id : undefined,
@@ -609,7 +622,10 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
     return res.status(400).json({ error: 'phone parameter is required' });
   }
 
-  const cleanPhone = phone.replace(/[^0-9]/g, '');
+  const rawRecip = phone.replace(/[^0-9]/g, '');
+  const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
+  const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
+  const cleanPhone = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
   const now = new Date();
   const minInterval = Number(campaign.min_interval_seconds) || 10;
   const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
@@ -617,7 +633,7 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
   // Determine scheduled_at time based on any future pending messages in this campaign
   const lastPending = await Message.findOne({
     campaign: campaign._id,
-    recipient_phone: { $ne: cleanPhone },
+    recipient_phone: { $nin: possiblePhones },
     status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
     scheduled_at: { $gt: now },
   }).sort({ scheduled_at: -1 });
@@ -656,7 +672,7 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
 
   // Update or create message in PENDING status
   const updatedMsg = await Message.findOneAndUpdate(
-    { campaign: campaign._id, recipient_phone: cleanPhone },
+    { campaign: campaign._id, recipient_phone: { $in: possiblePhones } },
     {
       status: MessageStatus.PENDING,
       session: assignedSession ? assignedSession._id : undefined,

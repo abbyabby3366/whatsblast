@@ -410,10 +410,13 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         continue;
       }
 
-      const cleanRecip = recipientPhone.replace(/[^0-9]/g, '');
+      const rawRecip = recipientPhone.replace(/[^0-9]/g, '');
+      const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
+      const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
+
       const existingPendingMsg = await Message.findOne({
         campaign: campaign._id,
-        recipient_phone: cleanRecip,
+        recipient_phone: { $in: possiblePhones },
         status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] },
       }).populate('session');
 
@@ -437,6 +440,9 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       // Verify recipient on WhatsApp & format phone number / JID
       const rawPhone = recipientPhone;
       const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(activeSession.socket, rawPhone);
+      if (cleanPhone && !possiblePhones.includes(cleanPhone)) {
+        possiblePhones.push(cleanPhone);
+      }
 
       if (!exists) {
         const errorMsg = `Phone number ${rawPhone} is not registered on WhatsApp`;
@@ -445,9 +451,10 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         const targetPhone = cleanPhone || rawPhone;
         const now = new Date();
         const updatedMsg = await Message.findOneAndUpdate(
-          { campaign: campaign._id, recipient_phone: targetPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
+          { campaign: campaign._id, recipient_phone: { $in: possiblePhones }, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
           {
             session: sessionDoc?._id,
+            recipient_phone: targetPhone,
             status: MessageStatus.FAILED,
             error: errorMsg,
             content: { text: 'Send Failed: Recipient not registered on WhatsApp' },
@@ -549,9 +556,10 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
           const now = new Date();
           const updatedMsg = await Message.findOneAndUpdate(
-            { campaign: campaign._id, recipient_phone: cleanPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
+            { campaign: campaign._id, recipient_phone: { $in: possiblePhones }, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
             {
               session: sessionDoc?._id,
+              recipient_phone: cleanPhone,
               type: tplItem.messageType || tplItem.type || 'text',
               status: MessageStatus.SENT,
               to_jid: targetJid,
@@ -636,9 +644,10 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
                 const now = new Date();
                 await Message.findOneAndUpdate(
-                  { campaign: campaign._id, recipient_phone: cleanPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
+                  { campaign: campaign._id, recipient_phone: { $in: possiblePhones }, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
                   {
                     session: retrySessionDoc?._id,
+                    recipient_phone: cleanPhone,
                     type: tplItem.messageType || tplItem.type || 'text',
                     status: MessageStatus.SENT,
                     to_jid: targetJid,
@@ -668,9 +677,10 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
           try {
             const now = new Date();
             const updatedMsg = await Message.findOneAndUpdate(
-              { campaign: campaign._id, recipient_phone: cleanPhone, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
+              { campaign: campaign._id, recipient_phone: { $in: possiblePhones }, status: { $in: [MessageStatus.PENDING, MessageStatus.EXPIRED, MessageStatus.QUEUED] } },
               {
                 session: sessionDoc?._id,
+                recipient_phone: cleanPhone,
                 status: MessageStatus.FAILED,
                 to_jid: targetJid,
                 error: err.message || String(err),

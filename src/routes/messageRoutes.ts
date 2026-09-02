@@ -180,7 +180,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
   }
 
   const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-  const pageSize = Math.max(1, Math.min(100, parseInt(req.query.page_size as string, 10) || 20));
+  const pageSize = Math.max(1, Math.min(1000, parseInt(req.query.page_size as string, 10) || 20));
   const skip = (page - 1) * pageSize;
 
   const [totalCount, messages] = await Promise.all([

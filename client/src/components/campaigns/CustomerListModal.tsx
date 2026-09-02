@@ -6,7 +6,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { api, getErrorMessage } from '@/lib/api'
-import { safeText } from '@/lib/utils'
+import { safeText, isSamePhone } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -37,7 +37,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
     queryFn: () =>
       api
         .get('messages/', {
-          searchParams: { campaign_id: campaign.id, page_size: '200' },
+          searchParams: { campaign_id: campaign.id, page_size: '1000' },
         })
         .json<any>(),
     enabled: Boolean(campaign?.id),
@@ -94,11 +94,10 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
   const customerRows =
     recipientPhones.length > 0
       ? recipientPhones.map((phone, idx) => {
-          const cleanP = String(phone).replace(/[^0-9]/g, '')
           const matchedLog = logs.find(
             (l) =>
-              String(l.recipient_phone || '').replace(/[^0-9]/g, '') === cleanP ||
-              String(l.to_jid || '').includes(cleanP)
+              isSamePhone(phone, l.recipient_phone) ||
+              isSamePhone(phone, l.to_jid)
           )
 
           if (matchedLog) {

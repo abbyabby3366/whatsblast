@@ -47,3 +47,28 @@ export function safeText(val: any, fallback = ''): string {
   return String(target)
 }
 
+export function normalizePhoneNumber(phone: any): string {
+  let clean = String(phone || '').replace(/[^0-9]/g, '')
+  if (!clean) return ''
+  if (clean.startsWith('0')) {
+    clean = '60' + clean.slice(1)
+  }
+  return clean
+}
+
+
+export function isSamePhone(phoneA: any, phoneB: any): boolean {
+  if (!phoneA || !phoneB) return false
+  const rawA = String(phoneA).split('@')[0].replace(/[^0-9]/g, '')
+  const rawB = String(phoneB).split('@')[0].replace(/[^0-9]/g, '')
+  if (!rawA || !rawB) return false
+  if (rawA === rawB) return true
+  const normA = normalizePhoneNumber(rawA)
+  const normB = normalizePhoneNumber(rawB)
+  if (normA === normB) return true
+  if (normA.length >= 8 && normB.length >= 8) {
+    if (normA.endsWith(normB) || normB.endsWith(normA)) return true
+  }
+  return false
+}
+

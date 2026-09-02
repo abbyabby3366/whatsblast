@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, useSearch, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, getErrorMessage } from '@/lib/api'
-import { safeText } from '@/lib/utils'
+import { safeText, isSamePhone } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
 import {
@@ -62,7 +62,7 @@ function CampaignProgressPage() {
     queryFn: () =>
       api
         .get('messages/', {
-          searchParams: { campaign_id: campaignId, page_size: '100' },
+          searchParams: { campaign_id: campaignId, page_size: '1000' },
         })
         .json<any>(),
     enabled: Boolean(campaignId),
@@ -181,11 +181,10 @@ function CampaignProgressPage() {
   const reportRows =
     recipientPhones.length > 0
       ? recipientPhones.map((phone, idx) => {
-          const cleanP = phone.replace(/[^0-9]/g, '')
           const matchedLog = logs.find(
             (l) =>
-              l.recipient_phone?.replace(/[^0-9]/g, '') === cleanP ||
-              l.to_jid?.includes(cleanP)
+              isSamePhone(phone, l.recipient_phone) ||
+              isSamePhone(phone, l.to_jid)
           )
 
           // Estimated target send time based on position in queue and campaign intervals
