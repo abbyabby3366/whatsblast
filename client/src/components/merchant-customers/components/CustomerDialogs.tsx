@@ -71,12 +71,12 @@ export const EditCustomerButton = ({ customer, updateCustomerMutation }: { custo
   }, [isOpen, customer])
 
   const handleUpdate = () => {
-    if (!name || !phone) {
-      toast.error('Please fill in both name and phone.')
+    if (!phone.trim()) {
+      toast.error('Please enter a phone number.')
       return
     }
     updateCustomerMutation.mutate(
-      { id: customer.id, name, phone_number: phone, label },
+      { id: customer.id, name: name.trim(), phone_number: phone.trim(), label: label.trim() },
       {
         onSuccess: () => setIsOpen(false)
       }

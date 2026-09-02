@@ -94,7 +94,7 @@ function CustomersPage() {
   }, [globalFilter, selectedLabel])
 
   const addCustomerMutation = useMutation({
-    mutationFn: (newCustomer: { name: string; phone_number: string; label?: string }) =>
+    mutationFn: (newCustomer: { name?: string; phone_number: string; label?: string }) =>
       api.post('customers/', { json: newCustomer }).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
@@ -109,7 +109,7 @@ function CustomersPage() {
   })
 
   const updateCustomerMutation = useMutation({
-    mutationFn: (updatedCustomer: { id: string; name: string; phone_number: string; label?: string }) =>
+    mutationFn: (updatedCustomer: { id: string; name?: string; phone_number: string; label?: string }) =>
       api.put(`customers/${updatedCustomer.id}/`, { json: updatedCustomer }).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
@@ -120,7 +120,7 @@ function CustomersPage() {
   })
 
   const importCustomersMutation = useMutation({
-    mutationFn: (importedCustomers: { name: string; phone_number: string; label?: string }[]) =>
+    mutationFn: (importedCustomers: { name?: string; phone_number: string; label?: string }[]) =>
       api.post('customers/import/', { json: { customers: importedCustomers } }).json<CustomerImportResult>(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
@@ -153,7 +153,10 @@ function CustomersPage() {
   })
 
   const handleExportTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([{ name: 'John Doe', phone_number: '60123456789', label: 'VIP' }])
+    const ws = XLSX.utils.json_to_sheet([
+      { name: 'John Doe', phone_number: '60123456789', label: 'VIP' },
+      { name: '', phone_number: '60198765432', label: '' }
+    ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Template')
     XLSX.writeFile(wb, 'customer_template.csv', { bookType: 'csv' })
@@ -164,7 +167,7 @@ function CustomersPage() {
       toast.error('No customers to export')
       return
     }
-    const data = customers.map(c => ({ name: c.name, phone_number: c.phone_number, label: c.label || '' }))
+    const data = customers.map(c => ({ name: c.name || '', phone_number: c.phone_number, label: c.label || '' }))
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Customers')
@@ -184,14 +187,54 @@ function CustomersPage() {
         const ws = wb.Sheets[wsname]
         const data = XLSX.utils.sheet_to_json<any>(ws)
         
-        const importedCustomers: { name: string; phone_number: string; label?: string }[] = []
+        const importedCustomers: { name?: string; phone_number: string; label?: string }[] = []
         for (const row of data) {
-          const phone = row.phone_number || row.phone || row['Phone Number'] || row['Phone'] || row['phone number']
-          const name = row.name || row.Name || row['Full Name']
-          const label = row.label || row.Label || row['TAG'] || row['tag'] || ''
-          if (name && phone) {
-            importedCustomers.push({ name: String(name), phone_number: String(phone), label: label ? String(label) : '' })
+          const phone =
+            row.phone_number ??
+            row.phone ??
+            row['Phone Number'] ??
+            row['Phone'] ??
+            row['phone number'] ??
+            row['PHONE'] ??
+            row['Phone_Number'] ??
+            row['Mobile'] ??
+            row['mobile'] ??
+            row['Contact'] ??
+            row['contact']
+          const name =
+            row.name ??
+            row.Name ??
+            row['Full Name'] ??
+            row['full name'] ??
+            row['NAME'] ??
+            row['Customer Name'] ??
+            row['customer name'] ??
+            ''
+          const label =
+            row.label ??
+            row.Label ??
+            row['TAG'] ??
+            row['tag'] ??
+            row['Tag'] ??
+            row['LABEL'] ??
+            row['Tags'] ??
+            row['tags'] ??
+            ''
+          if (phone !== undefined && phone !== null && String(phone).trim() !== '') {
+            const cleanPhone = String(phone).replace(/[^0-9]/g, '').trim()
+            if (cleanPhone) {
+              importedCustomers.push({
+                name: name ? String(name).trim() : '',
+                phone_number: cleanPhone,
+                label: label ? String(label).trim() : '',
+              })
+            }
           }
+        }
+        if (importedCustomers.length === 0) {
+          toast.error('No valid phone numbers found in file.')
+          if (fileInputRef.current) fileInputRef.current.value = ''
+          return
         }
         const result = await importCustomersMutation.mutateAsync(importedCustomers)
         toast.success(`Import complete: ${result.created || result.imported || importedCustomers.length} added/updated.`)
@@ -204,11 +247,15 @@ function CustomersPage() {
   }
 
   const handleAdd = () => {
-    if (!newName || !newPhone) {
-      toast.error('Please fill in both name and phone.')
+    if (!newPhone.trim()) {
+      toast.error('Please enter a phone number.')
       return
     }
-    addCustomerMutation.mutate({ name: newName, phone_number: newPhone, label: newLabel })
+    addCustomerMutation.mutate({
+      name: newName.trim(),
+      phone_number: newPhone.trim(),
+      label: newLabel.trim(),
+    })
   }
 
   const visibleIds = useMemo(() => customers.map((customer) => customer.id), [customers])
@@ -245,7 +292,14 @@ function CustomersPage() {
       }),
       columnHelper.accessor('name', {
         header: 'Name',
-        cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+        cell: (info) => {
+          const val = info.getValue()
+          return val ? (
+            <span className="font-medium">{val}</span>
+          ) : (
+            <span className="text-slate-400 dark:text-slate-600 italic text-xs">No name</span>
+          )
+        },
       }),
       columnHelper.accessor('phone_number', {
         header: 'Phone Number',
@@ -371,19 +425,19 @@ function CustomersPage() {
               <DialogHeader>
                 <DialogTitle>Add New Customer</DialogTitle>
                 <DialogDescription>
-                  Add a new customer to your contact list. Ensure the phone number includes the country code.
+                  Phone number is required. Name and label are optional. Include the country code.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 py-2 sm:py-4">
                 <div className="grid grid-cols-1 sm:grid-cols-4 items-start sm:items-center gap-1.5 sm:gap-4">
                   <Label htmlFor="name" className="sm:text-right text-xs sm:text-sm">
-                    Name
+                    Name <span className="text-slate-400 font-normal text-xs">(optional)</span>
                   </Label>
                   <Input
                     id="name"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    placeholder="John Doe"
+                    placeholder="John Doe (optional)"
                     className="sm:col-span-3 text-sm"
                   />
                 </div>
@@ -491,10 +545,10 @@ function CustomersPage() {
                         checked={isSelected}
                         onChange={(e) => toggleSelected(customer.id, e.target.checked)}
                         className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-                        aria-label={`Select ${customer.name}`}
+                        aria-label={`Select ${customer.name || customer.phone_number}`}
                       />
                       <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm truncate">
-                        {customer.name}
+                        {customer.name || <span className="text-slate-400 font-normal italic text-xs">No name</span>}
                       </span>
                       {customer.label && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80 shrink-0">

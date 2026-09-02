@@ -51,10 +51,14 @@ const createCustomer = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'phone_number is required' });
   }
 
-  const cleanPhone = phone_number.replace(/[^0-9]/g, '');
+  const cleanPhone = String(phone_number).replace(/[^0-9]/g, '');
+  if (!cleanPhone) {
+    return res.status(400).json({ error: 'Valid phone_number is required' });
+  }
+
   const customer = await Customer.findOneAndUpdate(
     { merchant: req.user?._id, phone_number: cleanPhone },
-    { name, label, notes, custom_data },
+    { name: name ? String(name).trim() : '', label: label ? String(label).trim() : '', notes, custom_data },
     { upsert: true, new: true }
   );
 
@@ -70,8 +74,13 @@ const importCustomers = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'customers array is required' });
     }
 
-    const validCustomers = customers.filter((c) => c.phone_number);
-    const phones = validCustomers.map((c) => String(c.phone_number).replace(/[^0-9]/g, '')).filter(Boolean);
+    const validCustomers = customers.filter((c) => {
+      const p = c.phone_number || c.phone || c['Phone Number'] || c['Phone'];
+      return p !== undefined && p !== null && String(p).trim() !== '';
+    });
+    const phones = validCustomers
+      .map((c) => String(c.phone_number || c.phone || c['Phone Number'] || c['Phone']).replace(/[^0-9]/g, ''))
+      .filter(Boolean);
 
     const existingCustomers = await Customer.find({ merchant: req.user?._id, phone_number: { $in: phones } });
     const existingMap = new Map(existingCustomers.map((c) => [c.phone_number, c]));
@@ -79,11 +88,13 @@ const importCustomers = async (req: AuthRequest, res: Response) => {
     const operations = [];
 
     for (const c of validCustomers) {
-      const cleanPhone = String(c.phone_number).replace(/[^0-9]/g, '');
+      const rawPhone = c.phone_number || c.phone || c['Phone Number'] || c['Phone'];
+      const cleanPhone = String(rawPhone).replace(/[^0-9]/g, '');
       if (!cleanPhone) continue;
 
       const existing = existingMap.get(cleanPhone);
-      let finalLabel = c.label ? String(c.label).trim() : '';
+      const rawLabel = c.label || c.Label || c['TAG'] || c['tag'] || '';
+      let finalLabel = rawLabel ? String(rawLabel).trim() : '';
 
       if (existing && existing.label) {
         const existingLabels = existing.label.split(',').map((s) => s.trim()).filter(Boolean);
@@ -96,8 +107,9 @@ const importCustomers = async (req: AuthRequest, res: Response) => {
       };
       const setOnInsertFields: Record<string, any> = {};
 
-      if (c.name) {
-        setFields.name = c.name;
+      const rawName = c.name || c.Name || c['Full Name'] || '';
+      if (rawName && String(rawName).trim()) {
+        setFields.name = String(rawName).trim();
       } else {
         setOnInsertFields.name = '';
       }

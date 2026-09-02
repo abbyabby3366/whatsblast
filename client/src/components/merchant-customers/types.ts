@@ -1,6 +1,6 @@
 export type Customer = {
   id: string
-  name: string
+  name?: string
   phone_number: string
   label?: string
   created_at: string
