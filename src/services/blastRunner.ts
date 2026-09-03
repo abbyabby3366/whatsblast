@@ -13,6 +13,27 @@ let isProcessing = false;
 
 export function startBlastRunner(intervalMs = 3000): void {
   if (runnerInterval) return;
+
+  // Automatically unpause any campaigns that were paused due to daily message limits
+  BlastCampaign.updateMany(
+    {
+      status: CampaignStatus.PAUSED,
+      error_message: { $regex: /daily message limit/i },
+    },
+    {
+      $set: { status: CampaignStatus.RUNNING },
+      $unset: { error_message: 1 },
+    }
+  )
+    .then((res) => {
+      if (res.modifiedCount > 0) {
+        console.log(`🔄 Automatically resumed ${res.modifiedCount} campaign(s) previously paused by daily message limit.`);
+      }
+    })
+    .catch((err) => {
+      console.error('Error auto-resuming campaigns paused by daily message limit:', err);
+    });
+
   runnerInterval = setInterval(processCampaigns, intervalMs);
 }
 
@@ -288,10 +309,7 @@ function isSessionQualified(sessionDoc: any, userTimezone = 'Asia/Kuala_Lumpur')
   if (sessionDoc.current_day !== today) {
     sessionDoc.current_day = today;
     sessionDoc.current_message_count = 0;
-  }
-
-  if (sessionDoc.current_message_count >= sessionDoc.max_message_count_per_day) {
-    return { qualified: false, reason: `Session ${sessionDoc.session_id} reached daily message limit (${sessionDoc.max_message_count_per_day})` };
+    sessionDoc.warmup_message_count = 0;
   }
 
   const startTime = sessionDoc.active_start_time || '00:00';
@@ -369,13 +387,10 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
     if (check.reason) disqualificationReasons.push(check.reason);
   }
 
-  const allLimits = disqualificationReasons.every((r) => r.includes('reached daily message limit'));
   const allHours = disqualificationReasons.every((r) => r.includes('Outside active sending window'));
 
   let finalError = 'No WhatsApp session available to send';
-  if (allLimits) {
-    finalError = 'All WhatsApp sessions reached daily message limit';
-  } else if (allHours) {
+  if (allHours) {
     finalError = 'All WhatsApp sessions are outside active sending window';
   } else if (disqualificationReasons.length > 0) {
     finalError = disqualificationReasons[0];

@@ -721,8 +721,8 @@ function CrossChatPage() {
                         const isConnected = (s.status || '').toLowerCase() === 'connected'
                         const isSessionEnabled = Boolean(s.cross_chat_enabled)
                         const todayStr = dayjs().format('YYYY-MM-DD')
-                        const sentCount = sessionDailyCounts[s.phone_number] ?? sessionDailyCounts[s.session_id] ?? (s.current_day === todayStr ? s.current_message_count || 0 : 0)
-                        const limit = savedMaxDaily || s.max_message_count_per_day || 50
+                        const sentCount = sessionDailyCounts[s.phone_number] ?? sessionDailyCounts[s.session_id] ?? (s.current_day === todayStr ? s.warmup_message_count || 0 : 0)
+                        const limit = savedMaxDaily || 50
 
                         return (
                           <TableRow
@@ -1215,11 +1215,11 @@ function CrossChatPage() {
 
                       // Calculate sent count for Session A & B against max limit
                       const todayStr = dayjs().format('YYYY-MM-DD')
-                      const countA = sessionDailyCounts[link.sessionA.phone_number] ?? sessionDailyCounts[link.sessionA.session_id] ?? (link.sessionA.current_day === todayStr ? link.sessionA.current_message_count || 0 : 0)
-                      const countB = sessionDailyCounts[link.sessionB.phone_number] ?? sessionDailyCounts[link.sessionB.session_id] ?? (link.sessionB.current_day === todayStr ? link.sessionB.current_message_count || 0 : 0)
+                      const countA = sessionDailyCounts[link.sessionA.phone_number] ?? sessionDailyCounts[link.sessionA.session_id] ?? (link.sessionA.current_day === todayStr ? link.sessionA.warmup_message_count || 0 : 0)
+                      const countB = sessionDailyCounts[link.sessionB.phone_number] ?? sessionDailyCounts[link.sessionB.session_id] ?? (link.sessionB.current_day === todayStr ? link.sessionB.warmup_message_count || 0 : 0)
 
-                      const limitA = savedMaxDaily || link.sessionA.max_message_count_per_day || 50
-                      const limitB = savedMaxDaily || link.sessionB.max_message_count_per_day || 50
+                      const limitA = savedMaxDaily || 50
+                      const limitB = savedMaxDaily || 50
 
                       const isAMaxed = countA >= limitA
                       const isBMaxed = countB >= limitB

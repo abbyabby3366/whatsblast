@@ -484,7 +484,7 @@ async function getCrossChatSettingsPayload(userId: string) {
   const sessionDailyCounts: Record<string, number> = {};
   for (const s of userSessions) {
     const key = s.phone_number || s.session_id;
-    sessionDailyCounts[key] = s.current_day === todayStr ? (s.current_message_count || 0) : 0;
+    sessionDailyCounts[key] = s.current_day === todayStr ? (s.warmup_message_count || 0) : 0;
   }
 
   return {
@@ -575,10 +575,6 @@ router.post('/cross-chat/config', async (req: AuthRequest, res: Response) => {
   if (cross_chat_max_daily_messages !== undefined) {
     const newMaxDaily = Number(cross_chat_max_daily_messages);
     user.cross_chat_max_daily_messages = newMaxDaily;
-    await WhatsAppSession.updateMany(
-      { user: user._id },
-      { $set: { max_message_count_per_day: newMaxDaily } }
-    );
   }
   if (cross_chat_turns_per_dialogue !== undefined) user.cross_chat_turns_per_dialogue = Number(cross_chat_turns_per_dialogue);
   if (cross_chat_min_turns !== undefined) user.cross_chat_min_turns = Number(cross_chat_min_turns);

@@ -23,6 +23,7 @@ export interface IWhatsAppSession extends Document {
   labels?: string[];
   max_message_count_per_day: number;
   current_message_count: number;
+  warmup_message_count: number;
   current_day?: string;
   warmup_schedule?: Record<string, any>;
   agent_phone_numbers: IAgentPhoneNumber[];
@@ -54,6 +55,7 @@ const WhatsAppSessionSchema = new Schema<IWhatsAppSession>(
     labels: [{ type: String }],
     max_message_count_per_day: { type: Number, default: 50 },
     current_message_count: { type: Number, default: 0 },
+    warmup_message_count: { type: Number, default: 0 },
     current_day: { type: String },
     warmup_schedule: { type: Schema.Types.Mixed },
     agent_phone_numbers: [AgentPhoneNumberSchema],

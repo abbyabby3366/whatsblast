@@ -152,16 +152,17 @@ async function processCrossChat(): Promise<void> {
 
       const minDelaySec = userDoc?.cross_chat_min_delay_sec ?? 15;
       const maxDelaySec = userDoc?.cross_chat_max_delay_sec ?? 120;
-      const maxDailyMsgs = userDoc?.cross_chat_max_daily_messages || senderSessionDoc.max_message_count_per_day || 50;
+      const maxDailyMsgs = userDoc?.cross_chat_max_daily_messages || 50;
 
       // Check daily limit for sender session
       const todayStr = dayjs().format('YYYY-MM-DD');
       if (senderSessionDoc.current_day !== todayStr) {
         senderSessionDoc.current_day = todayStr;
         senderSessionDoc.current_message_count = 0;
+        senderSessionDoc.warmup_message_count = 0;
       }
 
-      if (senderSessionDoc.current_message_count >= maxDailyMsgs) {
+      if ((senderSessionDoc.warmup_message_count || 0) >= maxDailyMsgs) {
         console.log(`[CrossChat] Session ${senderSessionId} reached configured daily max message limit (${maxDailyMsgs}). Stopping dialogue.`);
         activeDialogues.delete(dialogueId);
         await scheduleNextCycleForPair(pairKey, userDoc);
@@ -254,9 +255,10 @@ async function processCrossChat(): Promise<void> {
           if (senderSessionDoc.current_day !== loopTodayStr) {
             senderSessionDoc.current_day = loopTodayStr;
             senderSessionDoc.current_message_count = 0;
+            senderSessionDoc.warmup_message_count = 0;
           }
 
-          if (senderSessionDoc.current_message_count >= maxDailyMsgs) {
+          if ((senderSessionDoc.warmup_message_count || 0) >= maxDailyMsgs) {
             console.log(`[CrossChat] Session ${senderSessionId} reached configured daily max message limit (${maxDailyMsgs}) mid-turn. Stopping turn.`);
             break;
           }
@@ -294,7 +296,7 @@ async function processCrossChat(): Promise<void> {
           markSystemSentMessageId(messageId);
 
           // Update session stats
-          senderSessionDoc.current_message_count += 1;
+          senderSessionDoc.warmup_message_count = (senderSessionDoc.warmup_message_count || 0) + 1;
           senderSessionDoc.last_phone_activity_at = new Date();
           await senderSessionDoc.save();
 
@@ -398,10 +400,10 @@ async function processCrossChat(): Promise<void> {
 
           // Skip if either session has reached daily max message limit
           const todayStr = dayjs().format('YYYY-MM-DD');
-          const countA = sA.current_day === todayStr ? (sA.current_message_count || 0) : 0;
-          const countB = sB.current_day === todayStr ? (sB.current_message_count || 0) : 0;
-          const maxA = user.cross_chat_max_daily_messages || sA.max_message_count_per_day || 50;
-          const maxB = user.cross_chat_max_daily_messages || sB.max_message_count_per_day || 50;
+          const countA = sA.current_day === todayStr ? (sA.warmup_message_count || 0) : 0;
+          const countB = sB.current_day === todayStr ? (sB.warmup_message_count || 0) : 0;
+          const maxA = user.cross_chat_max_daily_messages || 50;
+          const maxB = user.cross_chat_max_daily_messages || 50;
 
           if (countA >= maxA || countB >= maxB) {
             continue;
@@ -607,10 +609,10 @@ export async function getPairScheduledTimes(userId: string): Promise<Record<stri
         result[pairKey] = activeDialogue.next_turn_at;
       } else {
         const todayStr = dayjs().format('YYYY-MM-DD');
-        const countA = sA.current_day === todayStr ? (sA.current_message_count || 0) : 0;
-        const countB = sB.current_day === todayStr ? (sB.current_message_count || 0) : 0;
-        const maxA = userDoc?.cross_chat_max_daily_messages || sA.max_message_count_per_day || 50;
-        const maxB = userDoc?.cross_chat_max_daily_messages || sB.max_message_count_per_day || 50;
+        const countA = sA.current_day === todayStr ? (sA.warmup_message_count || 0) : 0;
+        const countB = sB.current_day === todayStr ? (sB.warmup_message_count || 0) : 0;
+        const maxA = userDoc?.cross_chat_max_daily_messages || 50;
+        const maxB = userDoc?.cross_chat_max_daily_messages || 50;
 
         if (countA >= maxA || countB >= maxB) {
           result[pairKey] = 0;
@@ -755,10 +757,10 @@ export async function forceSendNextTurn(
 
       const user = await User.findById(userId);
       const todayStr = dayjs().format('YYYY-MM-DD');
-      const countA = sessionA.current_day === todayStr ? (sessionA.current_message_count || 0) : 0;
-      const countB = sessionB.current_day === todayStr ? (sessionB.current_message_count || 0) : 0;
-      const maxA = user?.cross_chat_max_daily_messages || sessionA.max_message_count_per_day || 50;
-      const maxB = user?.cross_chat_max_daily_messages || sessionB.max_message_count_per_day || 50;
+      const countA = sessionA.current_day === todayStr ? (sessionA.warmup_message_count || 0) : 0;
+      const countB = sessionB.current_day === todayStr ? (sessionB.warmup_message_count || 0) : 0;
+      const maxA = user?.cross_chat_max_daily_messages || 50;
+      const maxB = user?.cross_chat_max_daily_messages || 50;
 
       if (countA >= maxA || countB >= maxB) {
         let reason = '';
