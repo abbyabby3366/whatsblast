@@ -80,7 +80,7 @@ function CampaignProgressPage() {
       // Explicit refetch to ensure logs update immediately with new scheduled times
       refetchCampaign()
       refetchLogs()
-      const msg = data?.message || 'Retrying failed campaign messages...'
+      const msg = data?.message || 'Retrying failed & expired campaign messages...'
       if (data?.warning) {
         toast.warning(msg, { duration: 6000 })
       } else {
@@ -237,28 +237,26 @@ function CampaignProgressPage() {
         }))
 
   // Calculate live accurate counts from logs when available, falling back to campaign.stats
-  const logSentCount = reportRows.filter((r) =>
-    ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())
-  ).length
-  const logFailedCount = reportRows.filter((r) =>
-    ['failed', 'error'].includes((r.status || '').toLowerCase())
-  ).length
-  const logPendingCount = reportRows.filter((r) =>
-    ['pending', 'queued'].includes((r.status || '').toLowerCase())
-  ).length
+  const logSentCount = reportRows.filter((r) => ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())).length
+  const logFailedCount = reportRows.filter((r) => ['failed', 'error'].includes((r.status || '').toLowerCase())).length
+  const logExpiredCount = reportRows.filter((r) => {
+    const st = (r.status || '').toLowerCase()
+    return st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs()))
+  }).length
+  const logPendingCount = reportRows.filter((r) => {
+    const st = (r.status || '').toLowerCase()
+    const isExp = st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs()))
+    return ['pending', 'queued'].includes(st) && !isExp
+  }).length
 
   const hasLogData = logs.length > 0 || reportRows.length > 0
-  const total =
-    rawStats.total ||
-    recipientPhones.length ||
-    (hasLogData ? reportRows.length : 0) ||
-    0
+  const total = rawStats.total || recipientPhones.length || (hasLogData ? reportRows.length : 0) || 0
   const sent = hasLogData ? logSentCount : (rawStats.sent || 0)
   const failed = hasLogData ? logFailedCount : (rawStats.failed || 0)
-  const pending = hasLogData
-    ? logPendingCount
-    : (rawStats.pending !== undefined ? rawStats.pending : Math.max(0, total - sent - failed))
-  const processed = sent + failed
+  const expired = hasLogData ? logExpiredCount : (rawStats.expired || 0)
+  const retryableCount = failed + expired
+  const pending = hasLogData ? logPendingCount : (rawStats.pending !== undefined ? rawStats.pending : Math.max(0, total - sent - retryableCount))
+  const processed = sent + retryableCount
   const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
   const cStatus = (campaign.status || 'draft').toUpperCase()
 
@@ -286,13 +284,13 @@ function CampaignProgressPage() {
             Refresh
           </Button>
 
-          {failed > 0 && (
+          {retryableCount > 0 && (
             <Button
               type="button"
               size="sm"
               onClick={() => retryFailedMutation.mutate(campaign.id)}
               disabled={retryFailedMutation.isPending}
-              className="bg-rose-600 hover:bg-rose-700 text-white h-8 text-xs font-medium shadow-xs gap-1.5"
+              className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs font-medium shadow-xs gap-1.5"
             >
               {retryFailedMutation.isPending ? (
                 <>
@@ -302,7 +300,7 @@ function CampaignProgressPage() {
               ) : (
                 <>
                   <RotateCcw className="h-3.5 w-3.5" />
-                  Retry All Failed ({failed})
+                  Retry All Failed & Expired ({retryableCount})
                 </>
               )}
             </Button>
@@ -334,8 +332,8 @@ function CampaignProgressPage() {
             <span
               className={`inline-block rounded-full px-3.5 py-1 text-xs font-semibold border ${
                 cStatus === 'COMPLETED' || cStatus === 'completed'
-                  ? failed > 0
-                    ? 'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                  ? retryableCount > 0
+                    ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                     : 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                   : cStatus === 'RUNNING' || cStatus === 'running'
                   ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800 animate-pulse'
@@ -348,18 +346,25 @@ function CampaignProgressPage() {
                   : 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
               }`}
             >
-              {cStatus === 'COMPLETED' && failed > 0 ? `COMPLETED (${failed} FAILED)` : cStatus}
+              {cStatus === 'COMPLETED' && retryableCount > 0 ? `COMPLETED (${retryableCount} UNSENT)` : cStatus}
             </span>
           </div>
         </div>
 
-        {/* Failed messages banner if any */}
-        {failed > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+        {/* Failed / Expired messages banner if any */}
+        {retryableCount > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
               <span>
-                <strong>{failed} message(s) failed</strong> during delivery. You can click <strong>"Retry All Failed"</strong> or retry individual recipients below.
+                <strong>
+                  {failed > 0 && expired > 0
+                    ? `${failed} failed & ${expired} expired`
+                    : failed > 0
+                    ? `${failed} message(s) failed`
+                    : `${expired} message(s) expired`}
+                </strong>{' '}
+                during delivery. You can click <strong>"Retry All Failed & Expired"</strong> or retry individual recipients below.
               </span>
             </div>
             <Button
@@ -367,7 +372,7 @@ function CampaignProgressPage() {
               size="sm"
               onClick={() => retryFailedMutation.mutate(campaign.id)}
               disabled={retryFailedMutation.isPending}
-              className="bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 text-xs font-medium shrink-0 self-start sm:self-auto gap-1"
+              className="bg-amber-600 hover:bg-amber-700 text-white h-7 px-2.5 text-xs font-medium shrink-0 self-start sm:self-auto gap-1"
             >
               {retryFailedMutation.isPending ? (
                 <>
@@ -377,7 +382,7 @@ function CampaignProgressPage() {
               ) : (
                 <>
                   <RotateCcw className="h-3 w-3" />
-                  Retry All Failed ({failed})
+                  Retry All ({retryableCount})
                 </>
               )}
             </Button>
@@ -409,9 +414,9 @@ function CampaignProgressPage() {
           <div className="flex justify-between text-sm font-medium">
             <span className="text-slate-700 dark:text-slate-300">Blast Progress</span>
             <div className="flex items-center gap-2">
-              {failed > 0 && (
-                <span className="text-rose-600 dark:text-rose-400 font-semibold text-xs bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/50">
-                  {failed} Failed
+              {retryableCount > 0 && (
+                <span className="text-amber-600 dark:text-amber-400 font-semibold text-xs bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-900/50">
+                  {failed > 0 && expired > 0 ? `${failed} Failed, ${expired} Expired` : failed > 0 ? `${failed} Failed` : `${expired} Expired`}
                 </span>
               )}
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">
@@ -425,11 +430,11 @@ function CampaignProgressPage() {
               style={{ width: `${total > 0 ? (sent / total) * 100 : 0}%` }}
               title={`Success / Sent: ${sent}`}
             />
-            {failed > 0 && (
+            {retryableCount > 0 && (
               <div
-                className="h-full bg-rose-500 transition-all duration-500"
-                style={{ width: `${total > 0 ? (failed / total) * 100 : 0}%` }}
-                title={`Failed: ${failed}`}
+                className="h-full bg-amber-500 transition-all duration-500"
+                style={{ width: `${total > 0 ? (retryableCount / total) * 100 : 0}%` }}
+                title={`Failed/Expired: ${retryableCount}`}
               />
             )}
           </div>
@@ -447,9 +452,9 @@ function CampaignProgressPage() {
             <p className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{sent}</p>
           </div>
 
-          <div className="flex flex-col justify-between rounded-xl border border-rose-200 bg-rose-50/50 p-4 text-center dark:border-rose-900/40 dark:bg-rose-950/20">
-            <p className="text-xs font-medium text-rose-700 dark:text-rose-400">Failed</p>
-            <p className="mt-2 text-2xl font-bold text-rose-600 dark:text-rose-400">{failed}</p>
+          <div className="flex flex-col justify-between rounded-xl border border-amber-200 bg-amber-50/50 p-4 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">{failed > 0 && expired > 0 ? 'Failed / Expired' : expired > 0 ? 'Expired' : 'Failed'}</p>
+            <p className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400">{retryableCount}</p>
           </div>
 
           <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-center dark:border-slate-800 dark:bg-slate-900/50">

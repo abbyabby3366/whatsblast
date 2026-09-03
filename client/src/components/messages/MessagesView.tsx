@@ -120,7 +120,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       return api.post('messages/retry-all-failed', { searchParams }).json<any>()
     },
     onSuccess: (data) => {
-      const msg = data?.message || 'Queued retry for all failed messages!'
+      const msg = data?.message || 'Queued retry for all failed and expired messages!'
       if (data?.warning) {
         toast.warning(msg, { duration: 6000 })
       } else {
@@ -137,7 +137,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       setIsRetryAllConfirmOpen(false)
     },
     onError: async (err) => {
-      toast.error(await getErrorMessage(err, 'Failed to retry failed messages.'))
+      toast.error(await getErrorMessage(err, 'Failed to retry messages.'))
     },
   })
 
@@ -527,7 +527,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           ) : (
             <>
               <RotateCcw className="w-3.5 h-3.5" />
-              Retry All Failed
+              Retry All Failed & Expired
             </>
           )}
         </Button>
@@ -876,7 +876,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               </div>
               <div>
                 <DialogTitle className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  Retry All Failed Messages?
+                  Retry All Failed & Expired Messages?
                 </DialogTitle>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Re-queue all failed and expired messages back into the sending pipeline.
@@ -929,7 +929,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               ) : (
                 <>
                   <RotateCcw className="w-3.5 h-3.5" />
-                  Yes, Retry All Failed
+                  Yes, Retry All (Failed & Expired)
                 </>
               )}
             </Button>

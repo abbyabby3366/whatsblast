@@ -607,10 +607,10 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
       count: retriedCount || failedMessages.length,
       campaignsCount: retriedCampaignsCount,
       warning: !hasAnyConnectedSession ? 'No connected WhatsApp session found' : undefined,
-      message: `Successfully queued retry for ${retriedCount || failedMessages.length} failed message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}${warningText}`,
+      message: `Successfully queued retry for ${retriedCount || failedMessages.length} failed/expired message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}${warningText}`,
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Failed to retry all failed messages' });
+    return res.status(500).json({ error: err.message || 'Failed to retry all failed/expired messages' });
   }
 };
 

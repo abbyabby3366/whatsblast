@@ -477,7 +477,7 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
   }
 
   if (retryContacts.length === 0) {
-    return { success: true, count: 0, message: 'No failed messages to retry', campaign };
+    return { success: true, count: 0, message: 'No failed or expired messages to retry', campaign };
   }
 
   const now = new Date();
@@ -577,7 +577,7 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
   return {
     success: true,
     count: retryContacts.length,
-    message: `Retrying ${retryContacts.length} failed recipient(s)${warningMsg}`,
+    message: `Retrying ${retryContacts.length} recipient(s)${warningMsg}`,
     warning: !hasConnectedSession ? 'No connected WhatsApp session found' : undefined,
     campaign,
   };

@@ -30,7 +30,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [customerSearch, setCustomerSearch] = useState('')
-  const [customerStatusFilter, setCustomerStatusFilter] = useState<'ALL' | 'SENT' | 'FAILED' | 'PENDING'>('ALL')
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<'ALL' | 'SENT' | 'FAILED' | 'EXPIRED' | 'PENDING'>('ALL')
 
   const { data: customerLogsData, isLoading: isLoadingCustomerLogs } = useQuery({
     queryKey: ['customer-list-logs', campaign?.id],
@@ -48,10 +48,10 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
       queryClient.invalidateQueries({ queryKey: ['customer-list-logs', campaign?.id] })
-      if (customerStatusFilter === 'FAILED') {
+      if (customerStatusFilter === 'FAILED' || customerStatusFilter === 'EXPIRED') {
         setCustomerStatusFilter('PENDING')
       }
-      const msg = data?.message || 'Retrying failed campaign messages...'
+      const msg = data?.message || 'Retrying failed & expired campaign messages...'
       if (data?.warning) {
         toast.warning(msg, { duration: 6000 })
       } else {
@@ -69,7 +69,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
       queryClient.invalidateQueries({ queryKey: ['customer-list-logs', campaign?.id] })
-      if (customerStatusFilter === 'FAILED') {
+      if (customerStatusFilter === 'FAILED' || customerStatusFilter === 'EXPIRED') {
         setCustomerStatusFilter('PENDING')
       }
       const msg = data?.message || 'Message retried successfully!'
@@ -101,10 +101,13 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           )
 
           if (matchedLog) {
+            const rawSt = (matchedLog.status || 'sent').toLowerCase()
+            const targetTime = matchedLog.scheduled_at || matchedLog.scheduled_datetime
+            const isExp = rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
             return {
               phone,
-              status: (matchedLog.status || 'sent').toLowerCase(),
-              time: matchedLog.created_at || matchedLog.wa_timestamp || matchedLog.createdAt,
+              status: isExp ? 'expired' : rawSt,
+              time: matchedLog.sent_at || matchedLog.wa_timestamp || matchedLog.scheduled_at || matchedLog.scheduled_datetime || matchedLog.created_at || matchedLog.createdAt,
               error: matchedLog.error ? safeText(matchedLog.error) : null,
               message: safeText(matchedLog.content?.text || matchedLog.content, 'Template message sent'),
               retryCount: matchedLog.retry_count || matchedLog.retryCount || 0,
@@ -131,28 +134,37 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
             retryCount: 0,
           }
         })
-      : logs.map((l) => ({
-          phone: l.recipient_phone || l.to_jid || 'Recipient',
-          status: (l.status || 'sent').toLowerCase(),
-          time: l.created_at || l.wa_timestamp,
-          error: l.error ? safeText(l.error) : null,
-          message: safeText(l.content?.text || l.content, 'Message'),
-          retryCount: l.retry_count || l.retryCount || 0,
-        }))
+      : logs.map((l) => {
+          const rawSt = (l.status || 'sent').toLowerCase()
+          const targetTime = l.scheduled_at || l.scheduled_datetime
+          const isExp = rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
+          return {
+            phone: l.recipient_phone || l.to_jid || 'Recipient',
+            status: isExp ? 'expired' : rawSt,
+            time: l.sent_at || l.wa_timestamp || l.scheduled_at || l.scheduled_datetime || l.created_at || l.createdAt,
+            error: l.error ? safeText(l.error) : null,
+            message: safeText(l.content?.text || l.content, 'Message'),
+            retryCount: l.retry_count || l.retryCount || 0,
+          }
+        })
 
-  const sentCount = customerRows.filter((r) => r.status === 'sent' || r.status === 'delivered' || r.status === 'read').length
-  const failedCount = customerRows.filter((r) => r.status === 'failed' || r.status === 'error').length
-  const pendingCount = customerRows.filter((r) => r.status === 'pending' || r.status === 'queued').length
+  const sentCount = customerRows.filter((r) => ['sent', 'delivered', 'read'].includes(r.status)).length
+  const failedCount = customerRows.filter((r) => ['failed', 'error'].includes(r.status)).length
+  const expiredCount = customerRows.filter((r) => r.status === 'expired').length
+  const retryableCount = failedCount + expiredCount
+  const pendingCount = customerRows.filter((r) => ['pending', 'queued'].includes(r.status)).length
 
   const filteredCustomerRows = customerRows.filter((row) => {
     const matchesSearch = !customerSearch || row.phone.toLowerCase().includes(customerSearch.toLowerCase())
     let matchesStatus = true
     if (customerStatusFilter === 'SENT') {
-      matchesStatus = row.status === 'sent' || row.status === 'delivered' || row.status === 'read'
+      matchesStatus = ['sent', 'delivered', 'read'].includes(row.status)
     } else if (customerStatusFilter === 'FAILED') {
-      matchesStatus = row.status === 'failed' || row.status === 'error'
+      matchesStatus = ['failed', 'error'].includes(row.status)
+    } else if (customerStatusFilter === 'EXPIRED') {
+      matchesStatus = row.status === 'expired'
     } else if (customerStatusFilter === 'PENDING') {
-      matchesStatus = row.status === 'pending' || row.status === 'queued'
+      matchesStatus = ['pending', 'queued'].includes(row.status)
     }
     return matchesSearch && matchesStatus
   })
@@ -185,12 +197,11 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
               </div>
             </div>
 
-            {failedCount > 0 && (
+            {retryableCount > 0 && (
               <Button
                 type="button"
-                variant="destructive"
                 size="sm"
-                className="h-8 px-3 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-xs gap-1.5"
+                className="h-8 px-3 text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-xs gap-1.5"
                 disabled={retryFailedMutation.isPending}
                 onClick={() => campaign && retryFailedMutation.mutate(campaign.id)}
               >
@@ -202,7 +213,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                 ) : (
                   <>
                     <RotateCcw className="h-3.5 w-3.5" />
-                    Retry All Failed ({failedCount})
+                    Retry All Failed & Expired ({retryableCount})
                   </>
                 )}
               </Button>
@@ -213,9 +224,16 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
             <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
               Sent: {sentCount}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1 font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-              Failed: {failedCount}
-            </span>
+            {failedCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1 font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                Failed: {failedCount}
+              </span>
+            )}
+            {expiredCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-orange-50 px-2.5 py-1 font-semibold text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                Expired: {expiredCount}
+              </span>
+            )}
             <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
               Pending: {pendingCount}
             </span>
@@ -276,6 +294,19 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
             >
               Failed ({failedCount})
             </button>
+            {expiredCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setCustomerStatusFilter('EXPIRED')}
+                className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                  customerStatusFilter === 'EXPIRED'
+                    ? 'bg-white text-orange-700 shadow-xs dark:bg-slate-800 dark:text-orange-400'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                }`}
+              >
+                Expired ({expiredCount})
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setCustomerStatusFilter('PENDING')}
@@ -312,6 +343,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
               <TableBody>
                 {filteredCustomerRows.map((row, idx) => {
                   const isFailed = row.status === 'failed' || row.status === 'error'
+                  const isExpired = row.status === 'expired'
                   const isSent = row.status === 'sent' || row.status === 'delivered' || row.status === 'read'
 
                   return (
@@ -323,6 +355,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
                             isSent
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : isExpired
+                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300'
                               : isFailed
                               ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                               : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
@@ -346,14 +380,18 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                           {!isSent && (
                             <Button
                               type="button"
-                              variant={isFailed ? 'destructive' : 'outline'}
+                              variant={isFailed ? 'destructive' : isExpired ? 'outline' : 'outline'}
                               size="sm"
                               className={`h-7 px-2.5 text-xs font-medium gap-1 ${
-                                isFailed ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-slate-200'
+                                isFailed
+                                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
+                                  : isExpired
+                                  ? 'text-orange-700 hover:text-orange-800 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-800'
+                                  : 'text-slate-600 hover:text-slate-900 border-slate-200'
                               }`}
                               disabled={retryRecipientMutation.isPending}
                               onClick={() => campaign && retryRecipientMutation.mutate({ cId: campaign.id, phone: row.phone })}
-                              title="Retry message for this customer"
+                              title={isExpired ? 'Reschedule and retry message' : 'Retry message for this customer'}
                             >
                               {retryRecipientMutation.isPending && retryRecipientMutation.variables.phone === row.phone ? (
                                 <>
