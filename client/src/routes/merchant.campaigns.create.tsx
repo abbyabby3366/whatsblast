@@ -44,13 +44,17 @@ import { Step4Recipients } from '@/components/merchant-campaigns-create/componen
 import { Step5Summary } from '@/components/merchant-campaigns-create/components/Step5Summary'
 
 export const Route = createFileRoute('/merchant/campaigns/create')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    edit: typeof search.edit === 'string' ? search.edit : undefined,
+    step: typeof search.step === 'string' ? search.step : undefined,
+  }),
   component: CreateCampaignPage,
 })
 
 function CreateCampaignPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const search = useSearch({ strict: false })
+  const search = Route.useSearch()
 
   const editingCampaignId = search.edit || null
   const [step, setStep] = useState<number>(() => {
@@ -433,7 +437,7 @@ function CreateCampaignPage() {
   const { data: customersPageData, isLoading: isLoadingCustomers } = useQuery({
     queryKey: ['customers', searchTerm, customerPage],
     queryFn: async () => {
-      const res = await api.get(`customers/?search=${encodeURIComponent(searchTerm)}&page=${customerPage}`).json<any>()
+      const res = await api.get(`customers/?search=${encodeURIComponent(searchTerm)}&page=${customerPage}&page_size=100`).json<any>()
       return {
         count: Array.isArray(res) ? res.length : res.count || 0,
         results: Array.isArray(res) ? res : res.results || [],
@@ -443,17 +447,10 @@ function CreateCampaignPage() {
 
   const currentCustomers = customersPageData?.results || []
 
-  const fetchAllCustomerPhones = async (search = searchTerm) => {
-    const phones: string[] = []
-    let page = 1
-    for (;;) {
-      const res = await api.get(`customers/?search=${encodeURIComponent(search)}&page=${page}`).json<any>()
-      const results = Array.isArray(res) ? res : res.results || []
-      const pagePhones = results.map((c: any) => c.phone_number || c.phone).filter(Boolean)
-      phones.push(...pagePhones)
-      if (Array.isArray(res) || !res.next || results.length === 0) break
-      page++
-    }
+  const fetchAllCustomerPhones = async (search = searchTerm): Promise<string[]> => {
+    const res = await api.get(`customers/?all=true&search=${encodeURIComponent(search)}`).json<any>()
+    const results: any[] = Array.isArray(res) ? res : res?.results || []
+    const phones: string[] = results.map((c: any) => String(c.phone_number || c.phone || '')).filter(Boolean)
     return Array.from(new Set(phones))
   }
 

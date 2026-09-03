@@ -162,16 +162,33 @@ function CustomersPage() {
     XLSX.writeFile(wb, 'customer_template.csv', { bookType: 'csv' })
   }
 
-  const handleExportCustomers = () => {
-    if (customers.length === 0) {
-      toast.error('No customers to export')
-      return
+  const handleExportCustomers = async () => {
+    try {
+      const searchParams = new URLSearchParams()
+      searchParams.set('all', 'true')
+      if (globalFilter.trim()) {
+        searchParams.set('search', globalFilter.trim())
+      }
+      if (selectedLabel && selectedLabel !== 'all') {
+        searchParams.set('label', selectedLabel)
+      }
+
+      const res = await api.get('customers/', { searchParams }).json<CustomerResponse | Customer[]>()
+      const allCustomers: Customer[] = Array.isArray(res) ? res : res?.results || []
+
+      if (allCustomers.length === 0) {
+        toast.error('No customers to export')
+        return
+      }
+      const data = allCustomers.map(c => ({ name: c.name || '', phone_number: c.phone_number, label: c.label || '' }))
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Customers')
+      XLSX.writeFile(wb, 'customers.csv', { bookType: 'csv' })
+      toast.success(`Exported ${allCustomers.length} customer(s).`)
+    } catch {
+      toast.error('Failed to export customers.')
     }
-    const data = customers.map(c => ({ name: c.name || '', phone_number: c.phone_number, label: c.label || '' }))
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Customers')
-    XLSX.writeFile(wb, 'customers.csv', { bookType: 'csv' })
   }
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -15,28 +15,99 @@ function formatCustomer(c: any) {
   };
 }
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const getCustomerLabels = async (req: AuthRequest, res: Response) => {
-  const labels = await Customer.distinct('label', { merchant: req.user?._id, label: { $nin: [null, ''] } });
-  return res.json(labels);
+  const rawLabels = await Customer.distinct('label', { merchant: req.user?._id, label: { $nin: [null, ''] } });
+  const uniqueLabels = new Set<string>();
+  for (const item of rawLabels) {
+    if (typeof item === 'string') {
+      item.split(',').forEach((l) => {
+        const trimmed = l.trim();
+        if (trimmed) uniqueLabels.add(trimmed);
+      });
+    }
+  }
+  return res.json(Array.from(uniqueLabels).sort((a, b) => a.localeCompare(b)));
 };
 
 router.get('/customers/labels', getCustomerLabels);
 
 const getCustomers = async (req: AuthRequest, res: Response) => {
   const filter: any = { merchant: req.user?._id };
-  const { search, label } = req.query;
+  const { search, label, page, page_size, all } = req.query;
 
   if (label && String(label).trim() && label !== 'all') {
-    filter.label = String(label).trim();
+    const trimmedLabel = String(label).trim();
+    const escapedLabel = escapeRegex(trimmedLabel);
+    filter.label = { $regex: `(^|,\\s*)${escapedLabel}(,\\s*|$)`, $options: 'i' };
   }
 
   if (search) {
-    filter.$or = [
-      { name: { $regex: String(search), $options: 'i' } },
-      { phone_number: { $regex: String(search), $options: 'i' } },
-      { label: { $regex: String(search), $options: 'i' } },
-      { notes: { $regex: String(search), $options: 'i' } },
-    ];
+    const rawSearch = String(search).trim();
+    if (rawSearch) {
+      const escaped = escapeRegex(rawSearch);
+      // Flexible regex allowing optional spaces/dashes/underscores between words, and between letter-digit boundaries
+      const flexiblePattern = escaped
+        .replace(/\s+/g, '[\\s\\-_]*')
+        .replace(/([a-zA-Z])(?=\d)|(\d)(?=[a-zA-Z])/g, '$&[\\s\\-_]*');
+
+      const orConditions: any[] = [
+        { name: { $regex: flexiblePattern, $options: 'i' } },
+        { label: { $regex: flexiblePattern, $options: 'i' } },
+        { notes: { $regex: flexiblePattern, $options: 'i' } },
+      ];
+
+      if (flexiblePattern !== escaped) {
+        orConditions.push(
+          { name: { $regex: escaped, $options: 'i' } },
+          { label: { $regex: escaped, $options: 'i' } },
+          { notes: { $regex: escaped, $options: 'i' } }
+        );
+      }
+
+      const digitsOnly = rawSearch.replace(/[^0-9]/g, '');
+      if (digitsOnly.length > 0) {
+        orConditions.push({ phone_number: { $regex: digitsOnly } });
+        if (digitsOnly.startsWith('0') && digitsOnly.length > 3) {
+          orConditions.push({ phone_number: { $regex: digitsOnly.replace(/^0+/, '') } });
+        }
+      } else {
+        orConditions.push({ phone_number: { $regex: escaped, $options: 'i' } });
+      }
+
+      filter.$or = orConditions;
+    }
+  }
+
+  const isAll = String(all).toLowerCase() === 'true';
+  const hasPagination = !isAll && (page !== undefined || page_size !== undefined);
+
+  if (hasPagination) {
+    const pageNum = Math.max(1, parseInt(String(page || '1'), 10) || 1);
+    const pageSizeNum = Math.max(1, parseInt(String(page_size || '20'), 10) || 20);
+    const skip = (pageNum - 1) * pageSizeNum;
+
+    const [total, customers] = await Promise.all([
+      Customer.countDocuments(filter),
+      Customer.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSizeNum),
+    ]);
+
+    const hasNext = skip + customers.length < total;
+    const hasPrev = pageNum > 1;
+
+    return res.json({
+      count: total,
+      next: hasNext ? `?page=${pageNum + 1}&page_size=${pageSizeNum}` : null,
+      previous: hasPrev ? `?page=${pageNum - 1}&page_size=${pageSizeNum}` : null,
+      page_size: pageSizeNum,
+      results: customers.map(formatCustomer),
+    });
   }
 
   const customers = await Customer.find(filter).sort({ createdAt: -1 });
