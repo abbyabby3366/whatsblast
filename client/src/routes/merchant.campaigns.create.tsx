@@ -73,6 +73,7 @@ function CreateCampaignPage() {
   const [templateDrafts, setTemplateDrafts] = useState<TemplateDraft[]>([createEmptyTemplateDraft()])
   const [activeTemplateIndex, setActiveTemplateIndex] = useState(0)
   const [recipients, setRecipients] = useState<string[]>([])
+  const [existingStatus, setExistingStatus] = useState<string | null>(null)
 
   // Recipient search state
   const [searchTerm, setSearchTerm] = useState('')
@@ -122,7 +123,7 @@ function CreateCampaignPage() {
     mutationFn: async () => {
       const payload = {
         name: name.trim() || `Draft (${dayjs().format('MMM D, HH:mm')})`,
-        status: 'DRAFT',
+        status: editingCampaignId && existingStatus ? existingStatus : 'DRAFT',
         min_interval_seconds: minInterval,
         max_interval_seconds: maxInterval,
         enable_warmup: enableWarmup,
@@ -281,6 +282,9 @@ function CreateCampaignPage() {
     queryFn: async () => {
       if (!editingCampaignId) return null
       const campaign = await api.get(`blast-campaigns/${editingCampaignId}/`).json<any>()
+      if (campaign.status) {
+        setExistingStatus(campaign.status)
+      }
       setName(campaign.name || '')
       setMinInterval(campaign.min_interval_seconds || 10)
       setMaxInterval(campaign.max_interval_seconds || 15)
@@ -288,10 +292,15 @@ function CreateCampaignPage() {
       setRetryOnFailure(campaign.retry_on_failure !== undefined ? Boolean(campaign.retry_on_failure) : true)
       setSessionMode(campaign.session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL')
       setSelectedSessions(campaign.selected_sessions || [])
-      setRecipients(campaign.recipient_phones || [])
-      if (campaign.templates?.length) {
+      setRecipients(campaign.recipient_phones?.length ? campaign.recipient_phones : (campaign.contacts || []))
+
+      const rawTemplates = (Array.isArray(campaign.templates) && campaign.templates.length > 0)
+        ? campaign.templates
+        : (campaign.template ? [campaign.template] : [])
+
+      if (rawTemplates.length > 0) {
         setTemplateDrafts(
-          campaign.templates.map((t: any) => {
+          rawTemplates.map((t: any) => {
             const rawFileIds: string[] = Array.isArray(t.file_ids) && t.file_ids.length > 0
               ? t.file_ids
               : t.file_id || t.file?.id
@@ -302,30 +311,62 @@ function CreateCampaignPage() {
                   id: f.id || f._id,
                   url: f.file_url || f.file_path || f.url || null,
                   name: f.file_name || 'Attached File',
-                  type: f.file_type || t.type || 'image',
+                  type: f.file_type || t.button_media_type || t.buttonMediaType || t.type || 'image',
                   size: f.file_size || f.size || undefined,
                 }))
               : rawFileIds.map((id: string) => ({
                   id,
                   url: id === (t.file_id || t.file?.id) ? filePreviewUrl(t.file, t.button_image) : null,
-                  type: t.type || 'image',
+                  type: t.button_media_type || t.buttonMediaType || t.type || 'image',
                   size: t.file?.file_size || t.file?.size || undefined,
                 }))
 
+            const hasButtons = Boolean(t.buttons && Array.isArray(t.buttons) && t.buttons.length > 0)
+            const inferredType = t.message_type || t.messageType || t.type || (hasButtons ? 'buttons' : rawFileIds.length > 0 ? (initialAttached[0]?.type || 'image') : 'text')
+            const detectedMediaType = t.button_media_type || t.buttonMediaType || initialAttached[0]?.type || (rawFileIds.length > 0 ? 'image' : 'none')
+
+            const templateText = t.template !== undefined && t.template !== null && String(t.template).trim() !== ''
+              ? String(t.template)
+              : (t.text !== undefined && t.text !== null
+                ? String(t.text)
+                : (t.caption !== undefined && t.caption !== null
+                  ? String(t.caption)
+                  : (typeof t.content === 'object' && t.content?.text ? String(t.content.text) : '')))
+
+            const footerText = t.footer !== undefined && t.footer !== null && String(t.footer).trim() !== ''
+              ? String(t.footer)
+              : (t.footer_text !== undefined && t.footer_text !== null
+                ? String(t.footer_text)
+                : (t.footerText !== undefined && t.footerText !== null
+                  ? String(t.footerText)
+                  : (typeof t.content === 'object' && t.content?.footer ? String(t.content.footer) : '')))
+
+            const rawButtonsList = t.buttons || (typeof t.content === 'object' && Array.isArray(t.content?.buttons) ? t.content.buttons : [])
+
             return {
-              id: t.id,
-              messageType: t.type || (t.buttons?.length ? 'buttons' : rawFileIds.length > 0 ? 'image' : 'text'),
-              template: t.text || '',
-              footer: t.footer || '',
+              id: t.id || t._id,
+              messageType: inferredType,
+              template: templateText,
+              footer: footerText,
               fileId: rawFileIds[0] || '',
               attachedFiles: initialAttached,
-              buttons: (t.buttons || []).map((b: any) => ({
-                id: b.id || Date.now().toString(),
-                type: normalizeButtonType(b.type),
-                display_text: b.displayText || b.display_text || '',
-                value: b.value || '',
-              })),
-              buttonMediaType: t.buttons?.length && rawFileIds.length > 0 ? 'image' : 'none',
+              buttons: (Array.isArray(rawButtonsList) ? rawButtonsList : []).map((b: any) => {
+                let parsedParams: any = {}
+                if (typeof b === 'object' && b !== null && typeof b.buttonParamsJson === 'string') {
+                  try {
+                    parsedParams = JSON.parse(b.buttonParamsJson)
+                  } catch (_) {}
+                }
+                const btnDisplayText = b.display_text ?? b.displayText ?? b.text ?? b.title ?? b.label ?? parsedParams?.display_text ?? ''
+                const btnValue = b.value ?? b.url ?? b.merchant_url ?? b.phone_number ?? b.phoneNumber ?? b.phone ?? b.copy_code ?? b.copyCode ?? parsedParams?.url ?? parsedParams?.phone_number ?? parsedParams?.copy_code ?? ''
+                return {
+                  id: b.id || b._id || Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                  type: normalizeButtonType(b.type || b.name),
+                  display_text: btnDisplayText,
+                  value: btnValue,
+                }
+              }),
+              buttonMediaType: inferredType === 'buttons' ? detectedMediaType : 'none',
               previewUrl: filePreviewUrl(t.file, t.button_image),
             }
           })

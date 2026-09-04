@@ -161,9 +161,15 @@ export const buildTemplatePayload = (tmpl: TemplateDraft) => {
   const file_ids = (tmpl.attachedFiles || []).map((f) => f.id).filter(Boolean)
   if (tmpl.fileId && !file_ids.includes(tmpl.fileId)) file_ids.push(tmpl.fileId)
 
+  const textVal = tmpl.template ? tmpl.template.trim() : ''
+
   return {
-    template: isMedia || isButtons ? (tmpl.template.trim() || undefined) : tmpl.template.trim(),
+    template: textVal || undefined,
+    text: textVal || undefined,
     message_type: tmpl.messageType,
+    type: tmpl.messageType,
+    button_media_type: isButtons ? tmpl.buttonMediaType : undefined,
+    buttonMediaType: isButtons ? tmpl.buttonMediaType : undefined,
     footer_text: tmpl.footer?.trim() || undefined,
     footer: tmpl.footer?.trim() || undefined,
     file_id: file_ids[0] || undefined,
@@ -172,7 +178,9 @@ export const buildTemplatePayload = (tmpl: TemplateDraft) => {
       ? tmpl.buttons.map((b) => ({
           type: b.type,
           display_text: b.display_text.trim(),
-          ...(b.type === 'url' ? { url: b.value?.trim() } : {}),
+          displayText: b.display_text.trim(),
+          value: b.value?.trim() || undefined,
+          ...(b.type === 'url' ? { url: b.value?.trim(), merchant_url: b.value?.trim() } : {}),
           ...(b.type === 'call' ? { phone_number: b.value?.trim() } : {}),
           ...(b.type === 'copy' ? { copy_code: b.value?.trim() } : {}),
         }))

@@ -3,14 +3,7 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft,
   Loader2,
-  Sparkles,
-  CheckCircle2,
-  Smartphone,
   Eye,
-  Workflow as WorkflowIcon,
-  Clock,
-  MessageSquareReply,
-  PlayCircle,
   Save,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,6 +17,7 @@ import { PhonePreviewModal } from '@/components/merchant-campaigns-create/compon
 import {
   createEmptyTemplateDraft,
   buildTemplatePayload,
+  normalizeButtonType,
 } from '@/components/merchant-campaigns-create/types'
 import type { TemplateDraft } from '@/components/merchant-campaigns-create/types'
 import type {
@@ -132,13 +126,26 @@ function CreateWorkflowPage() {
 
       if (editingWorkflow.templates && editingWorkflow.templates.length > 0) {
         const parsedTemplates = editingWorkflow.templates.map((tpl: any) => ({
-          messageType: tpl.messageType || tpl.type || 'text',
+          messageType: tpl.message_type || tpl.messageType || tpl.type || 'text',
           template: tpl.template || tpl.text || '',
           footer: tpl.footer || tpl.footer_text || '',
           fileId: tpl.fileId || tpl.file_id || '',
           attachedFiles: tpl.attachedFiles || [],
-          buttons: tpl.buttons || [],
-          buttonMediaType: tpl.buttonMediaType || 'none',
+          buttons: (tpl.buttons || []).map((b: any) => {
+            let parsedParams: any = {}
+            if (typeof b === 'object' && b !== null && typeof b.buttonParamsJson === 'string') {
+              try {
+                parsedParams = JSON.parse(b.buttonParamsJson)
+              } catch (_) {}
+            }
+            return {
+              id: b.id || b._id || Date.now().toString() + Math.random().toString(36).substring(2, 7),
+              type: normalizeButtonType(b.type || b.name),
+              display_text: b.display_text ?? b.displayText ?? b.text ?? b.title ?? b.label ?? parsedParams?.display_text ?? '',
+              value: b.value ?? b.url ?? b.merchant_url ?? b.phone_number ?? b.phoneNumber ?? b.phone ?? b.copy_code ?? b.copyCode ?? parsedParams?.url ?? parsedParams?.phone_number ?? parsedParams?.copy_code ?? '',
+            }
+          }),
+          buttonMediaType: tpl.buttonMediaType || tpl.button_media_type || 'none',
           previewUrl: tpl.previewUrl || null,
         }))
         setTemplates(parsedTemplates)
@@ -205,8 +212,6 @@ function CreateWorkflowPage() {
       </div>
     )
   }
-
-  const currentActiveTemplate = templates[activeTemplateIndex] || templates[0]
 
   return (
     <div className="max-w-5xl mx-auto space-y-4 pb-6">

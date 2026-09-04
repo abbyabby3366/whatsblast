@@ -351,7 +351,18 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
     campaign.contacts = list;
     campaign.stats.total = list.length;
   }
-  if (templates !== undefined) campaign.templates = templates;
+  if (templates !== undefined) {
+    campaign.templates = templates;
+    const primaryTpl = Array.isArray(templates) && templates.length > 0 ? templates[0] : null;
+    if (primaryTpl) {
+      const tplText = primaryTpl.text || primaryTpl.template || '';
+      const msgType = primaryTpl.message_type || primaryTpl.type || primaryTpl.messageType || 'text';
+      await Message.updateMany(
+        { campaign: campaign._id, status: MessageStatus.PENDING },
+        { $set: { type: msgType, content: { text: tplText, buttons: primaryTpl.buttons } } }
+      );
+    }
+  }
   if (min_interval_seconds !== undefined) campaign.min_interval_seconds = min_interval_seconds;
   if (max_interval_seconds !== undefined) campaign.max_interval_seconds = max_interval_seconds;
   if (enable_warmup !== undefined) campaign.enable_warmup = Boolean(enable_warmup);
