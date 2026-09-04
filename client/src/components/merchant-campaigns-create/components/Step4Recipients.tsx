@@ -7,12 +7,24 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface Step4Props {
   recipients: string[]
   setRecipients: React.Dispatch<React.SetStateAction<string[]>>
   searchTerm?: string
   setSearchTerm?: (v: string) => void
+  selectedLabel?: string
+  setSelectedLabel?: (v: string) => void
+  availableLabels?: string[]
+  allCustomers?: any[]
+  csvPhones?: Set<string>
   setIsCsvModalOpen?: (v: boolean) => void
   onOpenCsvModal?: () => void
   handleSelectAllMatching?: () => void
@@ -33,6 +45,11 @@ export function Step4Recipients({
   setRecipients,
   searchTerm = '',
   setSearchTerm,
+  selectedLabel = 'all',
+  setSelectedLabel,
+  availableLabels = [],
+  allCustomers = [],
+  csvPhones = new Set(),
   setIsCsvModalOpen,
   onOpenCsvModal,
   handleSelectAllMatching,
@@ -56,14 +73,28 @@ export function Step4Recipients({
 
   const customerMap = useMemo(() => {
     const map = new Map<string, any>()
-    currentCustomers.forEach((c: any) => {
-      const p = (c.phone_number || c.phone || '').replace(/[^\d+]/g, '')
-      if (p) {
-        map.set(p, c)
+    const registerCustomer = (c: any) => {
+      const raw = String(c.phone_number || c.phone || '').trim()
+      const digits = raw.replace(/[^\d]/g, '')
+      if (!digits) return
+      map.set(digits, c)
+      map.set(raw, c)
+      if (digits.startsWith('60')) {
+        map.set('0' + digits.slice(2), c)
+        map.set(digits.slice(2), c)
+      } else if (digits.startsWith('0')) {
+        map.set('6' + digits, c)
+        map.set(digits.slice(1), c)
+      } else {
+        map.set('60' + digits, c)
+        map.set('0' + digits, c)
       }
-    })
+    }
+
+    allCustomers.forEach(registerCustomer)
+    currentCustomers.forEach(registerCustomer)
     return map
-  }, [currentCustomers])
+  }, [allCustomers, currentCustomers])
 
   const handleAddManual = () => {
     if (!manualText.trim()) return
@@ -111,16 +142,34 @@ export function Step4Recipients({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Column: Customer Contacts List */}
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Search Customer Contacts</Label>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-                  <Input
-                    placeholder="Search name or phone..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm?.(e.target.value)}
-                    className="pl-9 h-9 text-xs"
-                  />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Filter by Label</Label>
+                  <Select value={selectedLabel} onValueChange={(val) => setSelectedLabel?.(val)}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="All Labels" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Labels</SelectItem>
+                      {availableLabels.map((lbl) => (
+                        <SelectItem key={lbl} value={lbl}>
+                          {lbl}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Search Contacts</Label>
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                    <Input
+                      placeholder="Search name, phone, or label..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm?.(e.target.value)}
+                      className="pl-9 h-9 text-xs"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -140,14 +189,14 @@ export function Step4Recipients({
                       ) : (
                         <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
                       )}
-                      {allMatchingCustomersSelected ? 'Deselect All Matching Customers' : 'Select All Customers Matching Search'}
+                      {allMatchingCustomersSelected ? 'Deselect All Matching Customers' : 'Select All Customers Matching Search / Filter'}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs">
                     {allMatchingCustomersSelected
-                      ? 'Click to deselect all matching recipients'
-                      : searchTerm
-                      ? `Select all contacts matching "${searchTerm}" across all pages`
+                      ? 'Click to deselect matching recipients'
+                      : searchTerm || (selectedLabel && selectedLabel !== 'all')
+                      ? `Select all contacts matching current search & label filter`
                       : 'Select all contacts in your database as recipients'}
                   </TooltipContent>
                 </Tooltip>
@@ -175,9 +224,14 @@ export function Step4Recipients({
                             : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
                         }`}
                       >
-                        <div className="truncate">
-                          <span className="font-medium">{customer.name || 'Unnamed'}</span>
-                          <span className="text-slate-400 font-mono ml-2">({phone})</span>
+                        <div className="truncate flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium truncate">{customer.name || 'Unnamed'}</span>
+                          <span className="text-slate-400 font-mono text-[11px] shrink-0">({phone})</span>
+                          {customer.label && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal text-slate-500 border-slate-200 dark:border-slate-700 shrink-0">
+                              {customer.label}
+                            </Badge>
+                          )}
                         </div>
                         {isSelected ? (
                           <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -299,20 +353,25 @@ export function Step4Recipients({
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {recipients.map((phone, idx) => {
                 const cleanPhone = phone.replace(/[^\d+]/g, '')
-                const customer = customerMap.get(cleanPhone)
+                const digitsOnly = phone.replace(/[^\d]/g, '')
+                const customer = customerMap.get(cleanPhone) || customerMap.get(digitsOnly) || customerMap.get(phone)
 
-                let source = 'CSV'
-                let label = 'CSV Import'
-                let sourceStyle = 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                let source = 'Contact'
+                let label = customer?.label?.trim() ? customer.label.trim() : '—'
+                let sourceStyle = 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800'
 
-                if (customer) {
-                  source = 'Contact'
-                  label = customer.label || customer.group || 'Customer'
-                  sourceStyle = 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                } else if (manualPhones.has(cleanPhone) || manualPhones.has(phone)) {
+                if (csvPhones.has(cleanPhone) || csvPhones.has(digitsOnly) || csvPhones.has(phone)) {
+                  source = 'CSV'
+                  label = 'CSV Import'
+                  sourceStyle = 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                } else if (manualPhones.has(cleanPhone) || manualPhones.has(digitsOnly) || manualPhones.has(phone)) {
                   source = 'Manual'
                   label = 'Manual Entry'
                   sourceStyle = 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                } else if (!customer) {
+                  source = 'Direct'
+                  label = '—'
+                  sourceStyle = 'bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                 }
 
                 return (
@@ -339,9 +398,13 @@ export function Step4Recipients({
                     </div>
 
                     <div className="flex justify-center">
-                      <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium rounded-md truncate max-w-[110px]">
-                        {label}
-                      </Badge>
+                      {label === '—' ? (
+                        <span className="text-slate-400 text-[11px]">—</span>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium rounded-md truncate max-w-[110px]">
+                          {label}
+                        </Badge>
+                      )}
                     </div>
 
                     <div className="flex justify-center">

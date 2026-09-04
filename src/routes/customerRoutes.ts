@@ -49,33 +49,26 @@ const getCustomers = async (req: AuthRequest, res: Response) => {
     const rawSearch = String(search).trim();
     if (rawSearch) {
       const escaped = escapeRegex(rawSearch);
-      // Flexible regex allowing optional spaces/dashes/underscores between words, and between letter-digit boundaries
-      const flexiblePattern = escaped
-        .replace(/\s+/g, '[\\s\\-_]*')
-        .replace(/([a-zA-Z])(?=\d)|(\d)(?=[a-zA-Z])/g, '$&[\\s\\-_]*');
-
       const orConditions: any[] = [
-        { name: { $regex: flexiblePattern, $options: 'i' } },
-        { label: { $regex: flexiblePattern, $options: 'i' } },
-        { notes: { $regex: flexiblePattern, $options: 'i' } },
+        // Exact label match (full label or exact token in comma-separated labels)
+        { label: { $regex: `(^|,\\s*)${escaped}(,\\s*|$)`, $options: 'i' } },
+        // Exact name match (case-insensitive)
+        { name: { $regex: `^${escaped}$`, $options: 'i' } },
       ];
 
-      if (flexiblePattern !== escaped) {
-        orConditions.push(
-          { name: { $regex: escaped, $options: 'i' } },
-          { label: { $regex: escaped, $options: 'i' } },
-          { notes: { $regex: escaped, $options: 'i' } }
-        );
-      }
-
-      const digitsOnly = rawSearch.replace(/[^0-9]/g, '');
-      if (digitsOnly.length > 0) {
-        orConditions.push({ phone_number: { $regex: digitsOnly } });
-        if (digitsOnly.startsWith('0') && digitsOnly.length > 3) {
-          orConditions.push({ phone_number: { $regex: digitsOnly.replace(/^0+/, '') } });
+      // Exact phone number match (only when query contains a full phone number of 5+ digits)
+      const cleanDigits = rawSearch.replace(/[^0-9]/g, '');
+      if (cleanDigits.length >= 5) {
+        const phoneMatches: string[] = [cleanDigits];
+        if (cleanDigits.startsWith('0')) {
+          phoneMatches.push('6' + cleanDigits);
+        } else if (cleanDigits.startsWith('60')) {
+          phoneMatches.push(cleanDigits.slice(1));
+        } else {
+          phoneMatches.push('60' + cleanDigits);
+          phoneMatches.push('0' + cleanDigits);
         }
-      } else {
-        orConditions.push({ phone_number: { $regex: escaped, $options: 'i' } });
+        orConditions.push({ phone_number: { $in: phoneMatches } });
       }
 
       filter.$or = orConditions;

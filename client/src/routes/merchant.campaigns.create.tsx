@@ -77,12 +77,14 @@ function CreateCampaignPage() {
 
   // Recipient search state
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedLabel, setSelectedLabel] = useState<string>('all')
   const [customerPage] = useState(1)
   const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false)
   const [allMatchingCustomersSelected, setAllMatchingCustomersSelected] = useState(false)
   const [isDraftRestored, setIsDraftRestored] = useState(false)
   const [isPhonePreviewOpen, setIsPhonePreviewOpen] = useState(false)
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
+  const [csvPhones, setCsvPhones] = useState<Set<string>>(new Set())
 
   // Fetch user files for resolving media previews
   const { data: userFiles } = useQuery({
@@ -474,11 +476,36 @@ function CreateCampaignPage() {
     onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to launch campaign.')),
   })
 
-  // Customer fetching
-  const { data: customersPageData, isLoading: isLoadingCustomers } = useQuery({
-    queryKey: ['customers', searchTerm, customerPage],
+  // Labels query
+  const { data: availableLabels = [] } = useQuery({
+    queryKey: ['customer-labels'],
+    queryFn: () => api.get('customers/labels/').json<string[]>().catch(() => []),
+  })
+
+  // All customers query for full directory name/label resolution
+  const { data: allCustomers = [] } = useQuery({
+    queryKey: ['all-customers'],
     queryFn: async () => {
-      const res = await api.get(`customers/?search=${encodeURIComponent(searchTerm)}&page=${customerPage}&page_size=100`).json<any>()
+      try {
+        const res = await api.get('customers/?all=true').json<any>()
+        return Array.isArray(res) ? res : res?.results || []
+      } catch {
+        return []
+      }
+    },
+  })
+
+  // Customer fetching for Step 4 list
+  const { data: customersPageData, isLoading: isLoadingCustomers } = useQuery({
+    queryKey: ['customers', searchTerm, selectedLabel, customerPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: String(customerPage),
+        page_size: '100',
+      })
+      if (searchTerm.trim()) params.set('search', searchTerm.trim())
+      if (selectedLabel && selectedLabel !== 'all') params.set('label', selectedLabel)
+      const res = await api.get(`customers/?${params.toString()}`).json<any>()
       return {
         count: Array.isArray(res) ? res.length : res.count || 0,
         results: Array.isArray(res) ? res : res.results || [],
@@ -488,32 +515,40 @@ function CreateCampaignPage() {
 
   const currentCustomers = customersPageData?.results || []
 
-  const fetchAllCustomerPhones = async (search = searchTerm): Promise<string[]> => {
-    const res = await api.get(`customers/?all=true&search=${encodeURIComponent(search)}`).json<any>()
+  const fetchAllCustomerPhones = async (search = searchTerm, label = selectedLabel): Promise<string[]> => {
+    const params = new URLSearchParams({ all: 'true' })
+    if (search.trim()) params.set('search', search.trim())
+    if (label && label !== 'all') params.set('label', label)
+    const res = await api.get(`customers/?${params.toString()}`).json<any>()
     const results: any[] = Array.isArray(res) ? res : res?.results || []
     const phones: string[] = results.map((c: any) => String(c.phone_number || c.phone || '')).filter(Boolean)
     return Array.from(new Set(phones))
   }
 
   const handleSelectAllMatching = async () => {
-    if (allMatchingCustomersSelected) {
-      setRecipients([])
-      setAllMatchingCustomersSelected(false)
-      return
-    }
-
     setIsSelectingAllCustomers(true)
     try {
-      const allPhones = await fetchAllCustomerPhones(searchTerm)
-      setRecipients(allPhones)
-      setAllMatchingCustomersSelected(true)
-      toast.success(`Selected all ${allPhones.length} recipients matching search.`)
+      const allPhones = await fetchAllCustomerPhones(searchTerm, selectedLabel)
+      if (allMatchingCustomersSelected) {
+        const removeSet = new Set(allPhones)
+        setRecipients((prev) => prev.filter((p) => !removeSet.has(p)))
+        setAllMatchingCustomersSelected(false)
+        toast.success(`Deselected matching recipients.`)
+      } else {
+        setRecipients((prev) => Array.from(new Set([...prev, ...allPhones])))
+        setAllMatchingCustomersSelected(true)
+        toast.success(`Selected all ${allPhones.length} recipients matching search / filter.`)
+      }
     } catch {
-      toast.error('Failed to select all customers.')
+      toast.error('Failed to update selected customers.')
     } finally {
       setIsSelectingAllCustomers(false)
     }
   }
+
+  useEffect(() => {
+    setAllMatchingCustomersSelected(false)
+  }, [searchTerm, selectedLabel])
 
   const handleFinalSubmit = () => {
     if (!name.trim()) {
@@ -899,6 +934,11 @@ function CreateCampaignPage() {
         <Step4Recipients
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          selectedLabel={selectedLabel}
+          setSelectedLabel={setSelectedLabel}
+          availableLabels={availableLabels}
+          allCustomers={allCustomers}
+          csvPhones={csvPhones}
           setIsCsvModalOpen={setIsCsvModalOpen}
           isSelectingAllCustomers={isSelectingAllCustomers}
           handleSelectAllMatching={handleSelectAllMatching}
@@ -941,7 +981,10 @@ function CreateCampaignPage() {
       <CsvImportModal
         isOpen={isCsvModalOpen}
         onClose={() => setIsCsvModalOpen(false)}
-        onImport={(imported) => setRecipients((prev) => Array.from(new Set([...prev, ...imported])))}
+        onImport={(imported) => {
+          setRecipients((prev) => Array.from(new Set([...prev, ...imported])))
+          setCsvPhones((prev) => new Set([...prev, ...imported.map((p) => p.replace(/[^\d+]/g, ''))]))
+        }}
       />
 
       <PhonePreviewModal
