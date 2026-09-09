@@ -46,7 +46,8 @@ function ProfilePage() {
     mutationFn: (data: any) => api.patch('users/me/', { json: data }).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] })
-      toast.success('Profile updated successfully')
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
+      toast.success('Profile and session intervals updated successfully')
     },
     onError: async (err) => {
       toast.error(await getErrorMessage(err, 'Failed to update profile'))

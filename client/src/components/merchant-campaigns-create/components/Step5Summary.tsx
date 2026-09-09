@@ -22,6 +22,8 @@ interface Step5Props {
   sessionMode: string
   selectedSessions: string[]
   recipients: string[]
+  minInterval?: number
+  maxInterval?: number
   retryOnFailure?: boolean
   enableWarmup?: boolean
   editingCampaignId?: string | null
@@ -44,6 +46,8 @@ export function Step5Summary({
   sessionMode,
   selectedSessions,
   recipients,
+  minInterval,
+  maxInterval,
   retryOnFailure: _retryOnFailure = true,
   enableWarmup: _enableWarmup = true,
   editingCampaignId,
@@ -127,6 +131,13 @@ export function Step5Summary({
                 {sessionMode === 'ALL' || sessionMode === 'AUTO'
                   ? 'Auto Rotate All Connected'
                   : `${selectedSessions.length} Selected Session(s)`}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl space-y-1 md:col-span-2">
+              <span className="text-slate-400 font-medium">Message Sending Interval</span>
+              <div className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                {minInterval ?? 10}m – {maxInterval ?? 15}m per message delay
               </div>
             </div>
           </div>

@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { Check, Smartphone, AlertCircle, ExternalLink, Flame, ArrowLeft, ArrowRight, Save, Loader2 } from 'lucide-react'
+import { Check, Smartphone, AlertCircle, ExternalLink, Flame, ArrowLeft, ArrowRight, Save, Loader2, Clock } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
 interface Step3Props {
@@ -16,6 +17,10 @@ interface Step3Props {
   setRetryOnFailure?: (v: boolean) => void
   enableWarmup?: boolean
   setEnableWarmup?: (v: boolean) => void
+  minInterval?: number
+  setMinInterval?: (v: number) => void
+  maxInterval?: number
+  setMaxInterval?: (v: number) => void
   onNext?: () => void
   onBack?: () => void
   onSaveDraft?: () => void
@@ -32,6 +37,10 @@ export function Step3SendingSessions({
   isLoadingSessions: _isLoadingSessions,
   enableWarmup = true,
   setEnableWarmup,
+  minInterval,
+  setMinInterval,
+  maxInterval,
+  setMaxInterval,
   onNext,
   onBack,
   onSaveDraft,
@@ -191,6 +200,57 @@ export function Step3SendingSessions({
                 <p className="text-[11px] text-slate-500 leading-normal">
                   Gradually ramps up sending frequency to reduce WhatsApp account restriction risks.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Sending Interval Settings */}
+          {setMinInterval && setMaxInterval && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50 space-y-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <Label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  Message Sending Interval
+                </Label>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Set the random delay range between each message sent. Defaults to your Profile setting (e.g. 30–45 mins).
+              </p>
+
+              <div className="flex items-center gap-3 pt-1">
+                <div className="flex-1 space-y-1">
+                  <Label htmlFor="camp-min-interval" className="text-[11px] text-slate-500 font-medium">
+                    Min Delay (Minutes)
+                  </Label>
+                  <Input
+                    id="camp-min-interval"
+                    type="number"
+                    min={1}
+                    value={minInterval ?? 10}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setMinInterval(isNaN(v) ? 1 : Math.max(1, v));
+                    }}
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <div className="pt-5 text-slate-400 font-bold">—</div>
+                <div className="flex-1 space-y-1">
+                  <Label htmlFor="camp-max-interval" className="text-[11px] text-slate-500 font-medium">
+                    Max Delay (Minutes)
+                  </Label>
+                  <Input
+                    id="camp-max-interval"
+                    type="number"
+                    min={minInterval ?? 1}
+                    value={maxInterval ?? 15}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setMaxInterval(isNaN(v) ? (minInterval ?? 1) : Math.max(minInterval ?? 1, v));
+                    }}
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                  />
+                </div>
               </div>
             </div>
           )}

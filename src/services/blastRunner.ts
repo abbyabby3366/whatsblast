@@ -399,6 +399,39 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
   return { errorMsg: finalError };
 }
 
+export function resolveCampaignInterval(campaign: any, sessionDoc: any): { minMins: number; maxMins: number } {
+  const sessMin = sessionDoc?.min_interval_seconds !== undefined && sessionDoc?.min_interval_seconds !== null ? Number(sessionDoc.min_interval_seconds) : undefined;
+  const sessMax = sessionDoc?.max_interval_seconds !== undefined && sessionDoc?.max_interval_seconds !== null ? Number(sessionDoc.max_interval_seconds) : undefined;
+  const campMin = campaign?.min_interval_seconds !== undefined && campaign?.min_interval_seconds !== null ? Number(campaign.min_interval_seconds) : undefined;
+  const campMax = campaign?.max_interval_seconds !== undefined && campaign?.max_interval_seconds !== null ? Number(campaign.max_interval_seconds) : undefined;
+
+  let min = 10;
+  let max = 15;
+
+  // If campaign has an interval configured that is not the generic default 10-15
+  if (campMin !== undefined && (campMin !== 10 || campMax !== 15)) {
+    min = campMin;
+    max = campMax !== undefined && campMax >= campMin ? campMax : campMin + 5;
+  } else if (sessMin !== undefined) {
+    min = sessMin;
+    max = sessMax !== undefined && sessMax >= sessMin ? sessMax : sessMin + 5;
+  } else if (campMin !== undefined) {
+    min = campMin;
+    max = campMax !== undefined && campMax >= campMin ? campMax : campMin + 5;
+  }
+
+  // Safety: never send faster than what the specific session account specifies
+  if (sessMin !== undefined && sessMin > min) {
+    min = sessMin;
+    if (sessMax !== undefined && sessMax > max) max = sessMax;
+  }
+
+  min = Math.max(0.1, min);
+  max = Math.max(min, max);
+
+  return { minMins: min, maxMins: max };
+}
+
 const activeCampaigns = new Set<string>();
 
 async function runSingleCampaign(campaignId: string): Promise<void> {
@@ -511,8 +544,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
         console.log(`❌ Campaign "${campaign.name}": Failed to send to ${rawPhone} (Not on WhatsApp) (${campaign.current_index}/${campaign.contacts.length})`);
 
-        const minIntervalMins = Math.max(0.1, Number(campaign.min_interval_seconds ?? sessionDoc?.min_interval_seconds ?? 10));
-        const maxIntervalMins = Math.max(minIntervalMins, Number(campaign.max_interval_seconds ?? sessionDoc?.max_interval_seconds ?? 15));
+        const { minMins: minIntervalMins, maxMins: maxIntervalMins } = resolveCampaignInterval(campaign, sessionDoc);
         const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
         const randomDelayMs = Math.floor(randomMinutes * 60 * 1000);
         console.log(`⏱️ Waiting ${randomMinutes.toFixed(2)} minutes (${Math.round(randomDelayMs / 1000)}s) interval before next contact...`);
@@ -740,9 +772,8 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         break;
       }
 
-      // Random delay between contacts (inherits campaign 10-15 minute settings or session defaults)
-      const minIntervalMins = Math.max(0.1, Number(campaign.min_interval_seconds ?? sessionDoc?.min_interval_seconds ?? 10));
-      const maxIntervalMins = Math.max(minIntervalMins, Number(campaign.max_interval_seconds ?? sessionDoc?.max_interval_seconds ?? 15));
+      // Random delay between contacts (inherits campaign custom interval or session defaults)
+      const { minMins: minIntervalMins, maxMins: maxIntervalMins } = resolveCampaignInterval(campaign, sessionDoc);
 
       const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
       const randomDelayMs = Math.floor(randomMinutes * 60 * 1000);

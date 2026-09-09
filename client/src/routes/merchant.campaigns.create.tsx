@@ -261,12 +261,30 @@ function CreateCampaignPage() {
     setIsDraftRestored(true)
   }, [name, minInterval, maxInterval, enableWarmup, sessionMode, selectedSessions, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
 
+  // Initialize min/max interval from user's profile defaults if creating a new campaign
+  useEffect(() => {
+    if (!editingCampaignId && userProfile?.min_interval_minutes && !isDraftRestored) {
+      const parts = userProfile.min_interval_minutes.split('-')
+      if (parts.length === 2) {
+        const minM = parseInt(parts[0], 10)
+        const maxM = parseInt(parts[1], 10)
+        if (!isNaN(minM) && !isNaN(maxM)) {
+          setMinInterval(minM)
+          setMaxInterval(maxM)
+        }
+      }
+    }
+  }, [userProfile, editingCampaignId, isDraftRestored])
+
   const clearDraft = () => {
     if (draftKey) localStorage.removeItem(draftKey)
     localStorage.removeItem(DRAFT_STORAGE_KEY)
     setName('')
-    setMinInterval(10)
-    setMaxInterval(15)
+    const profileParts = userProfile?.min_interval_minutes?.split('-') || []
+    const defMin = profileParts[0] && !isNaN(parseInt(profileParts[0], 10)) ? parseInt(profileParts[0], 10) : 10
+    const defMax = profileParts[1] && !isNaN(parseInt(profileParts[1], 10)) ? parseInt(profileParts[1], 10) : 15
+    setMinInterval(defMin)
+    setMaxInterval(defMax)
     setEnableWarmup(true)
     setRetryOnFailure(true)
     setSessionMode('ALL')
@@ -918,6 +936,10 @@ function CreateCampaignPage() {
           setSelectedSessions={setSelectedSessions}
           availableSessions={availableSessions}
           isLoadingSessions={isLoadingSessions}
+          minInterval={minInterval}
+          setMinInterval={setMinInterval}
+          maxInterval={maxInterval}
+          setMaxInterval={setMaxInterval}
           retryOnFailure={retryOnFailure}
           setRetryOnFailure={setRetryOnFailure}
           enableWarmup={enableWarmup}
@@ -958,6 +980,8 @@ function CreateCampaignPage() {
       {step === 5 && (
         <Step5Summary
           name={name}
+          minInterval={minInterval}
+          maxInterval={maxInterval}
           retryOnFailure={retryOnFailure}
           enableWarmup={enableWarmup}
           sessionMode={sessionMode}

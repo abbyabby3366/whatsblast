@@ -5,6 +5,7 @@ import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { MessageTemplate } from '../models/MessageTemplate.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
+import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { pickUserSession, getActiveSession, initWhatsAppSession } from '../services/baileysManager.js';
 import { sendBaileysTemplateMessage, getFileUrl } from '../services/blastRunner.js';
@@ -205,8 +206,21 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     templateId = newTpl._id;
   }
 
-  const minInterval = min_interval_seconds || 10;
-  const maxInterval = max_interval_seconds || 15;
+  const ownerUser = await User.findById(targetUser);
+  let userMin = 10;
+  let userMax = 15;
+  if (ownerUser?.min_interval_minutes) {
+    const parts = ownerUser.min_interval_minutes.split('-');
+    if (parts[0] && !isNaN(Number(parts[0]))) userMin = Number(parts[0]);
+    if (parts[1] && !isNaN(Number(parts[1]))) userMax = Number(parts[1]);
+  }
+
+  const minInterval = (min_interval_seconds !== undefined && min_interval_seconds !== null && !isNaN(Number(min_interval_seconds)))
+    ? Number(min_interval_seconds)
+    : userMin;
+  const maxInterval = (max_interval_seconds !== undefined && max_interval_seconds !== null && !isNaN(Number(max_interval_seconds)))
+    ? Number(max_interval_seconds)
+    : userMax;
   const sessionModeVal = session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
   const selectedSessionsList = Array.isArray(selected_sessions) ? selected_sessions : [];
   const retryOnFailureVal = retry_on_failure !== undefined ? Boolean(retry_on_failure) : true;

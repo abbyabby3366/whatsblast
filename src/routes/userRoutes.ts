@@ -70,10 +70,22 @@ const getUsersMe = async (req: AuthRequest, res: Response) => {
 router.get('/users/me', getUsersMe);
 
 const patchUsersMe = async (req: AuthRequest, res: Response) => {
-  const { min_interval_minutes } = req.body;
+  const { min_interval_minutes, sync_existing_sessions } = req.body;
   if (min_interval_minutes && req.user) {
     req.user.min_interval_minutes = min_interval_minutes;
     await req.user.save();
+
+    const parts = min_interval_minutes.split('-');
+    const minMins = Number(parts[0]);
+    const maxMins = Number(parts[1]);
+    if (!isNaN(minMins) && !isNaN(maxMins)) {
+      if (sync_existing_sessions !== false) {
+        await WhatsAppSession.updateMany(
+          { user: req.user._id },
+          { min_interval_seconds: minMins, max_interval_seconds: maxMins }
+        );
+      }
+    }
   }
   return res.json(formatUser(req.user));
 };
@@ -128,7 +140,18 @@ const updateUser = async (req: AuthRequest, res: Response) => {
   if (phone_number) targetUser.phone_number = String(phone_number).trim();
   if (role) targetUser.role = role;
   if (is_active !== undefined) targetUser.is_active = Boolean(is_active);
-  if (min_interval_minutes) targetUser.min_interval_minutes = min_interval_minutes;
+  if (min_interval_minutes) {
+    targetUser.min_interval_minutes = min_interval_minutes;
+    const parts = min_interval_minutes.split('-');
+    const minMins = Number(parts[0]);
+    const maxMins = Number(parts[1]);
+    if (!isNaN(minMins) && !isNaN(maxMins)) {
+      await WhatsAppSession.updateMany(
+        { user: targetUser._id },
+        { min_interval_seconds: minMins, max_interval_seconds: maxMins }
+      );
+    }
+  }
   if (password) {
     targetUser.password = await bcrypt.hash(password, 10);
   }
