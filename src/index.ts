@@ -29,7 +29,7 @@ import { startBlastRunner } from './services/blastRunner.js';
 import { startCrossChatRunner } from './services/crossChatRunner.js';
 import { initWorkflowScheduler } from './services/workflowScheduler.js';
 import { sendDeployNotification } from './utils/whatsappNotifier.js';
-import { getAppVersion } from './utils/version.js';
+import { getAppVersion, getLatestCommitMessage } from './utils/version.js';
 
 
 const app = express();
@@ -181,7 +181,11 @@ async function main() {
     // Send deployment WhatsApp notification
     if (process.env.NODE_ENV === 'production') {
       const version = getAppVersion();
-      sendDeployNotification(`🚀 *WhatsBlast (${version}) built & deployed successfully!*`);
+      const commitMsg = getLatestCommitMessage();
+      const notificationMsg = commitMsg
+        ? `🚀 *WhatsBlast (${version}) built & deployed successfully!*\n\n📝 *Commit:* ${commitMsg}`
+        : `🚀 *WhatsBlast (${version}) built & deployed successfully!*`;
+      sendDeployNotification(notificationMsg);
     }
 
   });

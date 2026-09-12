@@ -1,3 +1,4 @@
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -31,4 +32,51 @@ export function getAppVersion(): string {
   }
 
   return 'v1.12';
+}
+
+/**
+ * Retrieves the latest git commit message.
+ * Checks build-time artifact dist/git-info.json (works in Docker/production runner without .git),
+ * then falls back to git log CLI directly, then environment variables.
+ */
+export function getLatestCommitMessage(): string | null {
+  const candidateJsonPaths = [
+    path.resolve(process.cwd(), 'dist/git-info.json'),
+    path.resolve(__dirname, '../git-info.json'),
+    path.resolve(process.cwd(), 'git-info.json'),
+  ];
+
+  for (const jsonPath of candidateJsonPaths) {
+    try {
+      if (fs.existsSync(jsonPath)) {
+        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        if (data.message) {
+          return data.message.trim();
+        }
+      }
+    } catch {
+      // Continue searching next candidate path
+    }
+  }
+
+  try {
+    const msg = execSync('git log -1 --pretty=%s', {
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (msg) return msg;
+  } catch {
+    // Git command failed or repository metadata unavailable
+  }
+
+  if (process.env.RENDER_GIT_COMMIT_MESSAGE) {
+    return process.env.RENDER_GIT_COMMIT_MESSAGE.trim();
+  }
+
+  if (process.env.COMMIT_MESSAGE) {
+    return process.env.COMMIT_MESSAGE.trim();
+  }
+
+  return null;
 }

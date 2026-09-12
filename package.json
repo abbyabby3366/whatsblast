@@ -8,7 +8,7 @@
     "dev:client": "cd client && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build:client": "cd client && npm install --legacy-peer-deps && npm run build",
-    "build:server": "tsc",
+    "build:server": "tsc && node scripts/save-git-info.cjs",
     "build": "npm run build:client && npm run build:server",
     "test": "cd client && npm run test",
     "start": "node dist/index.js"
