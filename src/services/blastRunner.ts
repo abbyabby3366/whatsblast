@@ -400,30 +400,42 @@ async function getQualifiedSessionForCampaign(campaign: any, targetPendingMsg?: 
 }
 
 export function resolveCampaignInterval(campaign: any, sessionDoc: any): { minMins: number; maxMins: number } {
-  const sessMin = sessionDoc?.min_interval_seconds !== undefined && sessionDoc?.min_interval_seconds !== null ? Number(sessionDoc.min_interval_seconds) : undefined;
-  const sessMax = sessionDoc?.max_interval_seconds !== undefined && sessionDoc?.max_interval_seconds !== null ? Number(sessionDoc.max_interval_seconds) : undefined;
-  const campMin = campaign?.min_interval_seconds !== undefined && campaign?.min_interval_seconds !== null ? Number(campaign.min_interval_seconds) : undefined;
-  const campMax = campaign?.max_interval_seconds !== undefined && campaign?.max_interval_seconds !== null ? Number(campaign.max_interval_seconds) : undefined;
+  const campMin = campaign?.min_interval_seconds !== undefined && campaign?.min_interval_seconds !== null && !isNaN(Number(campaign.min_interval_seconds))
+    ? Number(campaign.min_interval_seconds)
+    : undefined;
+  const campMax = campaign?.max_interval_seconds !== undefined && campaign?.max_interval_seconds !== null && !isNaN(Number(campaign.max_interval_seconds))
+    ? Number(campaign.max_interval_seconds)
+    : undefined;
+
+  const sessMin = sessionDoc?.min_interval_seconds !== undefined && sessionDoc?.min_interval_seconds !== null && !isNaN(Number(sessionDoc.min_interval_seconds))
+    ? Number(sessionDoc.min_interval_seconds)
+    : undefined;
+  const sessMax = sessionDoc?.max_interval_seconds !== undefined && sessionDoc?.max_interval_seconds !== null && !isNaN(Number(sessionDoc.max_interval_seconds))
+    ? Number(sessionDoc.max_interval_seconds)
+    : undefined;
 
   let min = 10;
   let max = 15;
 
-  // If campaign has an interval configured that is not the generic default 10-15
+  // 1. If campaign has a custom configured interval (different from generic default 10-15), campaign is authoritative
   if (campMin !== undefined && (campMin !== 10 || campMax !== 15)) {
     min = campMin;
     max = campMax !== undefined && campMax >= campMin ? campMax : campMin + 5;
-  } else if (sessMin !== undefined) {
+  }
+  // 2. Otherwise if session has a custom interval (different from generic default 10-15), use session
+  else if (sessMin !== undefined && (sessMin !== 10 || sessMax !== 15)) {
     min = sessMin;
     max = sessMax !== undefined && sessMax >= sessMin ? sessMax : sessMin + 5;
-  } else if (campMin !== undefined) {
+  }
+  // 3. Otherwise if campaign has explicit values defined, use them
+  else if (campMin !== undefined) {
     min = campMin;
     max = campMax !== undefined && campMax >= campMin ? campMax : campMin + 5;
   }
-
-  // Safety: never send faster than what the specific session account specifies
-  if (sessMin !== undefined && sessMin > min) {
+  // 4. Otherwise if session has explicit values defined, use them
+  else if (sessMin !== undefined) {
     min = sessMin;
-    if (sessMax !== undefined && sessMax > max) max = sessMax;
+    max = sessMax !== undefined && sessMax >= sessMin ? sessMax : sessMin + 5;
   }
 
   min = Math.max(0.1, min);

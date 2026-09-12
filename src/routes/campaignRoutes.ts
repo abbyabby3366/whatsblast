@@ -246,7 +246,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     },
   });
 
-  // Immediately create PENDING messages for all recipients with cumulative random 10-15 minute intervals per assigned session
+  // Immediately create PENDING messages for all recipients with cumulative random intervals per assigned session
   if (phoneList.length > 0) {
     const minIntervalMins = Number(minInterval) || 10;
     const maxIntervalMins = Number(maxInterval) >= minIntervalMins ? Number(maxInterval) : minIntervalMins + 5;
@@ -386,7 +386,7 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
 
   await campaign.save();
 
-  // Recalculate scheduled_at timestamps for pending messages using random 10-15 minute intervals
+  // Recalculate scheduled_at timestamps for pending messages using campaign interval settings
   const minIntervalMins = Number(campaign.min_interval_seconds) || 10;
   const maxIntervalMins = Number(campaign.max_interval_seconds) >= minIntervalMins ? Number(campaign.max_interval_seconds) : minIntervalMins + 5;
 

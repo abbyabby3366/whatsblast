@@ -47,7 +47,10 @@ function ProfilePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] })
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
-      toast.success('Profile and session intervals updated successfully')
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      toast.success('Profile, sessions, and active campaigns updated successfully')
     },
     onError: async (err) => {
       toast.error(await getErrorMessage(err, 'Failed to update profile'))

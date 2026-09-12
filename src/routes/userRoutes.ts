@@ -85,6 +85,31 @@ const patchUsersMe = async (req: AuthRequest, res: Response) => {
           { min_interval_seconds: minMins, max_interval_seconds: maxMins }
         );
       }
+      await BlastCampaign.updateMany(
+        { user: req.user._id, status: { $in: [CampaignStatus.DRAFT, CampaignStatus.RUNNING, CampaignStatus.PAUSED] } },
+        { min_interval_seconds: minMins, max_interval_seconds: maxMins }
+      );
+
+      // Re-space pending messages for active campaigns to reflect new intervals
+      const activeCampaigns = await BlastCampaign.find({
+        user: req.user._id,
+        status: { $in: [CampaignStatus.DRAFT, CampaignStatus.RUNNING, CampaignStatus.PAUSED] },
+      });
+      for (const camp of activeCampaigns) {
+        const pendingMsgs = await Message.find({ campaign: camp._id, status: MessageStatus.PENDING }).sort({ createdAt: 1 });
+        if (pendingMsgs.length > 0) {
+          let cumulativeMs = Date.now();
+          for (let idx = 0; idx < pendingMsgs.length; idx++) {
+            const msg = pendingMsgs[idx];
+            if (idx > 0) {
+              const randomMinutes = Math.random() * (maxMins - minMins) + minMins;
+              cumulativeMs += randomMinutes * 60 * 1000;
+            }
+            msg.scheduled_at = new Date(cumulativeMs);
+            await msg.save();
+          }
+        }
+      }
     }
   }
   return res.json(formatUser(req.user));
@@ -150,6 +175,30 @@ const updateUser = async (req: AuthRequest, res: Response) => {
         { user: targetUser._id },
         { min_interval_seconds: minMins, max_interval_seconds: maxMins }
       );
+      await BlastCampaign.updateMany(
+        { user: targetUser._id, status: { $in: [CampaignStatus.DRAFT, CampaignStatus.RUNNING, CampaignStatus.PAUSED] } },
+        { min_interval_seconds: minMins, max_interval_seconds: maxMins }
+      );
+
+      const activeCampaigns = await BlastCampaign.find({
+        user: targetUser._id,
+        status: { $in: [CampaignStatus.DRAFT, CampaignStatus.RUNNING, CampaignStatus.PAUSED] },
+      });
+      for (const camp of activeCampaigns) {
+        const pendingMsgs = await Message.find({ campaign: camp._id, status: MessageStatus.PENDING }).sort({ createdAt: 1 });
+        if (pendingMsgs.length > 0) {
+          let cumulativeMs = Date.now();
+          for (let idx = 0; idx < pendingMsgs.length; idx++) {
+            const msg = pendingMsgs[idx];
+            if (idx > 0) {
+              const randomMinutes = Math.random() * (maxMins - minMins) + minMins;
+              cumulativeMs += randomMinutes * 60 * 1000;
+            }
+            msg.scheduled_at = new Date(cumulativeMs);
+            await msg.save();
+          }
+        }
+      }
     }
   }
   if (password) {

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import {
   ArrowLeft,
@@ -263,18 +263,20 @@ function CreateCampaignPage() {
 
   // Initialize min/max interval from user's profile defaults if creating a new campaign
   useEffect(() => {
-    if (!editingCampaignId && userProfile?.min_interval_minutes && !isDraftRestored) {
+    if (!editingCampaignId && userProfile?.min_interval_minutes) {
       const parts = userProfile.min_interval_minutes.split('-')
       if (parts.length === 2) {
         const minM = parseInt(parts[0], 10)
         const maxM = parseInt(parts[1], 10)
         if (!isNaN(minM) && !isNaN(maxM)) {
-          setMinInterval(minM)
-          setMaxInterval(maxM)
+          if (!isDraftRestored || (minInterval === 10 && maxInterval === 15)) {
+            setMinInterval(minM)
+            setMaxInterval(maxM)
+          }
         }
       }
     }
-  }, [userProfile, editingCampaignId, isDraftRestored])
+  }, [userProfile, editingCampaignId, isDraftRestored, minInterval, maxInterval])
 
   const clearDraft = () => {
     if (draftKey) localStorage.removeItem(draftKey)
