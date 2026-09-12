@@ -43,6 +43,7 @@ COPY --from=builder /app/client/node_modules ./client/node_modules
 # Copy compiled dist and client build
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/client/dist ./client/dist
+COPY --from=builder /app/client/src/lib/version.ts ./client/src/lib/version.ts
 
 # Create folders for runtime sessions and file uploads
 RUN mkdir -p /app/sessions /app/uploads
