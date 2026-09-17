@@ -4,6 +4,7 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type SortingState,
 } from '@tanstack/react-table'
 import {
   Search,
@@ -13,6 +14,9 @@ import {
   Eye,
   Store,
   Send,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -71,6 +75,9 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   const [selectedMerchant, setSelectedMerchant] = useState<string>('ALL')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'scheduled_at', desc: true },
+  ])
 
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false)
@@ -168,13 +175,18 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   }, [debouncedFilter, statusFilter, selectedMerchant, startDate, endDate])
 
   const { data: response, isLoading } = useQuery({
-    queryKey: ['messages', isAdmin ? 'admin' : 'merchant', pageIndex, pageSize, debouncedFilter, statusFilter, selectedMerchant, startDate, endDate],
+    queryKey: ['messages', isAdmin ? 'admin' : 'merchant', pageIndex, pageSize, debouncedFilter, statusFilter, selectedMerchant, startDate, endDate, sorting],
     queryFn: () => {
       const searchParams = new URLSearchParams()
       searchParams.set('page', String(pageIndex + 1))
       searchParams.set('page_size', String(pageSize))
       searchParams.set('direction', 'out_bound')
       searchParams.set('is_campaign', 'true')
+
+      if (sorting.length > 0) {
+        searchParams.set('sort_by', sorting[0].id)
+        searchParams.set('order', sorting[0].desc ? 'desc' : 'asc')
+      }
 
       if (debouncedFilter) {
         searchParams.set('search', debouncedFilter)
@@ -231,6 +243,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       }),
       columnHelper.accessor('template', {
         header: 'Message Content',
+        enableSorting: false,
         cell: (info) => {
           const tmpl = info.getValue()
           const row = info.row.original
@@ -424,6 +437,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     if (isAdmin) {
       cols.splice(1, 0, columnHelper.accessor('user', {
         header: 'Merchant',
+        enableSorting: false,
         cell: (info) => ownerDisplay(info.getValue(), info.row.original),
       }))
     }
@@ -432,6 +446,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       columnHelper.display({
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
+        enableSorting: false,
         cell: (info) => {
           const row = info.row.original
           const rowSt = (row.status || '').toLowerCase()
@@ -481,9 +496,15 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     columns,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
+    manualSorting: true,
     pageCount,
     state: {
       pagination: { pageIndex, pageSize },
+      sorting,
+    },
+    onSortingChange: (updater) => {
+      setPageIndex(0)
+      setSorting(updater)
     },
     onPaginationChange: (updater) => {
       if (typeof updater === 'function') {
@@ -695,11 +716,35 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="hover:bg-transparent border-slate-200 dark:border-slate-800">
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="text-xs font-semibold">
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const canSort = header.column.getCanSort()
+                  const isSorted = header.column.getIsSorted()
+                  return (
+                    <TableHead
+                      key={header.id}
+                      className={`text-xs font-semibold ${
+                        canSort ? 'cursor-pointer select-none hover:text-slate-900 dark:hover:text-slate-100 transition-colors' : ''
+                      }`}
+                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                      title={canSort ? `Sort by ${typeof header.column.columnDef.header === 'string' ? header.column.columnDef.header : 'column'}` : undefined}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                        {canSort && (
+                          <span className="inline-flex shrink-0">
+                            {isSorted === 'desc' ? (
+                              <ArrowDown className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            ) : isSorted === 'asc' ? (
+                              <ArrowUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                              <ArrowUpDown className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 hover:text-slate-500" />
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </TableHead>
+                  )
+                })}
               </TableRow>
             ))}
           </TableHeader>

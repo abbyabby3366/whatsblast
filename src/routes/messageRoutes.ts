@@ -180,8 +180,26 @@ const getMessages = async (req: AuthRequest, res: Response) => {
   }
 
   const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-  const pageSize = Math.max(1, Math.min(1000, parseInt(req.query.page_size as string, 10) || 20));
+  const pageSize = Math.max(1, Math.min(10000, parseInt(req.query.page_size as string, 10) || 20));
   const skip = (page - 1) * pageSize;
+
+  const sortBy = String(req.query.sort_by || req.query.sort || req.query.orderBy || '').trim();
+  const sortDir: 1 | -1 = String(req.query.order || req.query.order_direction || req.query.sort_direction || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+
+  let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
+  if (sortBy === 'scheduled_at' || sortBy === 'scheduled_send_time' || sortBy === 'scheduled_datetime') {
+    sortQuery = { scheduled_at: sortDir, createdAt: sortDir };
+  } else if (sortBy === 'created_at' || sortBy === 'createdAt') {
+    sortQuery = { createdAt: sortDir };
+  } else if (sortBy === 'recipient_phone') {
+    sortQuery = { recipient_phone: sortDir };
+  } else if (sortBy === 'sender_phone') {
+    sortQuery = { sender_phone: sortDir };
+  } else if (sortBy === 'status') {
+    sortQuery = { status: sortDir, scheduled_at: sortDir };
+  } else if (sortBy) {
+    sortQuery = { [sortBy]: sortDir };
+  }
 
   const [totalCount, messages] = await Promise.all([
     Message.countDocuments(filter),
@@ -197,7 +215,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
         select: 'name user templates template',
         populate: { path: 'user', select: 'phone_number role' },
       })
-      .sort({ createdAt: -1 })
+      .sort(sortQuery)
       .skip(skip)
       .limit(pageSize),
   ]);
@@ -312,6 +330,7 @@ const sendTextMessage = async (req: AuthRequest, res: Response) => {
     const result = await active.socket.sendMessage(targetJid, { text });
     const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
 
+    const now = new Date();
     const msg = await Message.create({
       session: sessionDoc?._id,
       direction: MessageDirection.OUTBOUND,
@@ -321,7 +340,9 @@ const sendTextMessage = async (req: AuthRequest, res: Response) => {
       to_jid: targetJid,
       content: { text },
       message_id: result?.key?.id || '',
-      wa_timestamp: new Date(),
+      scheduled_at: now,
+      sent_at: now,
+      wa_timestamp: now,
     });
 
     return res.json({ success: true, message: formatMessage(msg) });
@@ -370,6 +391,7 @@ const sendImageMessage = async (req: AuthRequest, res: Response) => {
     });
     const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
 
+    const now = new Date();
     const msg = await Message.create({
       session: sessionDoc?._id,
       direction: MessageDirection.OUTBOUND,
@@ -379,7 +401,9 @@ const sendImageMessage = async (req: AuthRequest, res: Response) => {
       to_jid: targetJid,
       content: { url, caption },
       message_id: result?.key?.id || '',
-      wa_timestamp: new Date(),
+      scheduled_at: now,
+      sent_at: now,
+      wa_timestamp: now,
     });
 
     return res.json({ success: true, message: formatMessage(msg) });

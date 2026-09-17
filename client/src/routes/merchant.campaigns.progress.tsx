@@ -1,13 +1,16 @@
+import { useState } from 'react'
 import { createFileRoute, useNavigate, useSearch, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, getErrorMessage } from '@/lib/api'
-import { safeText, isSamePhone } from '@/lib/utils'
+import { safeText } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
 import {
   Activity,
   AlertCircle,
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
   ExternalLink,
   Loader2,
@@ -51,6 +54,7 @@ function CampaignProgressPage() {
 
   // Track whether a retry recently happened, to keep auto-refresh active
   const campaignStatus = (campaign?.status || '').toLowerCase()
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
   // Fetch campaign execution logs
   const {
@@ -58,11 +62,16 @@ function CampaignProgressPage() {
     isLoading: isLoadingLogs,
     refetch: refetchLogs,
   } = useQuery({
-    queryKey: ['campaign-logs', campaignId],
+    queryKey: ['campaign-logs', campaignId, sortOrder],
     queryFn: () =>
       api
         .get('messages/', {
-          searchParams: { campaign_id: campaignId, page_size: '1000' },
+          searchParams: {
+            campaign_id: campaignId,
+            page_size: '2000',
+            sort_by: 'scheduled_at',
+            order: sortOrder,
+          },
         })
         .json<any>(),
     enabled: Boolean(campaignId),
@@ -177,64 +186,63 @@ function CampaignProgressPage() {
   const maxInterval = Number(campaign.max_interval_seconds) || 15
   const avgIntervalMins = (minInterval + maxInterval) / 2
 
-  // Generate detailed report rows
-  const reportRows =
-    recipientPhones.length > 0
-      ? recipientPhones.map((phone, idx) => {
-          const matchedLog = logs.find(
-            (l) =>
-              isSamePhone(phone, l.recipient_phone) ||
-              isSamePhone(phone, l.to_jid)
-          )
+  // Generate detailed report rows following backend sorted logs
+  let reportRows: any[] = []
+  if (logs.length > 0) {
+    const loggedPhoneSet = new Set<string>()
+    const addPhoneVariants = (digits: string) => {
+      if (!digits) return
+      loggedPhoneSet.add(digits)
+      if (digits.startsWith('60')) loggedPhoneSet.add('0' + digits.slice(2))
+      else if (digits.startsWith('0')) loggedPhoneSet.add('60' + digits.slice(1))
+    }
+    reportRows = logs.map((l) => {
+      const phone = l.recipient_phone || (l.to_jid ? l.to_jid.split('@')[0] : 'Recipient')
+      const cleanPhone = phone.replace(/[^0-9]/g, '')
+      addPhoneVariants(cleanPhone)
+      return {
+        phone,
+        status: l.status || 'sent',
+        scheduled_at: l.scheduled_at || l.scheduled_datetime,
+        sent_at: l.sent_at || l.wa_timestamp,
+        created_at: l.created_at || l.createdAt,
+        error: l.error ? safeText(l.error) : null,
+        message: safeText(l.content?.text || l.content, 'Template message sent'),
+      }
+    })
 
-          // Estimated target send time based on position in queue and campaign intervals
+    // If there are any recipientPhones not yet recorded in logs, append them as pending
+    if (recipientPhones.length > 0) {
+      recipientPhones.forEach((phone, idx) => {
+        const clean = phone.replace(/[^0-9]/g, '')
+        if (!loggedPhoneSet.has(clean)) {
           const estimatedScheduledTime = baseStartTime
             ? dayjs(baseStartTime).add(idx * avgIntervalMins, 'minute').toISOString()
             : null
-
-          if (matchedLog) {
-            return {
-              phone: phone,
-              status: matchedLog.status || 'sent',
-              scheduled_at: matchedLog.scheduled_at || matchedLog.scheduled_datetime || estimatedScheduledTime,
-              sent_at: matchedLog.sent_at || matchedLog.wa_timestamp,
-              created_at: matchedLog.created_at || matchedLog.createdAt,
-              error: matchedLog.error ? safeText(matchedLog.error) : null,
-              message: safeText(matchedLog.content?.text || matchedLog.content, 'Template message sent'),
-            }
-          }
-
-          if (idx < (campaign.current_index || 0)) {
-            return {
-              phone: phone,
-              status: 'failed',
-              scheduled_at: estimatedScheduledTime,
-              sent_at: null,
-              created_at: null,
-              error: 'Send failed during execution',
-              message: 'Template message failed',
-            }
-          }
-
-          return {
-            phone: phone,
+          reportRows.push({
+            phone,
             status: 'pending',
             scheduled_at: estimatedScheduledTime,
             sent_at: null,
             created_at: null,
             error: null,
             message: 'Scheduled in queue',
-          }
-        })
-      : logs.map((l) => ({
-          phone: l.recipient_phone || l.to_jid || 'Recipient',
-          status: l.status || 'sent',
-          scheduled_at: l.scheduled_at || l.scheduled_datetime,
-          sent_at: l.sent_at || l.wa_timestamp,
-          created_at: l.created_at || l.createdAt,
-          error: l.error ? safeText(l.error) : null,
-          message: safeText(l.content?.text || l.content, 'Message'),
-        }))
+          })
+        }
+      })
+    }
+  } else if (recipientPhones.length > 0) {
+    reportRows = recipientPhones.map((phone, idx) => {
+      const est = baseStartTime ? dayjs(baseStartTime).add(idx * avgIntervalMins, 'minute').toISOString() : null
+      const isFailed = idx < (campaign.current_index || 0)
+      return {
+        phone, status: isFailed ? 'failed' : 'pending', scheduled_at: est,
+        sent_at: null, created_at: null,
+        error: isFailed ? 'Send failed during execution' : null,
+        message: isFailed ? 'Template message failed' : 'Scheduled in queue',
+      }
+    })
+  }
 
   // Calculate live accurate counts from logs when available, falling back to campaign.stats
   const logSentCount = reportRows.filter((r) => ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())).length
@@ -478,7 +486,22 @@ function CampaignProgressPage() {
                 <TableRow>
                   <TableHead className="text-xs">Recipient Phone</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Scheduled Send Time</TableHead>
+                  <TableHead
+                    className="text-xs cursor-pointer select-none hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                    onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                    title={`Sort by Scheduled Send Time (${sortOrder === 'asc' ? 'Click for Descending' : 'Click for Ascending'})`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Scheduled Send Time</span>
+                      <span className="inline-flex shrink-0">
+                        {sortOrder === 'asc' ? (
+                          <ArrowUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        ) : (
+                          <ArrowDown className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        )}
+                      </span>
+                    </div>
+                  </TableHead>
                   <TableHead className="text-xs">Message Preview</TableHead>
                   <TableHead className="text-xs text-right">Action</TableHead>
                 </TableRow>
