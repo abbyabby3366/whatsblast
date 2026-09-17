@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   ArrowLeft,
   Loader2,
@@ -261,22 +261,27 @@ function CreateCampaignPage() {
     setIsDraftRestored(true)
   }, [name, minInterval, maxInterval, enableWarmup, sessionMode, selectedSessions, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
 
+  const hasInitializedIntervalFromProfileRef = useRef(false)
+
   // Initialize min/max interval from user's profile defaults if creating a new campaign
   useEffect(() => {
-    if (!editingCampaignId && userProfile?.min_interval_minutes) {
-      const parts = userProfile.min_interval_minutes.split('-')
-      if (parts.length === 2) {
-        const minM = parseInt(parts[0], 10)
-        const maxM = parseInt(parts[1], 10)
-        if (!isNaN(minM) && !isNaN(maxM)) {
-          if (!isDraftRestored || (minInterval === 10 && maxInterval === 15)) {
+    if (editingCampaignId || !hasAttemptedRestore || hasInitializedIntervalFromProfileRef.current) return
+
+    if (userProfile?.min_interval_minutes) {
+      hasInitializedIntervalFromProfileRef.current = true
+      if (!isDraftRestored) {
+        const parts = userProfile.min_interval_minutes.split('-')
+        if (parts.length === 2) {
+          const minM = parseInt(parts[0], 10)
+          const maxM = parseInt(parts[1], 10)
+          if (!isNaN(minM) && !isNaN(maxM)) {
             setMinInterval(minM)
             setMaxInterval(maxM)
           }
         }
       }
     }
-  }, [userProfile, editingCampaignId, isDraftRestored, minInterval, maxInterval])
+  }, [userProfile, editingCampaignId, hasAttemptedRestore, isDraftRestored])
 
   const clearDraft = () => {
     if (draftKey) localStorage.removeItem(draftKey)
@@ -583,6 +588,14 @@ function CreateCampaignPage() {
       return
     }
 
+    const minVal = Number(minInterval)
+    const maxVal = Number(maxInterval)
+    if (isNaN(minVal) || minVal < 1 || isNaN(maxVal) || maxVal < minVal) {
+      setStep(3)
+      toast.error('Please configure valid message sending intervals (Max delay ≥ Min delay ≥ 1 min).')
+      return
+    }
+
     if (recipients.length === 0) {
       setStep(4)
       toast.error('Please select at least one recipient.')
@@ -663,6 +676,20 @@ function CreateCampaignPage() {
   const handleNextStep3 = () => {
     if (sessionMode === 'SPECIFIC' && selectedSessions.length === 0) {
       toast.error('Please select at least one sending session.')
+      return
+    }
+    const min = Number(minInterval)
+    const max = Number(maxInterval)
+    if (isNaN(min) || min < 1) {
+      toast.error('Min delay must be at least 1 minute.')
+      return
+    }
+    if (isNaN(max) || max < 1) {
+      toast.error('Max delay must be at least 1 minute.')
+      return
+    }
+    if (max < min) {
+      toast.error('Max delay cannot be lower than min delay.')
       return
     }
     setStep(4)

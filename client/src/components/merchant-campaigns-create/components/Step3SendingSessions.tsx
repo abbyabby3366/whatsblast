@@ -226,10 +226,22 @@ export function Step3SendingSessions({
                     id="camp-min-interval"
                     type="number"
                     min={1}
-                    value={minInterval ?? 10}
+                    value={minInterval !== undefined && minInterval !== null ? (minInterval === 0 ? '' : minInterval) : ''}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      setMinInterval(isNaN(v) ? 1 : Math.max(1, v));
+                      const val = e.target.value;
+                      if (val === '') {
+                        setMinInterval(0);
+                      } else {
+                        const v = parseInt(val, 10);
+                        if (!isNaN(v)) {
+                          setMinInterval(Math.max(0, v));
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!minInterval || minInterval < 1) {
+                        setMinInterval(1);
+                      }
                     }}
                     className="h-8 text-xs bg-white dark:bg-slate-950"
                   />
@@ -242,16 +254,33 @@ export function Step3SendingSessions({
                   <Input
                     id="camp-max-interval"
                     type="number"
-                    min={minInterval ?? 1}
-                    value={maxInterval ?? 15}
+                    min={1}
+                    value={maxInterval !== undefined && maxInterval !== null ? (maxInterval === 0 ? '' : maxInterval) : ''}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      setMaxInterval(isNaN(v) ? (minInterval ?? 1) : Math.max(minInterval ?? 1, v));
+                      const val = e.target.value;
+                      if (val === '') {
+                        setMaxInterval(0);
+                      } else {
+                        const v = parseInt(val, 10);
+                        if (!isNaN(v)) {
+                          setMaxInterval(Math.max(0, v));
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!maxInterval || maxInterval < 1) {
+                        setMaxInterval(minInterval && minInterval >= 1 ? minInterval : 1);
+                      }
                     }}
                     className="h-8 text-xs bg-white dark:bg-slate-950"
                   />
                 </div>
               </div>
+              {minInterval !== undefined && maxInterval !== undefined && minInterval > 0 && maxInterval > 0 && maxInterval < minInterval && (
+                <p className="text-[11px] text-rose-500 font-medium">
+                  Max delay should be greater than or equal to Min delay.
+                </p>
+              )}
             </div>
           )}
         </div>
