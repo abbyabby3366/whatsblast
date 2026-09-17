@@ -9,6 +9,8 @@ import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { pickUserSession, getActiveSession, initWhatsAppSession } from '../services/baileysManager.js';
 import { sendBaileysTemplateMessage, getFileUrl } from '../services/blastRunner.js';
+import { executeCampaignRetryFailed, executeCampaignRetryRecipient } from '../services/campaignRetryService.js';
+export { executeCampaignRetryFailed };
 
 const router = Router();
 
@@ -463,153 +465,6 @@ const deleteCampaign = async (req: AuthRequest, res: Response) => {
 
 router.delete('/blast-campaigns/:id', deleteCampaign);
 
-export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<{ success: boolean; count: number; message: string; warning?: string; campaign?: any }> => {
-  const campaign = typeof campaignDocOrId === 'string'
-    ? await BlastCampaign.findById(campaignDocOrId)
-    : campaignDocOrId;
-
-  if (!campaign) {
-    return { success: false, count: 0, message: 'Campaign not found' };
-  }
-
-  const allContacts = campaign.contacts || campaign.recipient_phones || [];
-
-  const sentMessages = await Message.find({
-    campaign: campaign._id,
-    status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
-  });
-  const sentPhones = new Set<string>();
-  sentMessages.forEach((m) => {
-    const raw = m.recipient_phone ? m.recipient_phone.replace(/[^0-9]/g, '') : '';
-    if (raw) {
-      sentPhones.add(raw);
-      if (raw.startsWith('0')) sentPhones.add('60' + raw.slice(1));
-      if (raw.startsWith('60')) sentPhones.add('0' + raw.slice(2));
-    }
-  });
-
-  const retryContacts: string[] = [];
-  const successfulContacts: string[] = [];
-
-  for (const c of allContacts) {
-    const clean = c.replace(/[^0-9]/g, '');
-    const norm = clean.startsWith('0') ? '60' + clean.slice(1) : (clean.startsWith('60') ? '0' + clean.slice(2) : clean);
-    if (sentPhones.has(clean) || sentPhones.has(norm)) {
-      successfulContacts.push(c);
-    } else {
-      retryContacts.push(c);
-    }
-  }
-
-  if (retryContacts.length === 0) {
-    return { success: true, count: 0, message: 'No failed or expired messages to retry', campaign };
-  }
-
-  const now = new Date();
-  const minInterval = Number(campaign.min_interval_seconds) || 10;
-  const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
-
-  // Fetch available sessions for pre-assignment (same as createCampaign)
-  const sessionModeVal = (campaign as any).session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
-  const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
-
-  let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
-  const matchesAllowed = (s: any) => {
-    if (sessionModeVal !== 'SPECIFIC' || selectedSessionsList.length === 0) return true;
-    const sId = s.session_id;
-    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
-    return (sId && selectedSessionsList.includes(sId)) || (mongoId ? selectedSessionsList.includes(mongoId) : false);
-  };
-
-  if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-    availableSessions = availableSessions.filter(matchesAllowed);
-  }
-  if (availableSessions.length === 0) {
-    let fallbackSessions = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
-    if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-      fallbackSessions = fallbackSessions.filter(matchesAllowed);
-    }
-    availableSessions = fallbackSessions;
-  }
-
-  const sessionLastTimeMap = new Map<string, number>();
-
-  for (let idx = 0; idx < retryContacts.length; idx++) {
-    const contact = retryContacts[idx];
-    const rawRecip = contact.replace(/[^0-9]/g, '');
-    const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
-    const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
-    const clean = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
-    const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
-    const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
-
-    let scheduledTimeMs = now.getTime();
-    if (sessionLastTimeMap.has(sessKey)) {
-      const prevMs = sessionLastTimeMap.get(sessKey)!;
-      const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
-      scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
-    }
-    sessionLastTimeMap.set(sessKey, scheduledTimeMs);
-
-    const scheduledTime = new Date(scheduledTimeMs);
-
-    const updated = await Message.findOneAndUpdate(
-      { campaign: campaign._id, recipient_phone: { $in: possiblePhones } },
-      {
-        status: MessageStatus.PENDING,
-        session: assignedSession ? assignedSession._id : undefined,
-        sender_phone: assignedSession ? assignedSession.phone_number : undefined,
-        $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
-        scheduled_at: scheduledTime,
-        $inc: { retry_count: 1 },
-      }
-    );
-
-    if (!updated) {
-      await Message.create({
-        campaign: campaign._id,
-        session: assignedSession ? assignedSession._id : undefined,
-        sender_phone: assignedSession ? assignedSession.phone_number : undefined,
-        direction: MessageDirection.OUTBOUND,
-        type: 'text',
-        status: MessageStatus.PENDING,
-        recipient_phone: clean,
-        to_jid: `${clean}@s.whatsapp.net`,
-        template: campaign.template || null,
-        scheduled_at: scheduledTime,
-        retry_count: 1,
-      });
-    }
-  }
-
-  let hasConnectedSession = availableSessions.some((s) => s.status === SessionStatus.CONNECTED);
-
-  campaign.contacts = [...successfulContacts, ...retryContacts];
-  campaign.recipient_phones = campaign.contacts;
-  campaign.current_index = successfulContacts.length;
-  campaign.stats.total = campaign.contacts.length;
-  campaign.stats.sent = successfulContacts.length;
-  campaign.stats.failed = 0;
-  campaign.status = CampaignStatus.RUNNING;
-  campaign.scheduled_at = new Date();
-  campaign.completed_at = undefined;
-  campaign.error_message = undefined;
-
-  await campaign.save();
-
-  const warningMsg = !hasConnectedSession
-    ? ' (Note: No connected WhatsApp session found. Messages will send once WhatsApp connects.)'
-    : '';
-
-  return {
-    success: true,
-    count: retryContacts.length,
-    message: `Retrying ${retryContacts.length} recipient(s)${warningMsg}`,
-    warning: !hasConnectedSession ? 'No connected WhatsApp session found' : undefined,
-    campaign,
-  };
-};
-
 const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
   if (req.user?.role !== 'admin') {
@@ -649,121 +504,12 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
     return res.status(400).json({ error: 'phone parameter is required' });
   }
 
-  const rawRecip = phone.replace(/[^0-9]/g, '');
-  const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
-  const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
-  const cleanPhone = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
-  const now = new Date();
-  const minInterval = Number(campaign.min_interval_seconds) || 10;
-  const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
-
-  // Fetch available sessions for session assignment
-  const sessionModeVal = (campaign as any).session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
-  const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
-
-  let availableSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
-  const matchesAllowed = (s: any) => {
-    if (sessionModeVal !== 'SPECIFIC' || selectedSessionsList.length === 0) return true;
-    const sId = s.session_id;
-    const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
-    return (sId && selectedSessionsList.includes(sId)) || (mongoId ? selectedSessionsList.includes(mongoId) : false);
-  };
-
-  if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-    availableSessions = availableSessions.filter(matchesAllowed);
-  }
-  if (availableSessions.length === 0) {
-    let fallbackSessions = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
-    if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-      fallbackSessions = fallbackSessions.filter(matchesAllowed);
-    }
-    availableSessions = fallbackSessions;
+  const result = await executeCampaignRetryRecipient(campaign, phone);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error || 'Failed to retry recipient' });
   }
 
-  // Preserve previous session assignment if valid, otherwise pick available session
-  const existingMsg = await Message.findOne({ campaign: campaign._id, recipient_phone: { $in: possiblePhones } });
-  let assignedSession = availableSessions.find((s) => existingMsg?.session && s._id.toString() === existingMsg.session.toString());
-  if (!assignedSession && availableSessions.length > 0) {
-    assignedSession = availableSessions[0];
-  }
-
-  // Determine scheduled_at time based on future pending messages for this assigned session
-  const sessKey = assignedSession ? assignedSession._id : null;
-  const lastPending = sessKey ? await Message.findOne({
-    campaign: campaign._id,
-    session: sessKey,
-    recipient_phone: { $nin: possiblePhones },
-    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-    scheduled_at: { $gt: now },
-  }).sort({ scheduled_at: -1 }) : null;
-
-  let scheduledTimeMs = now.getTime();
-  if (lastPending && lastPending.scheduled_at) {
-    const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
-    scheduledTimeMs = new Date(lastPending.scheduled_at).getTime() + randomMinutes * 60 * 1000;
-  }
-  const scheduledTime = new Date(scheduledTimeMs);
-
-  // Update or create message in PENDING status
-  const updatedMsg = await Message.findOneAndUpdate(
-    { campaign: campaign._id, recipient_phone: { $in: possiblePhones } },
-    {
-      status: MessageStatus.PENDING,
-      session: assignedSession ? assignedSession._id : undefined,
-      sender_phone: assignedSession ? assignedSession.phone_number : undefined,
-      $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
-      scheduled_at: scheduledTime,
-      $inc: { retry_count: 1 },
-    },
-    { new: true }
-  );
-
-  if (!updatedMsg) {
-    await Message.create({
-      campaign: campaign._id,
-      session: assignedSession ? assignedSession._id : undefined,
-      sender_phone: assignedSession ? assignedSession.phone_number : undefined,
-      direction: MessageDirection.OUTBOUND,
-      type: 'text',
-      status: MessageStatus.PENDING,
-      recipient_phone: cleanPhone,
-      to_jid: `${cleanPhone}@s.whatsapp.net`,
-      template: campaign.template || null,
-      scheduled_at: scheduledTime,
-      retry_count: 1,
-    });
-  }
-
-  // Ensure contact is queued in campaign.contacts for the background blastRunner
-  const currentContacts = campaign.contacts || campaign.recipient_phones || [];
-  const cleanContacts = currentContacts.map((c: string) => c.replace(/[^0-9]/g, ''));
-
-  const isUpcoming = cleanContacts.slice(campaign.current_index).includes(cleanPhone);
-  if (!isUpcoming) {
-    const remaining = currentContacts.slice(campaign.current_index);
-    const past = currentContacts.slice(0, campaign.current_index).filter((c: string) => c.replace(/[^0-9]/g, '') !== cleanPhone);
-    const originalPhoneEntry = currentContacts.find((c: string) => c.replace(/[^0-9]/g, '') === cleanPhone) || cleanPhone;
-
-    campaign.contacts = [...past, ...remaining, originalPhoneEntry];
-    campaign.recipient_phones = campaign.contacts;
-    campaign.current_index = past.length;
-    campaign.stats.total = campaign.contacts.length;
-  }
-
-  if (campaign.stats.failed > 0) {
-    campaign.stats.failed = Math.max(0, campaign.stats.failed - 1);
-  }
-
-  campaign.status = CampaignStatus.RUNNING;
-  campaign.completed_at = undefined;
-  campaign.error_message = undefined;
-  await campaign.save();
-
-  return res.json({
-    success: true,
-    message: `Message rescheduled for ${cleanPhone}. It will be sent via campaign scheduler.`,
-    scheduled_at: scheduledTime,
-  });
+  return res.json(result);
 };
 
 router.post('/blast-campaigns/:id/retry-recipient', retryCampaignRecipient);
