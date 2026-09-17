@@ -532,7 +532,7 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
     availableSessions = fallbackSessions;
   }
 
-  let lastScheduledMs = now.getTime();
+  const sessionLastTimeMap = new Map<string, number>();
 
   for (let idx = 0; idx < retryContacts.length; idx++) {
     const contact = retryContacts[idx];
@@ -541,13 +541,15 @@ export const executeCampaignRetryFailed = async (campaignDocOrId: any): Promise<
     const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
     const clean = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
     const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
+    const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
 
     let scheduledTimeMs = now.getTime();
-    if (idx > 0) {
+    if (sessionLastTimeMap.has(sessKey)) {
+      const prevMs = sessionLastTimeMap.get(sessKey)!;
       const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
-      scheduledTimeMs = lastScheduledMs + randomMinutes * 60 * 1000;
+      scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
     }
-    lastScheduledMs = scheduledTimeMs;
+    sessionLastTimeMap.set(sessKey, scheduledTimeMs);
 
     const scheduledTime = new Date(scheduledTimeMs);
 
@@ -655,21 +657,6 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
   const minInterval = Number(campaign.min_interval_seconds) || 10;
   const maxInterval = Number(campaign.max_interval_seconds) >= minInterval ? Number(campaign.max_interval_seconds) : minInterval + 5;
 
-  // Determine scheduled_at time based on any future pending messages in this campaign
-  const lastPending = await Message.findOne({
-    campaign: campaign._id,
-    recipient_phone: { $nin: possiblePhones },
-    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-    scheduled_at: { $gt: now },
-  }).sort({ scheduled_at: -1 });
-
-  let scheduledTimeMs = now.getTime();
-  if (lastPending && lastPending.scheduled_at) {
-    const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
-    scheduledTimeMs = new Date(lastPending.scheduled_at).getTime() + randomMinutes * 60 * 1000;
-  }
-  const scheduledTime = new Date(scheduledTimeMs);
-
   // Fetch available sessions for session assignment
   const sessionModeVal = (campaign as any).session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
   const selectedSessionsList: string[] = Array.isArray((campaign as any).selected_sessions) ? (campaign as any).selected_sessions : [];
@@ -693,7 +680,29 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
     availableSessions = fallbackSessions;
   }
 
-  const assignedSession = availableSessions.length > 0 ? availableSessions[0] : null;
+  // Preserve previous session assignment if valid, otherwise pick available session
+  const existingMsg = await Message.findOne({ campaign: campaign._id, recipient_phone: { $in: possiblePhones } });
+  let assignedSession = availableSessions.find((s) => existingMsg?.session && s._id.toString() === existingMsg.session.toString());
+  if (!assignedSession && availableSessions.length > 0) {
+    assignedSession = availableSessions[0];
+  }
+
+  // Determine scheduled_at time based on future pending messages for this assigned session
+  const sessKey = assignedSession ? assignedSession._id : null;
+  const lastPending = sessKey ? await Message.findOne({
+    campaign: campaign._id,
+    session: sessKey,
+    recipient_phone: { $nin: possiblePhones },
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+    scheduled_at: { $gt: now },
+  }).sort({ scheduled_at: -1 }) : null;
+
+  let scheduledTimeMs = now.getTime();
+  if (lastPending && lastPending.scheduled_at) {
+    const randomMinutes = Math.random() * (maxInterval - minInterval) + minInterval;
+    scheduledTimeMs = new Date(lastPending.scheduled_at).getTime() + randomMinutes * 60 * 1000;
+  }
+  const scheduledTime = new Date(scheduledTimeMs);
 
   // Update or create message in PENDING status
   const updatedMsg = await Message.findOneAndUpdate(
