@@ -314,7 +314,9 @@ async function processCrossChat(): Promise<void> {
             content: isMediaImage
               ? { text: `[Cross-Chat Warmup Image] ${processedText}`, file_url: imageUrlUsed }
               : { text: `[Cross-Chat Warmup] ${processedText}` },
-            wa_timestamp: Math.floor(Date.now() / 1000),
+            wa_timestamp: new Date(),
+            scheduled_at: new Date(),
+            sent_at: new Date(),
           });
 
           if (isMediaImage) {

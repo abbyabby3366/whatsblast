@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
@@ -32,13 +33,14 @@ function formatMessage(m: any) {
 
   const computedStatus = isExpired ? 'expired' : rawStatus || MessageStatus.PENDING;
   const isSentOrFailed = isSent || isFailed;
+  const validWaTimestamp = obj.wa_timestamp && new Date(obj.wa_timestamp).getFullYear() > 2000 ? obj.wa_timestamp : null;
 
   return {
     id: _id ? _id.toString() : obj.id,
     created_at: obj.createdAt,
     scheduled_at: obj.scheduled_at || obj.createdAt,
     scheduled_datetime: obj.scheduled_at || obj.createdAt,
-    sent_at: obj.sent_at || (isSentOrFailed ? obj.wa_timestamp || obj.updatedAt : null),
+    sent_at: obj.sent_at || (isSentOrFailed ? validWaTimestamp || obj.createdAt || obj.updatedAt : null),
     session_phone: sessionPhone || obj.sender_phone || 'System',
     sender_phone: sessionPhone || obj.sender_phone || 'System',
     campaign_name: campaignName || obj.campaign_name || 'Direct / Quick Send',
@@ -186,10 +188,10 @@ const getMessages = async (req: AuthRequest, res: Response) => {
   const sortBy = String(req.query.sort_by || req.query.sort || req.query.orderBy || '').trim();
   const sortDir: 1 | -1 = String(req.query.order || req.query.order_direction || req.query.sort_direction || 'desc').toLowerCase() === 'asc' ? 1 : -1;
 
+  const isTimeSort = sortBy === 'scheduled_at' || sortBy === 'scheduled_send_time' || sortBy === 'scheduled_datetime' || sortBy === 'sent_at';
+
   let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
-  if (sortBy === 'scheduled_at' || sortBy === 'scheduled_send_time' || sortBy === 'scheduled_datetime') {
-    sortQuery = { scheduled_at: sortDir, createdAt: sortDir };
-  } else if (sortBy === 'created_at' || sortBy === 'createdAt') {
+  if (sortBy === 'created_at' || sortBy === 'createdAt') {
     sortQuery = { createdAt: sortDir };
   } else if (sortBy === 'recipient_phone') {
     sortQuery = { recipient_phone: sortDir };
@@ -197,28 +199,88 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     sortQuery = { sender_phone: sortDir };
   } else if (sortBy === 'status') {
     sortQuery = { status: sortDir, scheduled_at: sortDir };
-  } else if (sortBy) {
+  } else if (sortBy && !isTimeSort) {
     sortQuery = { [sortBy]: sortDir };
   }
 
-  const [totalCount, messages] = await Promise.all([
-    Message.countDocuments(filter),
-    Message.find(filter)
-      .populate({
+  let totalCount = 0;
+  let messages: any[] = [];
+
+  if (isTimeSort) {
+    const aggFilter = { ...filter };
+    if (typeof aggFilter.campaign === 'string' && mongoose.Types.ObjectId.isValid(aggFilter.campaign)) {
+      aggFilter.campaign = new mongoose.Types.ObjectId(aggFilter.campaign);
+    }
+    if (typeof aggFilter.session === 'string' && mongoose.Types.ObjectId.isValid(aggFilter.session)) {
+      aggFilter.session = new mongoose.Types.ObjectId(aggFilter.session);
+    }
+
+    const [cResult, aggDocs] = await Promise.all([
+      Message.countDocuments(filter),
+      Message.aggregate([
+        { $match: aggFilter },
+        {
+          $addFields: {
+            effective_time: {
+              $cond: {
+                if: {
+                  $in: [
+                    { $toLower: { $ifNull: ['$status', 'pending'] } },
+                    ['sent', 'delivered', 'read'],
+                  ],
+                },
+                then: {
+                  $ifNull: ['$sent_at', { $ifNull: ['$scheduled_at', '$createdAt'] }],
+                },
+                else: {
+                  $ifNull: ['$scheduled_at', '$createdAt'],
+                },
+              },
+            },
+          },
+        },
+        { $sort: { effective_time: sortDir, createdAt: sortDir, _id: sortDir } },
+        { $skip: skip },
+        { $limit: pageSize },
+      ]),
+    ]);
+
+    totalCount = cResult;
+    messages = await Message.populate(aggDocs, [
+      {
         path: 'session',
         select: 'phone_number session_id user',
         populate: { path: 'user', select: 'phone_number role' },
-      })
-      .populate('template')
-      .populate({
+      },
+      { path: 'template' },
+      {
         path: 'campaign',
         select: 'name user templates template',
         populate: { path: 'user', select: 'phone_number role' },
-      })
-      .sort(sortQuery)
-      .skip(skip)
-      .limit(pageSize),
-  ]);
+      },
+    ]);
+  } else {
+    const [cResult, mDocs] = await Promise.all([
+      Message.countDocuments(filter),
+      Message.find(filter)
+        .populate({
+          path: 'session',
+          select: 'phone_number session_id user',
+          populate: { path: 'user', select: 'phone_number role' },
+        })
+        .populate('template')
+        .populate({
+          path: 'campaign',
+          select: 'name user templates template',
+          populate: { path: 'user', select: 'phone_number role' },
+        })
+        .sort(sortQuery)
+        .skip(skip)
+        .limit(pageSize),
+    ]);
+    totalCount = cResult;
+    messages = mDocs;
+  }
 
   // Resolve file IDs in campaign templates to actual URLs (same logic as formatCampaign)
   const fileIdsToFetch = new Set<string>();

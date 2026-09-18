@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createFileRoute, useNavigate, useSearch, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, getErrorMessage } from '@/lib/api'
@@ -239,6 +239,23 @@ function CampaignProgressPage() {
       }
     })
   }
+
+  // Sort reportRows chronologically by effective date & time
+  const sortedReportRows = useMemo(() => {
+    return [...reportRows].sort((a, b) => {
+      const getTargetTime = (row: any) => {
+        const st = (row.status || 'pending').toLowerCase()
+        const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
+        const t = isSuccess
+          ? (row.sent_at || row.scheduled_at || row.created_at)
+          : (row.scheduled_at || row.created_at)
+        return t ? dayjs(t).valueOf() : 0
+      }
+      const timeA = getTargetTime(a)
+      const timeB = getTargetTime(b)
+      return sortOrder === 'asc' ? timeA - timeB : timeB - timeA
+    })
+  }, [reportRows, sortOrder])
 
   // Calculate live accurate counts from logs when available, falling back to campaign.stats
   const logSentCount = reportRows.filter((r) => ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())).length
@@ -482,7 +499,7 @@ function CampaignProgressPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reportRows.map((row, idx) => {
+                {sortedReportRows.map((row, idx) => {
                   const st = (row.status || 'pending').toLowerCase()
                   const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
                   const isFailed = st === 'failed' || st === 'error'
