@@ -614,6 +614,8 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
       return res.json({ success: true, count: 0, message: 'No failed messages found to retry' });
     }
 
+    const { sessionId: requestedSessionId } = req.body || {};
+
     const campaignIdSet = new Set<string>();
     const nonCampaignMsgs: any[] = [];
     for (const msg of failedMessages) {
@@ -624,7 +626,7 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
     let retriedCount = 0;
     let retriedCampaignsCount = 0;
     for (const cId of Array.from(campaignIdSet)) {
-      const campRes = await executeCampaignRetryFailed(cId);
+      const campRes = await executeCampaignRetryFailed(cId, requestedSessionId);
       if (campRes.success && campRes.count > 0) {
         retriedCount += campRes.count;
         retriedCampaignsCount += 1;
@@ -632,32 +634,44 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
     }
 
     let hasAnyConnectedSession = false;
-    if (req.user?.role !== 'admin') {
-      const liveSessions = await WhatsAppSession.countDocuments({ user: req.user?._id, status: SessionStatus.CONNECTED });
-      hasAnyConnectedSession = liveSessions > 0;
+    let connectedSessionsForNonCampaign: any[] = [];
+    const effectiveUserId = req.user?.role !== 'admin'
+      ? req.user?._id
+      : (user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined));
+
+    if (effectiveUserId) {
+      connectedSessionsForNonCampaign = await WhatsAppSession.find({ user: effectiveUserId, status: SessionStatus.CONNECTED });
+      hasAnyConnectedSession = connectedSessionsForNonCampaign.length > 0;
     } else {
-      const targetUserId = user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
-      if (targetUserId && targetUserId !== 'all') {
-        const liveSessions = await WhatsAppSession.countDocuments({ user: targetUserId, status: SessionStatus.CONNECTED });
-        hasAnyConnectedSession = liveSessions > 0;
-      } else {
-        const liveSessions = await WhatsAppSession.countDocuments({ status: SessionStatus.CONNECTED });
-        hasAnyConnectedSession = liveSessions > 0;
-      }
+      connectedSessionsForNonCampaign = await WhatsAppSession.find({ status: SessionStatus.CONNECTED });
+      hasAnyConnectedSession = connectedSessionsForNonCampaign.length > 0;
     }
 
-    for (const msg of nonCampaignMsgs) {
+    for (let i = 0; i < nonCampaignMsgs.length; i++) {
+      const msg = nonCampaignMsgs[i];
       const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
       if (recipientPhone) {
         try {
           let sessionId: string | null = null;
-          if (msg.session) {
-            const sDoc = await WhatsAppSession.findById(msg.session);
-            sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
-          } else {
-            sessionId = await pickUserSession(req.user?._id?.toString() || '');
+          if (requestedSessionId === 'random') {
+            if (connectedSessionsForNonCampaign.length > 0) {
+              sessionId = connectedSessionsForNonCampaign[i % connectedSessionsForNonCampaign.length].session_id;
+            }
+          } else if (requestedSessionId && requestedSessionId !== 'original') {
+            const matchDoc = connectedSessionsForNonCampaign.find(
+              (s) => s._id.toString() === requestedSessionId || s.session_id === requestedSessionId
+            );
+            sessionId = matchDoc?.session_id || requestedSessionId;
           }
 
+          if (!sessionId) {
+            if (msg.session) {
+              const sDoc = await WhatsAppSession.findById(msg.session);
+              sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
+            } else {
+              sessionId = await pickUserSession(req.user?._id?.toString() || '');
+            }
+          }
           let activeSession = sessionId ? getActiveSession(sessionId) : null;
           if (!activeSession && sessionId) {
             try { activeSession = await initWhatsAppSession(sessionId); } catch (_) {}

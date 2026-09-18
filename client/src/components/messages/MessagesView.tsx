@@ -35,6 +35,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  CampaignRetryAllDropdown,
+  MessageRowRetryDropdown,
+} from '@/components/campaigns/CampaignRetryDropdown'
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -119,12 +123,12 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   })
 
   const retryAllFailedMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (sessionId?: string | void) => {
       const searchParams = new URLSearchParams()
       if (isAdmin && selectedMerchant && selectedMerchant !== 'ALL') {
         searchParams.set('user', selectedMerchant)
       }
-      return api.post('messages/retry-all-failed', { searchParams }).json<any>()
+      return api.post('messages/retry-all-failed', { searchParams, json: { sessionId: sessionId || undefined } }).json<any>()
     },
     onSuccess: (data) => {
       const msg = data?.message || 'Queued retry for all failed and expired messages!'
@@ -149,7 +153,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   })
 
   const retrySingleMessageMutation = useMutation({
-    mutationFn: (msgId: string) => api.post(`messages/${msgId}/retry`).json<any>(),
+    mutationFn: ({ msgId, sessionId }: { msgId: string; sessionId?: string }) =>
+      api.post(`messages/${msgId}/retry`, { json: { sessionId } }).json<any>(),
     onSuccess: (data) => {
       toast.success(data?.message || 'Message retried successfully!')
       if (statusFilter === 'FAILED' || statusFilter === 'EXPIRED') {
@@ -453,26 +458,23 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const isRowExpired = rowSt === 'expired' || ((rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs()))
           const isFailed = rowSt === 'failed'
           const canRetry = isFailed || isRowExpired
-          const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables === row.id
+          const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables?.msgId === row.id
 
           return (
             <div className="flex items-center justify-end gap-1.5">
               {canRetry && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isRetryingThis}
-                  onClick={() => retrySingleMessageMutation.mutate(row.id)}
-                  className="h-8 px-2.5 text-xs gap-1.5 text-amber-600 border-amber-200 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400"
+                <MessageRowRetryDropdown
+                  messageId={row.id}
+                  originalSenderPhone={row.sender_phone || row.session_phone || row.session?.phone_number}
+                  isPending={isRetryingThis}
+                  onRetry={(payload) =>
+                    retrySingleMessageMutation.mutate({
+                      msgId: payload.messageId,
+                      sessionId: payload.sessionId,
+                    })
+                  }
                   title={isRowExpired ? 'Reschedule and retry this message' : 'Retry sending this message'}
-                >
-                  {isRetryingThis ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  )}
-                  Retry
-                </Button>
+                />
               )}
               <Button
                 variant="outline"
@@ -532,26 +534,11 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
     <div className="space-y-4 max-w-7xl mx-auto pb-10">
       {/* Header / Actions Bar */}
       <div className="flex items-center justify-end gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
-        <Button
+        <CampaignRetryAllDropdown
           variant="outline"
-          size="sm"
-          onClick={() => setIsRetryAllConfirmOpen(true)}
-          disabled={retryAllFailedMutation.isPending}
-          title="Re-queue all failed and expired messages into the sending queue"
-          className="text-amber-600 border-amber-200 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400 text-xs font-medium gap-1.5"
-        >
-          {retryAllFailedMutation.isPending ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Retrying All...
-            </>
-          ) : (
-            <>
-              <RotateCcw className="w-3.5 h-3.5" />
-              Retry All Failed & Expired
-            </>
-          )}
-        </Button>
+          isPending={retryAllFailedMutation.isPending}
+          onRetryAll={(sessionId) => retryAllFailedMutation.mutate(sessionId)}
+        />
 
         <Button
           variant="outline"
