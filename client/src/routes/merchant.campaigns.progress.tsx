@@ -5,18 +5,7 @@ import { api, getErrorMessage } from '@/lib/api'
 import { safeText } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
-import {
-  Activity,
-  AlertCircle,
-  ArrowLeft,
-  ArrowDown,
-  ArrowUp,
-  CheckCircle2,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
-} from 'lucide-react'
+import { Activity, AlertCircle, ArrowLeft, ArrowDown, ArrowUp, CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -26,6 +15,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  RecipientRetryDropdown,
+  CampaignRetryAllDropdown,
+} from '@/components/campaigns/CampaignRetryDropdown'
 
 export const Route = createFileRoute('/merchant/campaigns/progress')({
   component: CampaignProgressPage,
@@ -80,8 +73,8 @@ function CampaignProgressPage() {
 
   // Retry failed mutation
   const retryFailedMutation = useMutation({
-    mutationFn: (id: string | number) =>
-      api.post(`blast-campaigns/${id}/retry-failed/`).json<any>(),
+    mutationFn: ({ id, sessionId }: { id: string | number; sessionId?: string }) =>
+      api.post(`blast-campaigns/${id}/retry-failed/`, { json: { sessionId } }).json<any>(),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
@@ -106,13 +99,15 @@ function CampaignProgressPage() {
     mutationFn: ({
       cId,
       phone,
+      sessionId,
     }: {
       cId: string | number
       phone: string
+      sessionId?: string
     }) =>
       api
         .post(`blast-campaigns/${cId}/retry-recipient/`, {
-          json: { phone },
+          json: { phone, sessionId },
         })
         .json<any>(),
     onSuccess: (data: any) => {
@@ -202,6 +197,7 @@ function CampaignProgressPage() {
       addPhoneVariants(cleanPhone)
       return {
         phone,
+        sender_phone: l.sender_phone || l.session?.phone_number || (l.from_jid ? l.from_jid.split('@')[0] : null),
         status: l.status || 'sent',
         scheduled_at: l.scheduled_at || l.scheduled_datetime,
         sent_at: l.sent_at || l.wa_timestamp,
@@ -293,25 +289,13 @@ function CampaignProgressPage() {
           </Button>
 
           {retryableCount > 0 && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => retryFailedMutation.mutate(campaign.id)}
-              disabled={retryFailedMutation.isPending}
-              className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs font-medium shadow-xs gap-1.5"
-            >
-              {retryFailedMutation.isPending ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Retrying All...
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Retry All Failed & Expired ({retryableCount})
-                </>
-              )}
-            </Button>
+            <CampaignRetryAllDropdown
+              retryableCount={retryableCount}
+              isPending={retryFailedMutation.isPending}
+              onRetryAll={(sessionId) =>
+                retryFailedMutation.mutate({ id: campaign.id, sessionId })
+              }
+            />
           )}
         </div>
       </div>
@@ -375,25 +359,16 @@ function CampaignProgressPage() {
                 during delivery. You can click <strong>"Retry All Failed & Expired"</strong> or retry individual recipients below.
               </span>
             </div>
-            <Button
-              type="button"
+            <CampaignRetryAllDropdown
+              retryableCount={retryableCount}
+              isPending={retryFailedMutation.isPending}
               size="sm"
-              onClick={() => retryFailedMutation.mutate(campaign.id)}
-              disabled={retryFailedMutation.isPending}
-              className="bg-amber-600 hover:bg-amber-700 text-white h-7 px-2.5 text-xs font-medium shrink-0 self-start sm:self-auto gap-1"
-            >
-              {retryFailedMutation.isPending ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Retrying...
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="h-3 w-3" />
-                  Retry All ({retryableCount})
-                </>
-              )}
-            </Button>
+              buttonText={`Retry All (${retryableCount})`}
+              onRetryAll={(sessionId) =>
+                retryFailedMutation.mutate({ id: campaign.id, sessionId })
+              }
+              className="shrink-0 self-start sm:self-auto"
+            />
           </div>
         )}
 
@@ -578,33 +553,23 @@ function CampaignProgressPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         {canRetry ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-xs border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-950/40 gap-1"
-                            title={isExpired ? 'Reschedule and retry message' : 'Retry sending message'}
-                            disabled={retryRecipientMutation.isPending}
-                            onClick={() =>
+                          <RecipientRetryDropdown
+                            phone={row.phone}
+                            campaignId={campaign.id}
+                            originalSenderPhone={row.sender_phone}
+                            isPending={
+                              retryRecipientMutation.isPending &&
+                              retryRecipientMutation.variables?.phone === row.phone
+                            }
+                            onRetry={(payload) =>
                               retryRecipientMutation.mutate({
                                 cId: campaign.id,
-                                phone: row.phone,
+                                phone: payload.phone,
+                                sessionId: payload.sessionId,
                               })
                             }
-                          >
-                            {retryRecipientMutation.isPending &&
-                            retryRecipientMutation.variables.phone === row.phone ? (
-                              <>
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Retrying...
-                              </>
-                            ) : (
-                              <>
-                                <RotateCcw className="h-3 w-3" />
-                                Retry
-                              </>
-                            )}
-                          </Button>
+                            title={isExpired ? 'Reschedule and retry message' : 'Retry sending message'}
+                          />
                         ) : (
                           <span className="text-slate-400">-</span>
                         )}

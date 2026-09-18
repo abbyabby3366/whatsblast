@@ -476,7 +476,8 @@ const retryCampaignFailed = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
-  const result = await executeCampaignRetryFailed(campaign);
+  const { sessionId } = req.body || {};
+  const result = await executeCampaignRetryFailed(campaign, sessionId);
   return res.json({
     success: result.success,
     message: result.message,
@@ -499,12 +500,12 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
-  const { phone } = req.body;
+  const { phone, sessionId } = req.body || {};
   if (!phone) {
     return res.status(400).json({ error: 'phone parameter is required' });
   }
 
-  const result = await executeCampaignRetryRecipient(campaign, phone);
+  const result = await executeCampaignRetryRecipient(campaign, phone, sessionId);
   if (!result.success) {
     return res.status(400).json({ error: result.error || 'Failed to retry recipient' });
   }

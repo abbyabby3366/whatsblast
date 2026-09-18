@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { RecipientRetryDropdown, CampaignRetryAllDropdown } from './CampaignRetryDropdown'
 
 export interface CustomerListModalProps {
   campaign: any | null
@@ -44,7 +45,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
   })
 
   const retryFailedMutation = useMutation({
-    mutationFn: (id: string | number) => api.post(`blast-campaigns/${id}/retry-failed/`).json<any>(),
+    mutationFn: ({ id, sessionId }: { id: string | number; sessionId?: string }) =>
+      api.post(`blast-campaigns/${id}/retry-failed/`, { json: { sessionId } }).json<any>(),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
       queryClient.invalidateQueries({ queryKey: ['customer-list-logs', campaign?.id] })
@@ -64,8 +66,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
   })
 
   const retryRecipientMutation = useMutation({
-    mutationFn: ({ cId, phone }: { cId: string | number; phone: string }) =>
-      api.post(`blast-campaigns/${cId}/retry-recipient/`, { json: { phone } }).json<any>(),
+    mutationFn: ({ cId, phone, sessionId }: { cId: string | number; phone: string; sessionId?: string }) =>
+      api.post(`blast-campaigns/${cId}/retry-recipient/`, { json: { phone, sessionId } }).json<any>(),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: invalidateQueryKey })
       queryClient.invalidateQueries({ queryKey: ['customer-list-logs', campaign?.id] })
@@ -106,6 +108,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
             const isExp = rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
             return {
               phone,
+              sender_phone: matchedLog.sender_phone || matchedLog.session?.phone_number || (matchedLog.from_jid ? matchedLog.from_jid.split('@')[0] : null),
               status: isExp ? 'expired' : rawSt,
               time: matchedLog.sent_at || matchedLog.wa_timestamp || matchedLog.scheduled_at || matchedLog.scheduled_datetime || matchedLog.created_at || matchedLog.createdAt,
               error: matchedLog.error ? safeText(matchedLog.error) : null,
@@ -117,6 +120,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           if (idx < (campaign?.current_index || 0)) {
             return {
               phone,
+              sender_phone: null,
               status: 'failed',
               time: null,
               error: 'Send failed during execution',
@@ -127,6 +131,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
 
           return {
             phone,
+            sender_phone: null,
             status: 'pending',
             time: null,
             error: null,
@@ -140,6 +145,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           const isExp = rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
           return {
             phone: l.recipient_phone || l.to_jid || 'Recipient',
+            sender_phone: l.sender_phone || l.session?.phone_number || (l.from_jid ? l.from_jid.split('@')[0] : null),
             status: isExp ? 'expired' : rawSt,
             time: l.sent_at || l.wa_timestamp || l.scheduled_at || l.scheduled_datetime || l.created_at || l.createdAt,
             error: l.error ? safeText(l.error) : null,
@@ -197,26 +203,14 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
               </div>
             </div>
 
-            {retryableCount > 0 && (
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 px-3 text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-xs gap-1.5"
-                disabled={retryFailedMutation.isPending}
-                onClick={() => campaign && retryFailedMutation.mutate(campaign.id)}
-              >
-                {retryFailedMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Retrying All...
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Retry All Failed & Expired ({retryableCount})
-                  </>
-                )}
-              </Button>
+            {retryableCount > 0 && campaign && (
+              <CampaignRetryAllDropdown
+                retryableCount={retryableCount}
+                isPending={retryFailedMutation.isPending}
+                onRetryAll={(sessionId) =>
+                  retryFailedMutation.mutate({ id: campaign.id, sessionId })
+                }
+              />
             )}
           </div>
 
@@ -377,34 +371,24 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex flex-col items-center justify-center text-center w-full min-w-[100px] mx-auto min-h-[42px] gap-1">
-                          {!isSent && (
-                            <Button
-                              type="button"
-                              variant={isFailed ? 'destructive' : isExpired ? 'outline' : 'outline'}
-                              size="sm"
-                              className={`h-7 px-2.5 text-xs font-medium gap-1 ${
-                                isFailed
-                                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
-                                  : isExpired
-                                  ? 'text-orange-700 hover:text-orange-800 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-800'
-                                  : 'text-slate-600 hover:text-slate-900 border-slate-200'
-                              }`}
-                              disabled={retryRecipientMutation.isPending}
-                              onClick={() => campaign && retryRecipientMutation.mutate({ cId: campaign.id, phone: row.phone })}
+                          {!isSent && campaign && (
+                            <RecipientRetryDropdown
+                              phone={row.phone}
+                              campaignId={campaign.id}
+                              originalSenderPhone={row.sender_phone}
+                              isPending={
+                                retryRecipientMutation.isPending &&
+                                retryRecipientMutation.variables?.phone === row.phone
+                              }
+                              onRetry={(payload) =>
+                                retryRecipientMutation.mutate({
+                                  cId: campaign.id,
+                                  phone: payload.phone,
+                                  sessionId: payload.sessionId,
+                                })
+                              }
                               title={isExpired ? 'Reschedule and retry message' : 'Retry message for this customer'}
-                            >
-                              {retryRecipientMutation.isPending && retryRecipientMutation.variables.phone === row.phone ? (
-                                <>
-                                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                                  Retrying...
-                                </>
-                              ) : (
-                                <>
-                                  <RotateCcw className="h-3 w-3 shrink-0" />
-                                  Retry
-                                </>
-                              )}
-                            </Button>
+                            />
                           )}
                           {Boolean(row.retryCount) && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/60 leading-none whitespace-nowrap">

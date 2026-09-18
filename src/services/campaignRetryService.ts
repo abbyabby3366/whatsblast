@@ -16,7 +16,8 @@ interface RetryItem {
  * Keeps original sending phones intact and calculates intervals per individual sending phone.
  */
 export const executeCampaignRetryFailed = async (
-  campaignDocOrId: any
+  campaignDocOrId: any,
+  targetSessionId?: string
 ): Promise<{ success: boolean; count: number; message: string; warning?: string; campaign?: any }> => {
   const campaign =
     typeof campaignDocOrId === 'string'
@@ -61,7 +62,7 @@ export const executeCampaignRetryFailed = async (
     return { success: true, count: 0, message: 'No failed or expired messages to retry', campaign };
   }
 
-  // Load existing messages for this campaign to preserve original sending phones & sessions
+  // Load existing messages for this campaign to check previous sending phones & sessions
   const existingMessages = await Message.find({ campaign: campaign._id });
   const messageByPhone = new Map<string, any>();
   for (const m of existingMessages) {
@@ -81,7 +82,43 @@ export const executeCampaignRetryFailed = async (
     if (s.session_id) sessionDocMap.set(s.session_id, s);
   }
 
-  // Group retry contacts by their original sending phone / session
+  // Resolve connected candidate sessions
+  const allowedSessionIds: string[] | undefined =
+    campaign.session_mode === 'SPECIFIC' && campaign.selected_sessions?.length > 0
+      ? campaign.selected_sessions
+      : undefined;
+
+  let connectedSessions = userSessions.filter((s) => s.status === SessionStatus.CONNECTED);
+  if (allowedSessionIds && allowedSessionIds.length > 0) {
+    const restrictedConnected = connectedSessions.filter((s) =>
+      allowedSessionIds.includes(s.session_id) || allowedSessionIds.includes(s._id.toString())
+    );
+    if (restrictedConnected.length > 0) {
+      connectedSessions = restrictedConnected;
+    }
+  }
+
+  let specificTargetSession: any = null;
+  if (targetSessionId && targetSessionId !== 'random' && targetSessionId !== 'original') {
+    specificTargetSession =
+      sessionDocMap.get(targetSessionId) ||
+      userSessions.find(
+        (s) => s._id.toString() === targetSessionId || s.session_id === targetSessionId
+      );
+    if (!specificTargetSession) {
+      return { success: false, count: 0, message: 'Selected WhatsApp session not found' };
+    }
+  }
+
+  if (targetSessionId === 'random' && connectedSessions.length === 0) {
+    return {
+      success: false,
+      count: 0,
+      message: 'No connected WhatsApp phone found. Please connect a phone first before retrying.',
+    };
+  }
+
+  // Group retry contacts by their target sending phone / session
   const sessionQueueMap = new Map<string, RetryItem[]>();
 
   for (let idx = 0; idx < retryContacts.length; idx++) {
@@ -93,22 +130,30 @@ export const executeCampaignRetryFailed = async (
 
     const existingMsg = messageByPhone.get(clean) || messageByPhone.get(normRecip) || messageByPhone.get(rawRecip);
 
-    let assignedSessionId: any = existingMsg?.session;
-    let sessionDoc = assignedSessionId ? sessionDocMap.get(assignedSessionId.toString()) : null;
+    let sessionDoc = null;
+    if (specificTargetSession) {
+      sessionDoc = specificTargetSession;
+    } else if (targetSessionId === 'random') {
+      sessionDoc = connectedSessions[idx % connectedSessions.length];
+    } else {
+      // Preserve assigned session from existing message (original behavior)
+      let assignedSessionId: any = existingMsg?.session;
+      sessionDoc = assignedSessionId ? sessionDocMap.get(assignedSessionId.toString()) : null;
 
-    if (assignedSessionId && !sessionDoc) {
-      sessionDoc = await WhatsAppSession.findById(assignedSessionId);
-      if (sessionDoc) {
-        sessionDocMap.set(sessionDoc._id.toString(), sessionDoc);
+      if (assignedSessionId && !sessionDoc) {
+        sessionDoc = await WhatsAppSession.findById(assignedSessionId);
+        if (sessionDoc) {
+          sessionDocMap.set(sessionDoc._id.toString(), sessionDoc);
+        }
+      }
+
+      // Fallback only if message had no assigned session at all
+      if (!sessionDoc && userSessions.length > 0) {
+        sessionDoc = userSessions[idx % userSessions.length];
       }
     }
 
-    // Fallback only if message had no assigned session at all
-    if (!sessionDoc && userSessions.length > 0) {
-      sessionDoc = userSessions[idx % userSessions.length];
-    }
-
-    const senderPhone = existingMsg?.sender_phone || sessionDoc?.phone_number;
+    const senderPhone = sessionDoc?.phone_number || existingMsg?.sender_phone;
     const sessKey = sessionDoc ? sessionDoc._id.toString() : 'default';
 
     const item: RetryItem = {
@@ -221,10 +266,16 @@ export const executeCampaignRetryFailed = async (
     ? ' (Note: No connected WhatsApp session found. Messages will send once WhatsApp connects.)'
     : '';
 
+  const phoneNotice = specificTargetSession?.phone_number
+    ? ` via phone ${specificTargetSession.phone_number}`
+    : targetSessionId === 'random'
+    ? ` across ${connectedSessions.length} connected phone(s)`
+    : '';
+
   return {
     success: true,
     count: retryContacts.length,
-    message: `Retrying ${retryContacts.length} recipient(s)${warningMsg}`,
+    message: `Retrying ${retryContacts.length} recipient(s)${phoneNotice}${warningMsg}`,
     warning: !hasConnectedSession ? 'No connected WhatsApp session found' : undefined,
     campaign,
   };
@@ -232,11 +283,12 @@ export const executeCampaignRetryFailed = async (
 
 /**
  * Retries a single recipient message within a campaign.
- * Preserves the original assigned session and calculates next schedule time for that session.
+ * Supports targetSessionId: 'random', 'original', or specific session ID.
  */
 export const executeCampaignRetryRecipient = async (
   campaign: any,
-  phone: string
+  phone: string,
+  targetSessionId?: string
 ): Promise<{ success: boolean; message: string; scheduled_at?: Date; error?: string }> => {
   const rawRecip = phone.replace(/[^0-9]/g, '');
   const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
@@ -244,14 +296,60 @@ export const executeCampaignRetryRecipient = async (
   const cleanPhone = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
   const now = new Date();
 
-  // Find existing message to preserve assigned session
+  const userSessions = await WhatsAppSession.find({ user: campaign.user });
+  const allowedSessionIds: string[] | undefined =
+    campaign.session_mode === 'SPECIFIC' && campaign.selected_sessions?.length > 0
+      ? campaign.selected_sessions
+      : undefined;
+
+  let connectedSessions = userSessions.filter((s) => s.status === SessionStatus.CONNECTED);
+  if (allowedSessionIds && allowedSessionIds.length > 0) {
+    const restrictedConnected = connectedSessions.filter((s) =>
+      allowedSessionIds.includes(s.session_id) || allowedSessionIds.includes(s._id.toString())
+    );
+    if (restrictedConnected.length > 0) {
+      connectedSessions = restrictedConnected;
+    }
+  }
+
+  // Find existing message to check original session
   const existingMsg = await Message.findOne({ campaign: campaign._id, recipient_phone: { $in: possiblePhones } });
   let sessionDoc = null;
-  if (existingMsg?.session) {
-    sessionDoc = await WhatsAppSession.findById(existingMsg.session);
-  }
-  if (!sessionDoc) {
-    sessionDoc = await WhatsAppSession.findOne({ user: campaign.user });
+
+  if (targetSessionId === 'random') {
+    if (connectedSessions.length === 0) {
+      return {
+        success: false,
+        message: 'No connected WhatsApp phone found. Please connect a phone first before retrying.',
+        error: 'No connected WhatsApp phone found. Please connect a phone first before retrying.',
+      };
+    }
+    sessionDoc = connectedSessions[Math.floor(Math.random() * connectedSessions.length)];
+  } else if (targetSessionId && targetSessionId !== 'original') {
+    sessionDoc = userSessions.find(
+      (s) => s._id.toString() === targetSessionId || s.session_id === targetSessionId
+    );
+    if (!sessionDoc) {
+      sessionDoc = await WhatsAppSession.findOne({
+        user: campaign.user,
+        $or: [{ _id: targetSessionId }, { session_id: targetSessionId }],
+      });
+    }
+    if (!sessionDoc) {
+      return {
+        success: false,
+        message: 'Selected WhatsApp phone not found.',
+        error: 'Selected WhatsApp phone not found.',
+      };
+    }
+  } else {
+    // Original behavior: preserve assigned session from existing message
+    if (existingMsg?.session) {
+      sessionDoc = await WhatsAppSession.findById(existingMsg.session);
+    }
+    if (!sessionDoc) {
+      sessionDoc = connectedSessions.length > 0 ? connectedSessions[0] : (userSessions[0] || null);
+    }
   }
 
   // Resolve interval for phone / campaign
@@ -277,13 +375,15 @@ export const executeCampaignRetryRecipient = async (
   }
   const scheduledTime = new Date(scheduledTimeMs);
 
+  const senderPhone = sessionDoc?.phone_number || existingMsg?.sender_phone;
+
   // Update or create message in PENDING status
   const updatedMsg = await Message.findOneAndUpdate(
     { campaign: campaign._id, recipient_phone: { $in: possiblePhones } },
     {
       status: MessageStatus.PENDING,
       session: sessionDoc ? sessionDoc._id : undefined,
-      sender_phone: existingMsg?.sender_phone || sessionDoc?.phone_number,
+      sender_phone: senderPhone,
       $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
       scheduled_at: scheduledTime,
       $inc: { retry_count: 1 },
@@ -295,7 +395,7 @@ export const executeCampaignRetryRecipient = async (
     await Message.create({
       campaign: campaign._id,
       session: sessionDoc ? sessionDoc._id : undefined,
-      sender_phone: sessionDoc?.phone_number,
+      sender_phone: senderPhone,
       direction: MessageDirection.OUTBOUND,
       type: 'text',
       status: MessageStatus.PENDING,
@@ -332,9 +432,11 @@ export const executeCampaignRetryRecipient = async (
   campaign.error_message = undefined;
   await campaign.save();
 
+  const phoneNotice = sessionDoc?.phone_number ? ` via phone ${sessionDoc.phone_number}` : '';
+
   return {
     success: true,
-    message: `Message rescheduled for ${cleanPhone}. It will be sent via campaign scheduler.`,
+    message: `Message rescheduled for ${cleanPhone}${phoneNotice}. It will be sent via campaign scheduler.`,
     scheduled_at: scheduledTime,
   };
 };

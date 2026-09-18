@@ -459,11 +459,20 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
 
     let sessionId: string | null = null;
     try {
-      if (msg.session) {
-        const sDoc = await WhatsAppSession.findById(msg.session);
-        sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
-      } else {
-        sessionId = await pickUserSession(req.user?._id?.toString() || '');
+      if (req.body?.sessionId && req.body.sessionId !== 'original' && req.body.sessionId !== 'random') {
+        const customSession = await WhatsAppSession.findOne({
+          user: req.user?._id,
+          $or: [{ _id: req.body.sessionId }, { session_id: req.body.sessionId }],
+        });
+        if (customSession) sessionId = customSession.session_id;
+      }
+      if (!sessionId) {
+        if (msg.session && req.body?.sessionId !== 'random') {
+          const sDoc = await WhatsAppSession.findById(msg.session);
+          sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
+        } else {
+          sessionId = await pickUserSession(req.user?._id?.toString() || '');
+        }
       }
     } catch (_) {}
 
