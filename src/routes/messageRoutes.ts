@@ -8,6 +8,7 @@ import { BlastCampaign } from '../models/BlastCampaign.js';
 import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { retryCampaignRecipient, executeCampaignRetryFailed } from './campaignRoutes.js';
+import { findNextAvailableSlotsForSession } from '../services/scheduleSlotFinder.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -554,7 +555,13 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
 
     if (!activeSession?.socket) {
       msg.status = MessageStatus.PENDING;
-      msg.scheduled_at = new Date();
+      const sDoc = sessionId ? await WhatsAppSession.findOne({ session_id: sessionId }) : null;
+      const [scheduledTime = new Date()] = await findNextAvailableSlotsForSession({
+        sessionDoc: sDoc,
+        count: 1,
+        excludePhones: [cleanPhone],
+      });
+      msg.scheduled_at = scheduledTime;
       msg.retry_count = (msg.retry_count || 0) + 1;
       await msg.save();
       return res.json({ success: true, message: `Message rescheduled for ${cleanPhone}.` });
@@ -690,7 +697,13 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
             msg.error = undefined;
           } else {
             msg.status = MessageStatus.PENDING;
-            msg.scheduled_at = new Date();
+            const targetDoc = sessionId ? connectedSessionsForNonCampaign.find((s) => s.session_id === sessionId) : null;
+            const [scheduledTime = new Date()] = await findNextAvailableSlotsForSession({
+              sessionDoc: targetDoc,
+              count: 1,
+              excludePhones: [cleanPhone],
+            });
+            msg.scheduled_at = scheduledTime;
             msg.error = undefined;
           }
 
@@ -699,7 +712,6 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
           retriedCount += 1;
         } catch (err: any) {
           msg.status = MessageStatus.PENDING;
-          msg.scheduled_at = new Date();
           msg.retry_count = (msg.retry_count || 0) + 1;
           await msg.save();
           retriedCount += 1;

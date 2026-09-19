@@ -2,6 +2,7 @@ import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { resolveCampaignInterval } from './blastUtils.js';
+import { findNextAvailableSlotsForSession } from './scheduleSlotFinder.js';
 
 interface RetryItem {
   contact: string;
@@ -177,43 +178,18 @@ export const executeCampaignRetryFailed = async (
     const sampleItem = items[0];
     const sessionDoc = sampleItem.sessionDoc;
 
-    // Resolve intervals per phone (campaign first, then session settings)
-    const { minMins, maxMins } = resolveCampaignInterval(campaign, sessionDoc);
-    const getRandIntervalMs = () => {
-      const randMinutes = Math.random() * (maxMins - minMins) + minMins;
-      return Math.floor(randMinutes * 60 * 1000);
-    };
-
-    // Check if this sending phone already has future pending messages (excluding retry recipients)
-    const retryPhonesForThisSession = items.map((it) => it.cleanPhone);
-    const lastPending = sessionDoc
-      ? await Message.findOne({
-          session: sessionDoc._id,
-          recipient_phone: { $nin: retryPhonesForThisSession },
-          status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-          scheduled_at: { $gt: now },
-        }).sort({ scheduled_at: -1 })
-      : null;
-
-    let currentScheduleMs: number;
-    if (lastPending && lastPending.scheduled_at) {
-      // Start after this phone's latest future scheduled message
-      currentScheduleMs = new Date(lastPending.scheduled_at).getTime() + getRandIntervalMs();
-    } else {
-      // No future scheduled messages -> start immediately at now
-      currentScheduleMs = nowMs;
-    }
+    // Allocate conflict-free slots following interval, last sending time, and occupied slots
+    const retryPhonesForThisSession = items.flatMap((it) => it.possiblePhones);
+    const scheduledSlots = await findNextAvailableSlotsForSession({
+      sessionDoc,
+      campaign,
+      count: items.length,
+      excludePhones: retryPhonesForThisSession,
+    });
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      let scheduledTimeMs = currentScheduleMs;
-      if (i > 0) {
-        // Subsequent message on the same sending phone adds interval
-        scheduledTimeMs = currentScheduleMs + getRandIntervalMs();
-        currentScheduleMs = scheduledTimeMs;
-      }
-
-      const scheduledTime = new Date(scheduledTimeMs);
+      const scheduledTime = scheduledSlots[i] || new Date();
 
       const updated = await Message.findOneAndUpdate(
         { campaign: campaign._id, recipient_phone: { $in: item.possiblePhones } },
@@ -352,28 +328,13 @@ export const executeCampaignRetryRecipient = async (
     }
   }
 
-  // Resolve interval for phone / campaign
-  const { minMins, maxMins } = resolveCampaignInterval(campaign, sessionDoc);
-  const getRandIntervalMs = () => {
-    const randMinutes = Math.random() * (maxMins - minMins) + minMins;
-    return Math.floor(randMinutes * 60 * 1000);
-  };
-
-  // Find latest future pending message for this assigned session
-  const lastPending = sessionDoc
-    ? await Message.findOne({
-        session: sessionDoc._id,
-        recipient_phone: { $nin: possiblePhones },
-        status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-        scheduled_at: { $gt: now },
-      }).sort({ scheduled_at: -1 })
-    : null;
-
-  let scheduledTimeMs = now.getTime();
-  if (lastPending && lastPending.scheduled_at) {
-    scheduledTimeMs = new Date(lastPending.scheduled_at).getTime() + getRandIntervalMs();
-  }
-  const scheduledTime = new Date(scheduledTimeMs);
+  // Allocate next available conflict-free slot following interval, last sending time, and occupied slots
+  const [scheduledTime = new Date()] = await findNextAvailableSlotsForSession({
+    sessionDoc,
+    campaign,
+    count: 1,
+    excludePhones: possiblePhones,
+  });
 
   const senderPhone = sessionDoc?.phone_number || existingMsg?.sender_phone;
 

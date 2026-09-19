@@ -58,14 +58,11 @@ export async function runSessionQueueForCampaign(
         const diffMs = scheduledTime - now;
 
         if (diffMs > 0) {
-          const waitLimitMs = Math.min(diffMs, 60 * 60 * 1000); // safety cap wait
-          let waitedMs = 0;
           let campaignHalted = false;
 
-          while (waitedMs < waitLimitMs) {
-            const step = Math.min(2000, waitLimitMs - waitedMs);
+          while (Date.now() < scheduledTime) {
+            const step = Math.min(2000, scheduledTime - Date.now());
             await new Promise((resolve) => setTimeout(resolve, step));
-            waitedMs += step;
 
             const checkCampaign = await BlastCampaign.findById(campaignId).select('status');
             if (!checkCampaign || checkCampaign.status !== CampaignStatus.RUNNING) {
@@ -152,11 +149,24 @@ export async function runSessionQueueForCampaign(
           $inc: { 'stats.failed': 1, current_index: 1 },
         });
 
-        // Interval delay before processing next message for this session
-        const { minMins, maxMins } = resolveCampaignInterval(liveCampaign, sessionDoc);
-        const randomMinutes = Math.random() * (maxMins - minMins) + minMins;
-        const randomDelayMs = Math.floor(randomMinutes * 60 * 1000);
-        await new Promise((res) => setTimeout(res, randomDelayMs));
+        // Ensure subsequent message respects the required interval from this send attempt
+        const subsequentMsg = await Message.findOne({
+          campaign: campaignId,
+          session: sessionId,
+          status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+        }).sort({ scheduled_at: 1, createdAt: 1 });
+
+        if (subsequentMsg) {
+          const { minMins, maxMins } = resolveCampaignInterval(liveCampaign, sessionDoc);
+          const randIntervalMs = Math.floor((Math.random() * (maxMins - minMins) + minMins) * 60 * 1000);
+          const earliestAllowedNextMs = now.getTime() + randIntervalMs;
+          const subSchedMs = subsequentMsg.scheduled_at ? new Date(subsequentMsg.scheduled_at).getTime() : 0;
+
+          if (subSchedMs < earliestAllowedNextMs) {
+            subsequentMsg.scheduled_at = new Date(earliestAllowedNextMs);
+            await subsequentMsg.save();
+          }
+        }
         continue;
       }
 
@@ -250,20 +260,24 @@ export async function runSessionQueueForCampaign(
         });
       }
 
-      // Check if there are subsequent messages for this session
-      const remainingForSession = await Message.countDocuments({
+      // Ensure subsequent message for this session strictly respects the interval from this send time
+      const subsequentMsg = await Message.findOne({
         campaign: campaignId,
         session: sessionId,
         status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-      });
+      }).sort({ scheduled_at: 1, createdAt: 1 });
 
-      if (remainingForSession > 0) {
+      if (subsequentMsg) {
         const { minMins, maxMins } = resolveCampaignInterval(liveCampaign, sessionDoc);
-        const randomMinutes = Math.random() * (maxMins - minMins) + minMins;
-        const randomDelayMs = Math.floor(randomMinutes * 60 * 1000);
+        const randIntervalMs = Math.floor((Math.random() * (maxMins - minMins) + minMins) * 60 * 1000);
+        const earliestAllowedNextMs = Date.now() + randIntervalMs;
+        const subSchedMs = subsequentMsg.scheduled_at ? new Date(subsequentMsg.scheduled_at).getTime() : 0;
 
-        console.log(`⏱️ Session ${sessionDoc.phone_number || sessionId}: Waiting ${randomMinutes.toFixed(2)}m before next contact in queue...`);
-        await new Promise((res) => setTimeout(res, randomDelayMs));
+        if (subSchedMs < earliestAllowedNextMs) {
+          subsequentMsg.scheduled_at = new Date(earliestAllowedNextMs);
+          await subsequentMsg.save();
+          console.log(`⏱️ Session ${sessionDoc.phone_number || sessionId}: Next message scheduled for ${subsequentMsg.recipient_phone} at ${new Date(earliestAllowedNextMs).toISOString()}`);
+        }
       }
     }
   } catch (queueErr) {
