@@ -93,6 +93,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
 
   const logs: any[] = customerLogsData?.results || []
 
+  const isCampaignPaused = (campaign?.status || '').toLowerCase() === 'paused'
+
   const customerRows =
     recipientPhones.length > 0
       ? recipientPhones.map((phone, idx) => {
@@ -105,11 +107,12 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           if (matchedLog) {
             const rawSt = (matchedLog.status || 'sent').toLowerCase()
             const targetTime = matchedLog.scheduled_at || matchedLog.scheduled_datetime
-            const isExp = rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
+            const isExp = !isCampaignPaused && (rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs())))
+            const rowStatus = isExp ? 'expired' : (isCampaignPaused && (rawSt === 'pending' || rawSt === 'queued') ? 'paused' : rawSt)
             return {
               phone,
               sender_phone: matchedLog.sender_phone || matchedLog.session?.phone_number || (matchedLog.from_jid ? matchedLog.from_jid.split('@')[0] : null),
-              status: isExp ? 'expired' : rawSt,
+              status: rowStatus,
               time: matchedLog.sent_at || matchedLog.wa_timestamp || matchedLog.scheduled_at || matchedLog.scheduled_datetime || matchedLog.created_at || matchedLog.createdAt,
               error: matchedLog.error ? safeText(matchedLog.error) : null,
               message: safeText(matchedLog.content?.text || matchedLog.content, 'Template message sent'),
@@ -132,21 +135,22 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           return {
             phone,
             sender_phone: null,
-            status: 'pending',
+            status: isCampaignPaused ? 'paused' : 'pending',
             time: null,
             error: null,
-            message: 'Scheduled in queue',
+            message: isCampaignPaused ? 'Waiting (Paused)' : 'Scheduled in queue',
             retryCount: 0,
           }
         })
       : logs.map((l) => {
           const rawSt = (l.status || 'sent').toLowerCase()
           const targetTime = l.scheduled_at || l.scheduled_datetime
-          const isExp = rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
+          const isExp = !isCampaignPaused && (rawSt === 'expired' || ((rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs())))
+          const rowStatus = isExp ? 'expired' : (isCampaignPaused && (rawSt === 'pending' || rawSt === 'queued') ? 'paused' : rawSt)
           return {
             phone: l.recipient_phone || l.to_jid || 'Recipient',
             sender_phone: l.sender_phone || l.session?.phone_number || (l.from_jid ? l.from_jid.split('@')[0] : null),
-            status: isExp ? 'expired' : rawSt,
+            status: rowStatus,
             time: l.sent_at || l.wa_timestamp || l.scheduled_at || l.scheduled_datetime || l.created_at || l.createdAt,
             error: l.error ? safeText(l.error) : null,
             message: safeText(l.content?.text || l.content, 'Message'),
@@ -158,7 +162,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
   const failedCount = customerRows.filter((r) => ['failed', 'error'].includes(r.status)).length
   const expiredCount = customerRows.filter((r) => r.status === 'expired').length
   const retryableCount = failedCount + expiredCount
-  const pendingCount = customerRows.filter((r) => ['pending', 'queued'].includes(r.status)).length
+  const pendingCount = customerRows.filter((r) => ['pending', 'queued', 'paused'].includes(r.status)).length
 
   const filteredCustomerRows = customerRows.filter((row) => {
     const matchesSearch = !customerSearch || row.phone.toLowerCase().includes(customerSearch.toLowerCase())
@@ -170,7 +174,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
     } else if (customerStatusFilter === 'EXPIRED') {
       matchesStatus = row.status === 'expired'
     } else if (customerStatusFilter === 'PENDING') {
-      matchesStatus = ['pending', 'queued'].includes(row.status)
+      matchesStatus = ['pending', 'queued', 'paused'].includes(row.status)
     }
     return matchesSearch && matchesStatus
   })
@@ -338,7 +342,9 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                 {filteredCustomerRows.map((row, idx) => {
                   const isFailed = row.status === 'failed' || row.status === 'error'
                   const isExpired = row.status === 'expired'
+                  const isPaused = row.status === 'paused'
                   const isSent = row.status === 'sent' || row.status === 'delivered' || row.status === 'read'
+                  const canRetry = (isFailed || isExpired) && !isCampaignPaused
 
                   return (
                     <TableRow key={`${row.phone}-${idx}`} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 text-xs">
@@ -349,6 +355,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
                             isSent
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : isPaused
+                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300'
                               : isExpired
                               ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300'
                               : isFailed
@@ -360,7 +368,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                         </span>
                       </TableCell>
                       <TableCell className="text-slate-500 whitespace-nowrap">
-                        {row.time ? dayjs(row.time).format('DD/MM/YY h:mm A') : '-'}
+                        {row.time ? dayjs(row.time).format('DD/MM/YYYY h:mm A') : '-'}
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400 max-w-[200px] truncate" title={safeText(row.error || row.message)}>
                         {row.error ? (
@@ -371,7 +379,7 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex flex-col items-center justify-center text-center w-full min-w-[100px] mx-auto min-h-[42px] gap-1">
-                          {!isSent && campaign && (
+                          {canRetry && campaign ? (
                             <RecipientRetryDropdown
                               phone={row.phone}
                               campaignId={campaign.id}
@@ -389,6 +397,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
                               }
                               title={isExpired ? 'Reschedule and retry message' : 'Retry message for this customer'}
                             />
+                          ) : (
+                            <span className="text-slate-400">-</span>
                           )}
                           {Boolean(row.retryCount) && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/60 leading-none whitespace-nowrap">

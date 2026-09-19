@@ -427,7 +427,41 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
   campaign.started_at = campaign.started_at || new Date();
   await campaign.save();
 
-  return res.json({ success: true, campaign: formatCampaign(campaign) });
+  // If any pending messages have scheduled_at in the past, shift them forward from now per session
+  const now = Date.now();
+  const pendingMsgs = await Message.find({
+    campaign: campaign._id,
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+  }).sort({ scheduled_at: 1, createdAt: 1 });
+
+  const hasPastScheduled = pendingMsgs.some(
+    (m) => !m.scheduled_at || new Date(m.scheduled_at).getTime() <= now
+  );
+
+  if (hasPastScheduled && pendingMsgs.length > 0) {
+    const minIntervalMins = Number(campaign.min_interval_seconds) || 10;
+    const maxIntervalMins =
+      Number(campaign.max_interval_seconds) >= minIntervalMins
+        ? Number(campaign.max_interval_seconds)
+        : minIntervalMins + 5;
+    const sessionLastTimeMap = new Map<string, number>();
+
+    for (const msg of pendingMsgs) {
+      const sessKey = msg.session ? msg.session.toString() : 'default';
+      let scheduledTimeMs = now;
+      if (sessionLastTimeMap.has(sessKey)) {
+        const prevMs = sessionLastTimeMap.get(sessKey)!;
+        const randomMinutes =
+          Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
+        scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
+      }
+      sessionLastTimeMap.set(sessKey, scheduledTimeMs);
+      msg.scheduled_at = new Date(scheduledTimeMs);
+      await msg.save();
+    }
+  }
+
+  return res.json({ success: true, campaign: await formatCampaign(campaign) });
 };
 
 router.post('/blast-campaigns/:id/start', startCampaign);

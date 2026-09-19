@@ -5,20 +5,11 @@ import { api, getErrorMessage } from '@/lib/api'
 import { safeText } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
-import { Activity, AlertCircle, ArrowLeft, ArrowDown, ArrowUp, CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { Activity, AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, Loader2, Pause, Play, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  RecipientRetryDropdown,
-  CampaignRetryAllDropdown,
-} from '@/components/campaigns/CampaignRetryDropdown'
+import { CampaignRetryAllDropdown } from '@/components/campaigns/CampaignRetryDropdown'
+import { CampaignProgressStatCards } from '@/components/campaigns/CampaignProgressStatCards'
+import { CampaignProgressTable } from '@/components/campaigns/CampaignProgressTable'
 
 export const Route = createFileRoute('/merchant/campaigns/progress')({
   component: CampaignProgressPage,
@@ -123,6 +114,38 @@ function CampaignProgressPage() {
       toast.error(
         await getErrorMessage(err, 'Failed to retry message for recipient.')
       )
+    },
+  })
+
+  // Pause campaign mutation
+  const pauseMutation = useMutation({
+    mutationFn: () => api.post(`blast-campaigns/${campaignId}/pause`).json<any>(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['campaign-logs', campaignId] })
+      refetchCampaign()
+      refetchLogs()
+      toast.success('Campaign paused.')
+    },
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to pause campaign.'))
+    },
+  })
+
+  // Resume campaign mutation
+  const resumeMutation = useMutation({
+    mutationFn: () => api.post(`blast-campaigns/${campaignId}/resume`).json<any>(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['campaign-logs', campaignId] })
+      refetchCampaign()
+      refetchLogs()
+      toast.success('Campaign resumed.')
+    },
+    onError: async (err: any) => {
+      toast.error(await getErrorMessage(err, 'Failed to resume campaign.'))
     },
   })
 
@@ -257,17 +280,20 @@ function CampaignProgressPage() {
     })
   }, [reportRows, sortOrder])
 
+  const cStatus = (campaign.status || 'draft').toUpperCase()
+  const isCampaignPaused = cStatus === 'PAUSED'
+
   // Calculate live accurate counts from logs when available, falling back to campaign.stats
   const logSentCount = reportRows.filter((r) => ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())).length
   const logFailedCount = reportRows.filter((r) => ['failed', 'error'].includes((r.status || '').toLowerCase())).length
   const logExpiredCount = reportRows.filter((r) => {
     const st = (r.status || '').toLowerCase()
-    return st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs()))
+    return !isCampaignPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs())))
   }).length
   const logPendingCount = reportRows.filter((r) => {
     const st = (r.status || '').toLowerCase()
-    const isExp = st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs()))
-    return ['pending', 'queued'].includes(st) && !isExp
+    const isExp = !isCampaignPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+    return ['pending', 'queued', 'paused'].includes(st) && !isExp
   }).length
 
   const hasLogData = logs.length > 0 || reportRows.length > 0
@@ -279,7 +305,6 @@ function CampaignProgressPage() {
   const pending = hasLogData ? logPendingCount : (rawStats.pending !== undefined ? rawStats.pending : Math.max(0, total - sent - retryableCount))
   const processed = sent + retryableCount
   const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
-  const cStatus = (campaign.status || 'draft').toUpperCase()
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto pb-8">
@@ -294,6 +319,42 @@ function CampaignProgressPage() {
         </Link>
 
         <div className="flex items-center gap-2">
+          {cStatus === 'running' && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => pauseMutation.mutate()}
+              disabled={pauseMutation.isPending}
+              className="h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50 font-medium"
+            >
+              {pauseMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Pause className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Pause
+            </Button>
+          )}
+
+          {cStatus === 'paused' && (
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isPending}
+              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+            >
+              {resumeMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="mr-1.5 h-3.5 w-3.5 fill-current" />
+              )}
+              Resume
+            </Button>
+          )}
+
           <Button
             type="button"
             variant="outline"
@@ -328,11 +389,15 @@ function CampaignProgressPage() {
                 {campaign.name}
               </h1>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Created: {dayjs(campaign.created_at || campaign.createdAt).format('DD/MM/YY h:mm A')}
+            <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-4">
+              <span className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-slate-400" />
+                Created: {dayjs(campaign.created_at || campaign.createdAt).format('DD/MM/YYYY h:mm A')}
+              </span>
               {campaign.completed_at && (
-                <span className="ml-3">
-                  Completed: {dayjs(campaign.completed_at).format('DD/MM/YY h:mm A')}
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-slate-400" />
+                  Completed: {dayjs(campaign.completed_at).format('DD/MM/YYYY h:mm A')}
                 </span>
               )}
             </p>
@@ -360,6 +425,28 @@ function CampaignProgressPage() {
           </div>
         </div>
 
+        {/* Paused Campaign Notice Banner */}
+        {cStatus === 'paused' && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-orange-200 bg-orange-50/90 p-3 text-xs text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-200">
+            <div className="flex items-center gap-2">
+              <Pause className="h-4 w-4 text-orange-600 shrink-0" />
+              <span>
+                <strong>Campaign is paused.</strong> Scheduled messages are frozen and will resume sequentially when you click Resume.
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isPending}
+              className="h-7 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium self-start sm:self-auto"
+            >
+              {resumeMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3 fill-current" />}
+              Resume Campaign
+            </Button>
+          </div>
+        )}
+
         {/* Failed / Expired messages banner if any */}
         {retryableCount > 0 && (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
@@ -373,7 +460,11 @@ function CampaignProgressPage() {
                     ? `${failed} message(s) failed`
                     : `${expired} message(s) expired`}
                 </strong>{' '}
-                during delivery. You can click <strong>"Retry All Failed & Expired"</strong> or retry individual recipients below.
+                {cStatus === 'completed'
+                  ? 'during blast execution. You can retry them now:'
+                  : cStatus === 'paused'
+                  ? 'contacts can be rescheduled to send once resumed:'
+                  : 'contacts can be retried now:'}
               </span>
             </div>
             <CampaignRetryAllDropdown
@@ -409,203 +500,38 @@ function CampaignProgressPage() {
           </Link>
         )}
 
-        {/* Blast Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm font-medium">
-            <span className="text-slate-700 dark:text-slate-300">Blast Progress</span>
-            <div className="flex items-center gap-2">
-              {retryableCount > 0 && (
-                <span className="text-amber-600 dark:text-amber-400 font-semibold text-xs bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-900/50">
-                  {failed > 0 && expired > 0 ? `${failed} Failed, ${expired} Expired` : failed > 0 ? `${failed} Failed` : `${expired} Expired`}
-                </span>
-              )}
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                {percent}% ({processed}/{total})
-              </span>
-            </div>
-          </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 flex">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-              style={{ width: `${total > 0 ? (sent / total) * 100 : 0}%` }}
-              title={`Success / Sent: ${sent}`}
-            />
-            {retryableCount > 0 && (
-              <div
-                className="h-full bg-amber-500 transition-all duration-500"
-                style={{ width: `${total > 0 ? (retryableCount / total) * 100 : 0}%` }}
-                title={`Failed/Expired: ${retryableCount}`}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-center dark:border-slate-800 dark:bg-slate-900/50">
-            <p className="text-xs font-medium text-slate-500">Total Recipients</p>
-            <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{total}</p>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20">
-            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Success / Sent</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{sent}</p>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl border border-amber-200 bg-amber-50/50 p-4 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
-            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">{failed > 0 && expired > 0 ? 'Failed / Expired' : expired > 0 ? 'Expired' : 'Failed'}</p>
-            <p className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400">{retryableCount}</p>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-center dark:border-slate-800 dark:bg-slate-900/50">
-            <p className="text-xs font-medium text-slate-500">Pending</p>
-            <p className="mt-2 text-2xl font-bold text-slate-700 dark:text-slate-300">{pending}</p>
-          </div>
-        </div>
+        {/* Modular Stat Cards & Progress Bar */}
+        <CampaignProgressStatCards
+          total={total}
+          sent={sent}
+          failed={failed}
+          expired={expired}
+          processed={processed}
+          percent={percent}
+          retryableCount={retryableCount}
+        />
 
         {/* Detailed Recipient Delivery Log */}
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Recipient Delivery Log ({reportRows.length})
-            </h2>
-            {isLoadingLogs && <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />}
-          </div>
-
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-            <Table>
-              <TableHeader className="bg-slate-50 dark:bg-slate-800/60">
-                <TableRow>
-                  <TableHead className="text-xs">Recipient Phone</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                  <TableHead
-                    className="text-xs cursor-pointer select-none hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-                    onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-                    title={`Sort by Scheduled Send Time (${sortOrder === 'asc' ? 'Click for Descending' : 'Click for Ascending'})`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Scheduled Send Time</span>
-                      <span className="inline-flex shrink-0">
-                        {sortOrder === 'asc' ? (
-                          <ArrowUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                        ) : (
-                          <ArrowDown className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                        )}
-                      </span>
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-xs">Message Preview</TableHead>
-                  <TableHead className="text-xs text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedReportRows.map((row, idx) => {
-                  const st = (row.status || 'pending').toLowerCase()
-                  const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
-                  const isFailed = st === 'failed' || st === 'error'
-                  const isExpired = st === 'expired' || ((st === 'pending' || st === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs()))
-                  const canRetry = isFailed || isExpired
-
-                  return (
-                    <TableRow key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 text-xs">
-                      <TableCell className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                        {row.phone}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                            isSuccess
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                              : isExpired
-                              ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
-                              : isFailed
-                              ? 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                              : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                          }`}
-                        >
-                          {isSuccess && <CheckCircle2 className="h-3 w-3" />}
-                          {isFailed && <AlertCircle className="h-3 w-3" />}
-                          {isExpired ? 'EXPIRED' : row.status ? row.status.toUpperCase() : 'PENDING'}
-                        </span>
-                        {row.error && (
-                          <p className="mt-0.5 text-[10px] text-rose-600 dark:text-rose-400 font-normal">
-                            {safeText(row.error)}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {(() => {
-                          const targetTime = isSuccess
-                            ? (row.sent_at || row.scheduled_at || row.created_at)
-                            : (row.scheduled_at || row.created_at)
-
-                          if (!targetTime) return <span className="text-slate-400">-</span>
-
-                          return (
-                            <div className="flex flex-col">
-                              <span
-                                className={`font-mono text-xs font-semibold ${
-                                  isSuccess
-                                    ? 'text-emerald-700 dark:text-emerald-400'
-                                    : isFailed
-                                    ? 'text-rose-700 dark:text-rose-400'
-                                    : isExpired
-                                    ? 'text-orange-700 dark:text-orange-400'
-                                    : 'text-amber-700 dark:text-amber-400'
-                                }`}
-                              >
-                                {dayjs(targetTime).format('DD/MM/YY hh:mm:ss A')}
-                              </span>
-                              <span className={`text-[10px] font-medium ${
-                                isExpired ? 'text-orange-600 dark:text-orange-400 font-semibold' : 'text-slate-400 dark:text-slate-500'
-                              }`}>
-                                {isSuccess ? 'Sent' : isFailed ? 'Failed' : isExpired ? 'Expired' : 'Scheduled'}
-                              </span>
-                            </div>
-                          )
-                        })()}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400 max-w-xs truncate">
-                        {safeText(row.message)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {canRetry ? (
-                          <RecipientRetryDropdown
-                            phone={row.phone}
-                            campaignId={campaign.id}
-                            originalSenderPhone={row.sender_phone}
-                            isPending={
-                              retryRecipientMutation.isPending &&
-                              retryRecipientMutation.variables?.phone === row.phone
-                            }
-                            onRetry={(payload) =>
-                              retryRecipientMutation.mutate({
-                                cId: campaign.id,
-                                phone: payload.phone,
-                                sessionId: payload.sessionId,
-                              })
-                            }
-                            title={isExpired ? 'Reschedule and retry message' : 'Retry sending message'}
-                          />
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-
-                {reportRows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-slate-500">
-                      No log records found for this campaign.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
+        <CampaignProgressTable
+          reportRowsCount={reportRows.length}
+          sortedReportRows={sortedReportRows}
+          sortOrder={sortOrder}
+          setSortOrder={setSortOrder}
+          cStatus={cStatus}
+          campaignId={campaign.id}
+          isLoadingLogs={isLoadingLogs}
+          isRecipientPending={(phone) =>
+            retryRecipientMutation.isPending &&
+            retryRecipientMutation.variables?.phone === phone
+          }
+          onRetryRecipient={(payload) =>
+            retryRecipientMutation.mutate({
+              cId: campaign.id,
+              phone: payload.phone,
+              sessionId: payload.sessionId,
+            })
+          }
+        />
       </div>
     </div>
   )

@@ -231,12 +231,18 @@ export const executeCampaignRetryFailed = async (
   campaign.stats.total = campaign.contacts.length;
   campaign.stats.sent = successfulContacts.length;
   campaign.stats.failed = 0;
-  campaign.status = CampaignStatus.RUNNING;
+  if (campaign.status !== CampaignStatus.PAUSED) {
+    campaign.status = CampaignStatus.RUNNING;
+  }
   campaign.scheduled_at = new Date();
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
 
   await campaign.save();
+
+  const statusNotice = campaign.status === CampaignStatus.PAUSED
+    ? ' (Campaign is paused. Messages will send when resumed.)'
+    : '';
 
   const warningMsg = !hasConnectedSession
     ? ' (Note: No connected WhatsApp session found. Messages will send once WhatsApp connects.)'
@@ -251,7 +257,7 @@ export const executeCampaignRetryFailed = async (
   return {
     success: true,
     count: retryContacts.length,
-    message: `Retrying ${retryContacts.length} recipient(s)${phoneNotice}${warningMsg}`,
+    message: `Retrying ${retryContacts.length} recipient(s)${phoneNotice}${statusNotice}${warningMsg}`,
     warning: !hasConnectedSession ? 'No connected WhatsApp session found' : undefined,
     campaign,
   };
@@ -388,16 +394,21 @@ export const executeCampaignRetryRecipient = async (
     campaign.stats.failed = Math.max(0, campaign.stats.failed - 1);
   }
 
-  campaign.status = CampaignStatus.RUNNING;
+  if (campaign.status !== CampaignStatus.PAUSED) {
+    campaign.status = CampaignStatus.RUNNING;
+  }
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
   await campaign.save();
 
   const phoneNotice = sessionDoc?.phone_number ? ` via phone ${sessionDoc.phone_number}` : '';
+  const isPaused = campaign.status === CampaignStatus.PAUSED;
 
   return {
     success: true,
-    message: `Message rescheduled for ${cleanPhone}${phoneNotice}. It will be sent via campaign scheduler.`,
+    message: isPaused
+      ? `Message rescheduled for ${cleanPhone}${phoneNotice}. Campaign is currently paused, message will send when resumed.`
+      : `Message rescheduled for ${cleanPhone}${phoneNotice}. It will be sent via campaign scheduler.`,
     scheduled_at: scheduledTime,
   };
 };

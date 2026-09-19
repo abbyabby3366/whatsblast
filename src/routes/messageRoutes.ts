@@ -4,7 +4,7 @@ import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js'
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { getActiveSession, initWhatsAppSession, verifyAndFormatJid, pickUserSession } from '../services/baileysManager.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
-import { BlastCampaign } from '../models/BlastCampaign.js';
+import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { retryCampaignRecipient, executeCampaignRetryFailed } from './campaignRoutes.js';
@@ -17,9 +17,10 @@ function formatMessage(m: any) {
   const obj = m.toObject ? m.toObject() : m;
   const { _id, __v, ...rest } = obj;
   const sessionPhone = typeof obj.session === 'object' && obj.session ? obj.session.phone_number : obj.sender_phone;
-  const campaignName = typeof obj.campaign === 'object' && obj.campaign ? obj.campaign.name : null;
-  const user = (typeof obj.campaign === 'object' && obj.campaign && obj.campaign.user)
-    ? obj.campaign.user
+  const campaignObj = typeof obj.campaign === 'object' && obj.campaign ? obj.campaign : null;
+  const campaignName = campaignObj ? campaignObj.name : null;
+  const user = (campaignObj && campaignObj.user)
+    ? campaignObj.user
     : (typeof obj.session === 'object' && obj.session && obj.session.user)
       ? obj.session.user
       : null;
@@ -28,11 +29,13 @@ function formatMessage(m: any) {
   const isFailed = rawStatus === 'failed';
   const isPendingOrQueued = rawStatus === 'pending' || rawStatus === 'queued';
   const targetScheduled = obj.scheduled_at || obj.createdAt;
+  const isCampaignPaused = campaignObj && (campaignObj.status === 'PAUSED' || campaignObj.status === 'paused');
   // Allow 2 minute grace period before marking as expired (so retried messages don't immediately show expired)
+  // If the campaign is paused, pending messages are on hold, NOT expired!
   const EXPIRED_GRACE_MS = 2 * 60 * 1000;
-  const isExpired = rawStatus === 'expired' || (isPendingOrQueued && targetScheduled && new Date(targetScheduled).getTime() + EXPIRED_GRACE_MS < Date.now());
+  const isExpired = !isCampaignPaused && (rawStatus === 'expired' || (isPendingOrQueued && targetScheduled && new Date(targetScheduled).getTime() + EXPIRED_GRACE_MS < Date.now()));
 
-  const computedStatus = isExpired ? 'expired' : rawStatus || MessageStatus.PENDING;
+  const computedStatus = isCampaignPaused && isPendingOrQueued ? 'paused' : (isExpired ? 'expired' : rawStatus || MessageStatus.PENDING);
   const isSentOrFailed = isSent || isFailed;
   const validWaTimestamp = obj.wa_timestamp && new Date(obj.wa_timestamp).getFullYear() > 2000 ? obj.wa_timestamp : null;
 
@@ -98,12 +101,21 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     if (s === 'sent') {
       filter.status = { $in: ['sent', 'delivered', 'read'] };
     } else if (s === 'expired') {
+      const pausedCampaignIds = await BlastCampaign.find({ status: CampaignStatus.PAUSED }).distinct('_id');
       filter.$or = [
         { status: MessageStatus.EXPIRED },
-        { status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] }, scheduled_at: { $lt: new Date(Date.now() - 2 * 60 * 1000) } },
+        {
+          status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+          scheduled_at: { $lt: new Date(Date.now() - 2 * 60 * 1000) },
+          campaign: { $nin: pausedCampaignIds },
+        },
       ];
     } else if (s === 'pending') {
       filter.status = { $in: ['pending', 'queued'] };
+    } else if (s === 'paused') {
+      const pausedCampaignIds = await BlastCampaign.find({ status: CampaignStatus.PAUSED }).distinct('_id');
+      filter.campaign = { $in: pausedCampaignIds };
+      filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] };
     } else {
       filter.status = s;
     }
@@ -256,7 +268,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
       { path: 'template' },
       {
         path: 'campaign',
-        select: 'name user templates template',
+        select: 'name user templates template status',
         populate: { path: 'user', select: 'phone_number role' },
       },
     ]);
@@ -272,7 +284,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
         .populate('template')
         .populate({
           path: 'campaign',
-          select: 'name user templates template',
+          select: 'name user templates template status',
           populate: { path: 'user', select: 'phone_number role' },
         })
         .sort(sortQuery)
