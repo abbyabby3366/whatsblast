@@ -5,10 +5,10 @@ import { api, getErrorMessage } from '@/lib/api'
 import { safeText } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
-import { Activity, AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, Loader2, Pause, Play, RefreshCw } from 'lucide-react'
+import { Activity, AlertCircle, ArrowLeft, Clock, ExternalLink, Loader2, Pause, Play, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CampaignRetryAllDropdown } from '@/components/campaigns/CampaignRetryDropdown'
-import { CampaignProgressStatCards } from '@/components/campaigns/CampaignProgressStatCards'
+import { CampaignProgressStatCards, type CampaignStatusFilter } from '@/components/campaigns/CampaignProgressStatCards'
 import { CampaignProgressTable } from '@/components/campaigns/CampaignProgressTable'
 
 export const Route = createFileRoute('/merchant/campaigns/progress')({
@@ -39,6 +39,7 @@ function CampaignProgressPage() {
   // Track whether a retry recently happened, to keep auto-refresh active
   const campaignStatus = (campaign?.status || '').toLowerCase()
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [activeFilter, setActiveFilter] = useState<CampaignStatusFilter>('all')
 
   // Fetch campaign execution logs
   const {
@@ -290,11 +291,6 @@ function CampaignProgressPage() {
     const st = (r.status || '').toLowerCase()
     return !isCampaignPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs())))
   }).length
-  const logPendingCount = reportRows.filter((r) => {
-    const st = (r.status || '').toLowerCase()
-    const isExp = !isCampaignPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs())))
-    return ['pending', 'queued', 'paused'].includes(st) && !isExp
-  }).length
 
   const hasLogData = logs.length > 0 || reportRows.length > 0
   const total = rawStats.total || recipientPhones.length || (hasLogData ? reportRows.length : 0) || 0
@@ -302,7 +298,6 @@ function CampaignProgressPage() {
   const failed = hasLogData ? logFailedCount : (rawStats.failed || 0)
   const expired = hasLogData ? logExpiredCount : (rawStats.expired || 0)
   const retryableCount = failed + expired
-  const pending = hasLogData ? logPendingCount : (rawStats.pending !== undefined ? rawStats.pending : Math.max(0, total - sent - retryableCount))
   const processed = sent + retryableCount
   const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
 
@@ -467,16 +462,27 @@ function CampaignProgressPage() {
                   : 'contacts can be retried now:'}
               </span>
             </div>
-            <CampaignRetryAllDropdown
-              retryableCount={retryableCount}
-              isPending={retryFailedMutation.isPending}
-              size="sm"
-              buttonText={`Retry All (${retryableCount})`}
-              onRetryAll={(sessionId) =>
-                retryFailedMutation.mutate({ id: campaign.id, sessionId })
-              }
-              className="shrink-0 self-start sm:self-auto"
-            />
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setActiveFilter('failed')}
+                className="h-8 text-xs border-amber-300 text-amber-900 bg-amber-100/60 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-medium"
+              >
+                View Failed ({retryableCount})
+              </Button>
+              <CampaignRetryAllDropdown
+                retryableCount={retryableCount}
+                isPending={retryFailedMutation.isPending}
+                size="sm"
+                buttonText={`Retry All (${retryableCount})`}
+                onRetryAll={(sessionId) =>
+                  retryFailedMutation.mutate({ id: campaign.id, sessionId })
+                }
+                className="shrink-0"
+              />
+            </div>
           </div>
         )}
 
@@ -509,6 +515,8 @@ function CampaignProgressPage() {
           processed={processed}
           percent={percent}
           retryableCount={retryableCount}
+          activeFilter={activeFilter}
+          onSelectFilter={setActiveFilter}
         />
 
         {/* Detailed Recipient Delivery Log */}
@@ -531,6 +539,8 @@ function CampaignProgressPage() {
               sessionId: payload.sessionId,
             })
           }
+          activeFilter={activeFilter}
+          setActiveFilter={setActiveFilter}
         />
       </div>
     </div>
