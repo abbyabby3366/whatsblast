@@ -9,6 +9,7 @@ import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { retryCampaignRecipient, executeCampaignRetryFailed } from './campaignRoutes.js';
 import { findNextAvailableSlotsForSession } from '../services/scheduleSlotFinder.js';
+import { applyMessageStatusFilter } from '../utils/messageFilterHelper.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -92,34 +93,11 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     else if (dStr === 'inbound') filter.direction = MessageDirection.INBOUND;
   }
 
-  if (is_campaign === 'true') {
+  if (is_campaign === 'true' && !filter.campaign) {
     filter.campaign = { $exists: true, $ne: null };
   }
 
-  if (status && status !== 'all' && status !== 'ALL') {
-    const s = String(status).toLowerCase();
-    if (s === 'sent') {
-      filter.status = { $in: ['sent', 'delivered', 'read'] };
-    } else if (s === 'expired') {
-      const pausedCampaignIds = await BlastCampaign.find({ status: CampaignStatus.PAUSED }).distinct('_id');
-      filter.$or = [
-        { status: MessageStatus.EXPIRED },
-        {
-          status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-          scheduled_at: { $lt: new Date(Date.now() - 2 * 60 * 1000) },
-          campaign: { $nin: pausedCampaignIds },
-        },
-      ];
-    } else if (s === 'pending') {
-      filter.status = { $in: ['pending', 'queued'] };
-    } else if (s === 'paused') {
-      const pausedCampaignIds = await BlastCampaign.find({ status: CampaignStatus.PAUSED }).distinct('_id');
-      filter.campaign = { $in: pausedCampaignIds };
-      filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] };
-    } else {
-      filter.status = s;
-    }
-  }
+  await applyMessageStatusFilter(filter, status);
 
   if (session_id && session_id !== 'all') {
     const sDoc = await WhatsAppSession.findOne({ session_id });
