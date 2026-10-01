@@ -147,7 +147,10 @@ function CreateCampaignPage() {
       localStorage.removeItem(DRAFT_STORAGE_KEY)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
-      toast.success('Draft saved successfully!')
+      if (editingCampaignId) {
+        queryClient.invalidateQueries({ queryKey: ['campaign', editingCampaignId] })
+      }
+      toast.success(editingCampaignId ? 'Campaign saved successfully!' : 'Draft saved successfully!')
 
       if (savedCampaign?.id && !editingCampaignId) {
         setIsDraftRestored(false)
@@ -495,7 +498,10 @@ function CreateCampaignPage() {
       setIsDraftRestored(false)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['draft-campaigns'] })
-      toast.success('Campaign launched! Blast execution started.')
+      if (editingCampaignId) {
+        queryClient.invalidateQueries({ queryKey: ['campaign', editingCampaignId] })
+      }
+      toast.success(editingCampaignId ? 'Campaign updated! Blast execution updated.' : 'Campaign launched! Blast execution started.')
       navigate({ to: '/merchant/campaigns' })
     },
     onError: async (err) => toast.error(await getErrorMessage(err, 'Failed to launch campaign.')),

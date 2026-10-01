@@ -335,3 +335,31 @@ export function resolveCampaignInterval(campaign: any, sessionDoc: any): { minMi
 
   return { minMins: min, maxMins: max };
 }
+
+export function isSessionAllowed(session: any, selectedList?: string[]): boolean {
+  if (!selectedList || selectedList.length === 0) return true;
+  if (!session) return false;
+
+  const sId = session.session_id ? String(session.session_id).trim() : null;
+  const mongoId = session._id
+    ? session._id.toString().trim()
+    : session.id
+    ? String(session.id).trim()
+    : null;
+  const rawPhone = session.phone_number ? String(session.phone_number).trim() : null;
+  const cleanPhone = rawPhone ? rawPhone.replace(/[^0-9]/g, '').replace(/^0/, '60') : null;
+  const alias = session.alias ? String(session.alias).trim().toLowerCase() : null;
+
+  for (const item of selectedList) {
+    if (!item) continue;
+    const str = String(item).trim();
+    if (sId && str === sId) return true;
+    if (mongoId && str === mongoId) return true;
+    if (rawPhone && str === rawPhone) return true;
+    const cleanItem = str.replace(/[^0-9]/g, '').replace(/^0/, '60');
+    if (cleanPhone && cleanItem && cleanPhone === cleanItem) return true;
+    if (alias && str.toLowerCase() === alias) return true;
+  }
+
+  return false;
+}

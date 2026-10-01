@@ -270,7 +270,14 @@ export const CampaignProgressTable: React.FC<CampaignProgressTableProps> = ({
               return (
                 <TableRow key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 text-xs">
                   <TableCell className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                    {row.phone}
+                    <div className="flex flex-col">
+                      <span>{row.phone}</span>
+                      {row.sender_phone && (
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">
+                          From: {row.sender_phone}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <span
@@ -320,10 +327,13 @@ export const CampaignProgressTable: React.FC<CampaignProgressTableProps> = ({
                                 : 'text-amber-700 dark:text-amber-400'
                             }`}
                           >
-                            {dayjs(targetTime).format('DD/MM/YYYY hh:mm:ss A')}
+                            {dayjs(targetTime).format('DD-MM-YYYY')}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                            {dayjs(targetTime).format('hh:mm:ss A')}
                           </span>
                           <span
-                            className={`text-[10px] font-medium ${
+                            className={`text-[9px] font-medium mt-0.5 ${
                               isPaused
                                 ? 'text-orange-600 dark:text-orange-400 font-semibold'
                                 : isExpired

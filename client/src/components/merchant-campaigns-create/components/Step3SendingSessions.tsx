@@ -51,14 +51,17 @@ export function Step3SendingSessions({
   const toggleSession = (sess: any) => {
     const sessionId = sess.session_id || sess.id
     const mongoId = sess.id || sess._id
+    const phone = sess.phone_number
     setSelectedSessions((prev) => {
       const isAlreadySelected = Boolean(
-        (sessionId && prev.includes(sessionId)) || (mongoId && prev.includes(mongoId))
+        (sessionId && prev.includes(sessionId)) ||
+        (mongoId && prev.includes(mongoId)) ||
+        (phone && prev.includes(phone))
       )
       if (isAlreadySelected) {
-        return prev.filter((id) => id !== sessionId && id !== mongoId)
+        return prev.filter((id) => id !== sessionId && id !== mongoId && id !== phone)
       } else {
-        return [...prev, sessionId || mongoId]
+        return [...prev, sessionId || mongoId || phone]
       }
     })
   }
@@ -152,7 +155,8 @@ export function Step3SendingSessions({
                         const isSelected = Boolean(
                           (s.session_id && selectedSessions.includes(s.session_id)) ||
                           (s.id && selectedSessions.includes(s.id)) ||
-                          (s._id && selectedSessions.includes(s._id))
+                          (s._id && selectedSessions.includes(s._id)) ||
+                          (s.phone_number && selectedSessions.includes(s.phone_number))
                         )
                         return (
                           <div

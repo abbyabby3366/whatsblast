@@ -8,9 +8,11 @@ import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { pickUserSession, getActiveSession, initWhatsAppSession } from '../services/baileysManager.js';
-import { sendBaileysTemplateMessage, getFileUrl } from '../services/blastRunner.js';
+import { sendBaileysTemplateMessage, getFileUrl, stopCampaignExecution, triggerCampaignExecution } from '../services/blastRunner.js';
 import { executeCampaignRetryFailed, executeCampaignRetryRecipient } from '../services/campaignRetryService.js';
-export { executeCampaignRetryFailed };
+import { executeCampaignReschedule } from '../services/campaignRescheduleService.js';
+import { syncCampaignRecipients, checkAndAutoHealCampaignRecipients } from '../services/campaignRecipientSyncService.js';
+export { executeCampaignRetryFailed, executeCampaignReschedule };
 
 const router = Router();
 
@@ -241,6 +243,7 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     session_mode: sessionModeVal,
     selected_sessions: selectedSessionsList,
     scheduled_at: scheduled_at ? new Date(scheduled_at) : undefined,
+    status: req.body.status || CampaignStatus.DRAFT,
     stats: {
       total: phoneList.length,
       sent: 0,
@@ -248,75 +251,19 @@ const createCampaign = async (req: AuthRequest, res: Response) => {
     },
   });
 
-  // Immediately create PENDING messages for all recipients with cumulative random intervals per assigned session
+  // Create and schedule PENDING messages for all recipients
   if (phoneList.length > 0) {
-    const minIntervalMins = Number(minInterval) || 10;
-    const maxIntervalMins = Number(maxInterval) >= minIntervalMins ? Number(maxInterval) : minIntervalMins + 5;
-    const baseScheduledAt = campaign.scheduled_at ? new Date(campaign.scheduled_at) : new Date();
-
-    const primaryTpl = templateObjs.length > 0 ? templateObjs[0] : null;
-    const tplText = primaryTpl ? (primaryTpl.text || primaryTpl.template || '') : '';
-    const msgType = primaryTpl ? (primaryTpl.type || primaryTpl.messageType || 'text') : 'text';
-
-    // Fetch user's WhatsApp sessions to pre-assign round-robin
-    let availableSessions = await WhatsAppSession.find({
-      user: targetUser,
-      status: SessionStatus.CONNECTED,
-    }).sort({ createdAt: 1 });
-
-    const matchesAllowed = (s: any) => {
-      if (sessionModeVal !== 'SPECIFIC' || selectedSessionsList.length === 0) return true;
-      const sId = s.session_id;
-      const mongoId = s._id ? s._id.toString() : (s.id ? s.id.toString() : null);
-      return (sId && selectedSessionsList.includes(sId)) || (mongoId ? selectedSessionsList.includes(mongoId) : false);
-    };
-
-    if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-      availableSessions = availableSessions.filter(matchesAllowed);
-    }
-
-    if (availableSessions.length === 0) {
-      let fallbackSessions = await WhatsAppSession.find({ user: targetUser }).sort({ createdAt: 1 });
-      if (sessionModeVal === 'SPECIFIC' && selectedSessionsList.length > 0) {
-        fallbackSessions = fallbackSessions.filter(matchesAllowed);
-      }
-      availableSessions = fallbackSessions;
-    }
-
-    const sessionLastTimeMap = new Map<string, number>();
-
-    const pendingMessages = phoneList.map((contact: string, idx: number) => {
-      let cleanPhone = contact.replace(/[^0-9]/g, '');
-      if (cleanPhone.startsWith('0')) cleanPhone = '60' + cleanPhone.slice(1);
-      const assignedSession = availableSessions.length > 0 ? availableSessions[idx % availableSessions.length] : null;
-      const sessKey = assignedSession ? assignedSession._id.toString() : 'default';
-
-      let scheduledTimeMs = baseScheduledAt.getTime();
-      if (sessionLastTimeMap.has(sessKey)) {
-        const prevMs = sessionLastTimeMap.get(sessKey)!;
-        const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
-        scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
-      }
-      sessionLastTimeMap.set(sessKey, scheduledTimeMs);
-
-      const scheduledTime = new Date(scheduledTimeMs);
-
-      return {
-        campaign: campaign._id,
-        session: assignedSession ? assignedSession._id : undefined,
-        sender_phone: assignedSession ? assignedSession.phone_number : undefined,
-        direction: MessageDirection.OUTBOUND,
-        type: msgType,
-        status: MessageStatus.PENDING,
-        recipient_phone: cleanPhone || contact,
-        to_jid: `${cleanPhone || contact}@s.whatsapp.net`,
-        template: templateId || null,
-        content: { text: tplText, buttons: primaryTpl?.buttons },
-        scheduled_at: scheduledTime,
-      };
+    await syncCampaignRecipients(campaign, phoneList, {
+      templates: templateObjs,
+      sessionMode: sessionModeVal,
+      selectedSessions: selectedSessionsList,
+      minIntervalSeconds: minInterval,
+      maxIntervalSeconds: maxInterval,
     });
+  }
 
-    await Message.insertMany(pendingMessages);
+  if (campaign.status === CampaignStatus.RUNNING) {
+    triggerCampaignExecution(campaign._id.toString());
   }
 
   const populated = await BlastCampaign.findById(campaign._id).populate('user', 'phone_number role').populate('template');
@@ -337,6 +284,14 @@ const getCampaignById = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
+  if (
+    (campaign.status === CampaignStatus.PAUSED || campaign.status === CampaignStatus.DRAFT) &&
+    Array.isArray(campaign.recipient_phones) &&
+    campaign.recipient_phones.length > 0
+  ) {
+    await checkAndAutoHealCampaignRecipients(campaign);
+  }
+
   return res.json(await formatCampaign(campaign));
 };
 
@@ -353,6 +308,11 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
+  const wasRunning = campaign.status === CampaignStatus.RUNNING;
+  if (wasRunning) {
+    await stopCampaignExecution(campaign._id.toString(), 2000);
+  }
+
   const { name, status, recipient_phones, contacts, templates, min_interval_seconds, max_interval_seconds, enable_warmup, retry_on_failure, session_mode, selected_sessions } = req.body;
   if (name !== undefined) campaign.name = name;
   if (status !== undefined) {
@@ -361,49 +321,30 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
       campaign.error_message = undefined;
     }
   }
-  if (recipient_phones !== undefined || contacts !== undefined) {
-    const list = recipient_phones || contacts || [];
-    campaign.recipient_phones = list;
-    campaign.contacts = list;
-    campaign.stats.total = list.length;
-  }
-  if (templates !== undefined) {
-    campaign.templates = templates;
-    const primaryTpl = Array.isArray(templates) && templates.length > 0 ? templates[0] : null;
-    if (primaryTpl) {
-      const tplText = primaryTpl.text || primaryTpl.template || '';
-      const msgType = primaryTpl.message_type || primaryTpl.type || primaryTpl.messageType || 'text';
-      await Message.updateMany(
-        { campaign: campaign._id, status: MessageStatus.PENDING },
-        { $set: { type: msgType, content: { text: tplText, buttons: primaryTpl.buttons } } }
-      );
-    }
-  }
   if (min_interval_seconds !== undefined) campaign.min_interval_seconds = min_interval_seconds;
   if (max_interval_seconds !== undefined) campaign.max_interval_seconds = max_interval_seconds;
   if (enable_warmup !== undefined) campaign.enable_warmup = Boolean(enable_warmup);
   if (retry_on_failure !== undefined) campaign.retry_on_failure = Boolean(retry_on_failure);
   if (session_mode !== undefined) campaign.session_mode = session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL';
   if (selected_sessions !== undefined) campaign.selected_sessions = Array.isArray(selected_sessions) ? selected_sessions : [];
+  if (templates !== undefined) campaign.templates = templates;
 
   await campaign.save();
 
-  // Recalculate scheduled_at timestamps for pending messages using campaign interval settings
-  const minIntervalMins = Number(campaign.min_interval_seconds) || 10;
-  const maxIntervalMins = Number(campaign.max_interval_seconds) >= minIntervalMins ? Number(campaign.max_interval_seconds) : minIntervalMins + 5;
+  const targetRecipients = recipient_phones !== undefined || contacts !== undefined
+    ? (recipient_phones || contacts || [])
+    : campaign.recipient_phones;
 
-  const pendingMsgs = await Message.find({ campaign: campaign._id, status: MessageStatus.PENDING }).sort({ createdAt: 1 });
-  if (pendingMsgs.length > 0) {
-    let cumulativeMs = Date.now();
-    for (let idx = 0; idx < pendingMsgs.length; idx++) {
-      const msg = pendingMsgs[idx];
-      if (idx > 0) {
-        const randomMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
-        cumulativeMs += randomMinutes * 60 * 1000;
-      }
-      msg.scheduled_at = new Date(cumulativeMs);
-      await msg.save();
-    }
+  await syncCampaignRecipients(campaign, targetRecipients, {
+    templates: campaign.templates,
+    sessionMode: campaign.session_mode,
+    selectedSessions: campaign.selected_sessions,
+    minIntervalSeconds: campaign.min_interval_seconds,
+    maxIntervalSeconds: campaign.max_interval_seconds,
+  });
+
+  if (campaign.status === CampaignStatus.RUNNING) {
+    triggerCampaignExecution(campaign._id.toString());
   }
 
   return res.json(await formatCampaign(campaign));
@@ -420,6 +361,18 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
   const campaign = await BlastCampaign.findOne(filter);
   if (!campaign) {
     return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  await stopCampaignExecution(campaign._id.toString(), 2000);
+
+  if (Array.isArray(campaign.recipient_phones) && campaign.recipient_phones.length > 0) {
+    await syncCampaignRecipients(campaign, campaign.recipient_phones, {
+      templates: campaign.templates,
+      sessionMode: campaign.session_mode,
+      selectedSessions: campaign.selected_sessions,
+      minIntervalSeconds: campaign.min_interval_seconds,
+      maxIntervalSeconds: campaign.max_interval_seconds,
+    });
   }
 
   campaign.status = CampaignStatus.RUNNING;
@@ -461,6 +414,8 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
     }
   }
 
+  triggerCampaignExecution(campaign._id.toString());
+
   return res.json({ success: true, campaign: await formatCampaign(campaign) });
 };
 
@@ -481,8 +436,9 @@ const pauseCampaign = async (req: AuthRequest, res: Response) => {
 
   campaign.status = CampaignStatus.PAUSED;
   await campaign.save();
+  await stopCampaignExecution(campaign._id.toString(), 2000);
 
-  return res.json({ success: true, campaign: formatCampaign(campaign) });
+  return res.json({ success: true, campaign: await formatCampaign(campaign) });
 };
 
 router.post('/blast-campaigns/:id/pause', pauseCampaign);
@@ -493,7 +449,12 @@ const deleteCampaign = async (req: AuthRequest, res: Response) => {
     filter.user = req.user?._id;
   }
 
-  await BlastCampaign.deleteOne(filter);
+  const campaign = await BlastCampaign.findOne(filter);
+  if (campaign) {
+    await stopCampaignExecution(campaign._id.toString(), 2000);
+    await Message.deleteMany({ campaign: campaign._id });
+    await BlastCampaign.deleteOne({ _id: campaign._id });
+  }
   return res.json({ success: true });
 };
 
@@ -548,5 +509,42 @@ export const retryCampaignRecipient = async (req: AuthRequest, res: Response) =>
 };
 
 router.post('/blast-campaigns/:id/retry-recipient', retryCampaignRecipient);
+
+export const rescheduleCampaign = async (req: AuthRequest, res: Response) => {
+  const filter: any = { _id: req.params.id };
+  if (req.user?.role !== 'admin') {
+    filter.user = req.user?._id;
+  }
+
+  const campaign = await BlastCampaign.findOne(filter);
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+
+  if (Array.isArray(campaign.recipient_phones) && campaign.recipient_phones.length > 0) {
+    await checkAndAutoHealCampaignRecipients(campaign);
+  }
+
+  const { sessionIds, minInterval, maxInterval } = req.body || {};
+  const result = await executeCampaignReschedule(campaign, {
+    sessionIds,
+    minInterval,
+    maxInterval,
+  });
+
+  if (!result.success) {
+    return res.status(400).json({ error: result.message });
+  }
+
+  return res.json({
+    success: true,
+    message: result.message,
+    count: result.count,
+    assignedSessionsCount: result.assignedSessionsCount,
+    campaign: await formatCampaign(result.campaign || campaign),
+  });
+};
+
+router.post('/blast-campaigns/:id/reschedule', rescheduleCampaign);
 
 export default router;

@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import {
+  CalendarClock,
   CheckCircle2,
   Clock,
   Loader2,
@@ -28,6 +29,7 @@ interface CampaignViewsProps {
   onProgress: (id: string | number) => void
   onPreview: (campaign: any) => void
   onCustomerList: (campaign: any) => void
+  onReschedule?: (campaign: any) => void
   isPausing: boolean
   isResuming: boolean
   isRetrying: boolean
@@ -45,6 +47,7 @@ export function MerchantCampaignViews({
   onProgress,
   onPreview,
   onCustomerList,
+  onReschedule,
   isPausing,
   isResuming,
   isRetrying,
@@ -263,6 +266,19 @@ export function MerchantCampaignViews({
                               Progress
                             </Button>
                           )}
+                          {(cStatus === 'running' || cStatus === 'paused' || cStatus === 'scheduled') && onReschedule && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2.5 text-xs border-indigo-200 text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100 dark:border-indigo-900/50 dark:text-indigo-400 dark:bg-indigo-950/40 font-medium"
+                              onClick={() => onReschedule(c)}
+                              title="Redistribute remaining pending messages across connected sending phones"
+                            >
+                              <CalendarClock className="mr-1 h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                              Reschedule
+                            </Button>
+                          )}
                           {Boolean(c.stats?.failed) && (
                             <Button
                               type="button"
@@ -473,6 +489,18 @@ export function MerchantCampaignViews({
                     onClick={() => onProgress(c.id)}
                   >
                     <Activity className="mr-1 h-3.5 w-3.5" /> Progress
+                  </Button>
+                )}
+                {(cStatus === 'running' || cStatus === 'paused' || cStatus === 'scheduled') && onReschedule && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs border-indigo-200 text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100 dark:border-indigo-900/50 dark:text-indigo-400 dark:bg-indigo-950/40 font-medium"
+                    onClick={() => onReschedule(c)}
+                    title="Redistribute remaining pending messages across connected sending phones"
+                  >
+                    <CalendarClock className="mr-1 h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" /> Reschedule
                   </Button>
                 )}
                 {Boolean(failed) && (

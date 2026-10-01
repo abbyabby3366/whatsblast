@@ -5,7 +5,8 @@ import { User } from '../models/User.js';
 import { runSessionQueueForCampaign, syncCampaignStatusAndStats } from './sessionBlastWorker.js';
 
 // Re-export shared utilities from blastUtils so existing importers don't break
-export { sendBaileysTemplateMessage, getFileUrl, isSessionQualified, resolveCampaignInterval } from './blastUtils.js';
+export { sendBaileysTemplateMessage, getFileUrl, isSessionQualified, resolveCampaignInterval, isSessionAllowed } from './blastUtils.js';
+import { isSessionAllowed } from './blastUtils.js';
 
 let runnerInterval: NodeJS.Timeout | null = null;
 let isProcessing = false;
@@ -44,8 +45,37 @@ export function stopBlastRunner(): void {
 }
 
 const activeCampaigns = new Set<string>();
+const campaignAbortControllers = new Map<string, AbortController>();
+
+export function getActiveCampaigns(): Set<string> {
+  return activeCampaigns;
+}
+
+export async function stopCampaignExecution(campaignId: string, timeoutMs = 3000): Promise<void> {
+  const controller = campaignAbortControllers.get(campaignId);
+  if (controller) {
+    controller.abort();
+  }
+  const start = Date.now();
+  while (activeCampaigns.has(campaignId) && Date.now() - start < timeoutMs) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  activeCampaigns.delete(campaignId);
+  campaignAbortControllers.delete(campaignId);
+}
+
+export function triggerCampaignExecution(campaignId: string): void {
+  if (activeCampaigns.has(campaignId)) return;
+  activeCampaigns.add(campaignId);
+  runSingleCampaign(campaignId).catch((err) =>
+    console.error(`Unhandled error in triggered runSingleCampaign (${campaignId}):`, err)
+  );
+}
 
 async function runSingleCampaign(campaignId: string): Promise<void> {
+  const abortController = new AbortController();
+  campaignAbortControllers.set(campaignId, abortController);
+
   try {
     const campaign = await BlastCampaign.findById(campaignId);
     if (!campaign || campaign.status !== CampaignStatus.RUNNING) {
@@ -66,22 +96,44 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       return;
     }
 
-    // Assign any unassigned pending messages to available connected sessions
-    const unassignedMessages = pendingMessages.filter((m) => !m.session);
-    if (unassignedMessages.length > 0) {
-      const allowedSessionIds: string[] | undefined = campaign.session_mode === 'SPECIFIC' ? campaign.selected_sessions : undefined;
-      let candidateSessions = await WhatsAppSession.find({ user: campaign.user, status: SessionStatus.CONNECTED }).sort({ createdAt: 1 });
-      if (allowedSessionIds && allowedSessionIds.length > 0) {
-        candidateSessions = candidateSessions.filter((s) => allowedSessionIds.includes(s.session_id) || allowedSessionIds.includes(s._id.toString()));
+    // Resolve candidate sessions based on campaign mode
+    let candidateSessions = await WhatsAppSession.find({
+      user: campaign.user,
+      status: SessionStatus.CONNECTED,
+    }).sort({ createdAt: 1 });
+
+    if (campaign.session_mode === 'SPECIFIC' && campaign.selected_sessions && campaign.selected_sessions.length > 0) {
+      candidateSessions = candidateSessions.filter((s) =>
+        isSessionAllowed(s, campaign.selected_sessions)
+      );
+      if (candidateSessions.length === 0) {
+        const fallback = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
+        candidateSessions = fallback.filter((s) =>
+          isSessionAllowed(s, campaign.selected_sessions)
+        );
       }
-      if (candidateSessions.length > 0) {
-        for (let i = 0; i < unassignedMessages.length; i++) {
-          const sDoc = candidateSessions[i % candidateSessions.length];
-          unassignedMessages[i].session = sDoc._id;
-          unassignedMessages[i].sender_phone = sDoc.phone_number;
-          await unassignedMessages[i].save();
-        }
+    }
+
+    // Reassign unassigned messages or messages assigned to disallowed sessions
+    const messagesToReassign = pendingMessages.filter((m) => {
+      if (!m.session) return true;
+      if (campaign.session_mode === 'SPECIFIC' && candidateSessions.length > 0) {
+        return !candidateSessions.some((s) => s._id.toString() === m.session?.toString());
       }
+      return false;
+    });
+
+    if (messagesToReassign.length > 0 && candidateSessions.length > 0) {
+      for (let i = 0; i < messagesToReassign.length; i++) {
+        const sDoc = candidateSessions[i % candidateSessions.length];
+        messagesToReassign[i].session = sDoc._id;
+        messagesToReassign[i].sender_phone = sDoc.phone_number;
+        await messagesToReassign[i].save();
+      }
+    }
+
+    if (abortController.signal.aborted) {
+      return;
     }
 
     // Collect all distinct session IDs assigned to pending messages
@@ -90,7 +142,12 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
     });
 
-    const validSessionIds = distinctSessionIds.filter(Boolean).map((s: any) => s.toString());
+    let validSessionIds = distinctSessionIds.filter(Boolean).map((s: any) => s.toString());
+
+    if (campaign.session_mode === 'SPECIFIC' && candidateSessions.length > 0) {
+      const allowedMongoIds = new Set(candidateSessions.map((s) => s._id.toString()));
+      validSessionIds = validSessionIds.filter((sId) => allowedMongoIds.has(sId));
+    }
 
     if (validSessionIds.length === 0) {
       console.warn(`⚠️ No sessions assigned for campaign "${campaign.name}" (${campaignId})`);
@@ -102,7 +159,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
 
     // Run all assigned session workers concurrently
     await Promise.allSettled(
-      validSessionIds.map((sId) => runSessionQueueForCampaign(campaignId, sId, userTimezone))
+      validSessionIds.map((sId) => runSessionQueueForCampaign(campaignId, sId, userTimezone, abortController.signal))
     );
 
     // Synchronize overall campaign completion and stats
@@ -110,6 +167,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
   } catch (err) {
     console.error(`Error in runSingleCampaign (${campaignId}):`, err);
   } finally {
+    campaignAbortControllers.delete(campaignId);
     activeCampaigns.delete(campaignId);
   }
 }

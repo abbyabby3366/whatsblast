@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, getErrorMessage } from '@/lib/api'
 import { WhatsAppPhonePreviewModal } from '@/components/campaigns/WhatsAppPhonePreviewModal'
 import { CustomerListModal } from '@/components/campaigns/CustomerListModal'
+import { CampaignRescheduleModal } from '@/components/campaigns/CampaignRescheduleModal'
 import { Button } from '@/components/ui/button'
 
 import { MerchantCampaignViews } from '@/components/merchant-campaigns-index/components/MerchantCampaignViews'
@@ -24,6 +25,7 @@ function CampaignsPage() {
   const queryClient = useQueryClient()
   const [selectedPreviewCampaign, setSelectedPreviewCampaign] = useState<any>(null)
   const [selectedCustomerListCampaign, setSelectedCustomerListCampaign] = useState<any>(null)
+  const [selectedRescheduleCampaign, setSelectedRescheduleCampaign] = useState<any>(null)
   const [actionId, setActionId] = useState<string | number | undefined>(undefined)
 
   const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
@@ -158,6 +160,7 @@ function CampaignsPage() {
         onProgress={(id) => navigate({ to: '/merchant/campaigns/progress', search: { id } })}
         onPreview={(campaign) => setSelectedPreviewCampaign(campaign)}
         onCustomerList={(campaign) => setSelectedCustomerListCampaign(campaign)}
+        onReschedule={(campaign) => setSelectedRescheduleCampaign(campaign)}
         isPausing={pauseCampaignMutation.isPending}
         isResuming={resumeCampaignMutation.isPending}
         isRetrying={retryFailedMutation.isPending}
@@ -179,6 +182,31 @@ function CampaignsPage() {
         <CustomerListModal
           campaign={selectedCustomerListCampaign}
           onClose={() => setSelectedCustomerListCampaign(null)}
+        />
+      )}
+
+      {/* Reschedule Modal */}
+      {selectedRescheduleCampaign && (
+        <CampaignRescheduleModal
+          isOpen={Boolean(selectedRescheduleCampaign)}
+          onClose={() => setSelectedRescheduleCampaign(null)}
+          campaign={selectedRescheduleCampaign}
+          pendingCount={
+            selectedRescheduleCampaign.stats?.pending !== undefined
+              ? selectedRescheduleCampaign.stats.pending
+              : Math.max(
+                  0,
+                  (selectedRescheduleCampaign.stats?.total ||
+                    selectedRescheduleCampaign.recipient_phones?.length ||
+                    selectedRescheduleCampaign.contacts?.length ||
+                    0) -
+                    ((selectedRescheduleCampaign.stats?.sent || 0) +
+                      (selectedRescheduleCampaign.stats?.failed || 0))
+                )
+          }
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+          }}
         />
       )}
     </div>

@@ -1,9 +1,19 @@
+import mongoose from 'mongoose';
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { MessageTemplate } from '../models/MessageTemplate.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { getActiveSession, initWhatsAppSession, verifyAndFormatJid } from './baileysManager.js';
-import { sendBaileysTemplateMessage, getFileUrl, resolveCampaignInterval, isSessionQualified } from './blastUtils.js';
+import { sendBaileysTemplateMessage, getFileUrl, resolveCampaignInterval, isSessionQualified, isSessionAllowed } from './blastUtils.js';
+
+async function resolveSessionDoc(id: string) {
+  if (!id) return null;
+  if (mongoose.isValidObjectId(id)) {
+    const doc = await WhatsAppSession.findById(id);
+    if (doc) return doc;
+  }
+  return await WhatsAppSession.findOne({ session_id: id });
+}
 
 export async function syncCampaignStatusAndStats(campaignId: string): Promise<void> {
   try {
@@ -30,13 +40,25 @@ export async function syncCampaignStatusAndStats(campaignId: string): Promise<vo
 export async function runSessionQueueForCampaign(
   campaignId: string,
   sessionId: string,
-  userTimezone = 'Asia/Kuala_Lumpur'
+  userTimezone = 'Asia/Kuala_Lumpur',
+  abortSignal?: AbortSignal
 ): Promise<void> {
   try {
     while (true) {
+      if (abortSignal?.aborted) {
+        break;
+      }
+
       const campaign = await BlastCampaign.findById(campaignId);
       if (!campaign || campaign.status !== CampaignStatus.RUNNING) {
         break;
+      }
+
+      if (campaign.session_mode === 'SPECIFIC' && campaign.selected_sessions && campaign.selected_sessions.length > 0) {
+        const currentSessDoc = await resolveSessionDoc(sessionId);
+        if (currentSessDoc && !isSessionAllowed(currentSessDoc, campaign.selected_sessions)) {
+          break;
+        }
       }
 
       // Fetch the next pending or queued message for this specific session in the campaign
@@ -61,13 +83,39 @@ export async function runSessionQueueForCampaign(
           let campaignHalted = false;
 
           while (Date.now() < scheduledTime) {
-            const step = Math.min(2000, scheduledTime - Date.now());
-            await new Promise((resolve) => setTimeout(resolve, step));
+            if (abortSignal?.aborted) {
+              campaignHalted = true;
+              break;
+            }
 
-            const checkCampaign = await BlastCampaign.findById(campaignId).select('status');
+            const step = Math.min(1000, scheduledTime - Date.now());
+            await new Promise((resolve) => {
+              const timer = setTimeout(resolve, step);
+              if (abortSignal) {
+                const onAbort = () => {
+                  clearTimeout(timer);
+                  resolve(null);
+                };
+                abortSignal.addEventListener('abort', onAbort, { once: true });
+              }
+            });
+
+            if (abortSignal?.aborted) {
+              campaignHalted = true;
+              break;
+            }
+
+            const checkCampaign = await BlastCampaign.findById(campaignId).select('status session_mode selected_sessions');
             if (!checkCampaign || checkCampaign.status !== CampaignStatus.RUNNING) {
               campaignHalted = true;
               break;
+            }
+            if (checkCampaign.session_mode === 'SPECIFIC' && checkCampaign.selected_sessions && checkCampaign.selected_sessions.length > 0) {
+              const checkSessDoc = await resolveSessionDoc(sessionId);
+              if (checkSessDoc && !isSessionAllowed(checkSessDoc, checkCampaign.selected_sessions)) {
+                campaignHalted = true;
+                break;
+              }
             }
           }
 
@@ -77,14 +125,24 @@ export async function runSessionQueueForCampaign(
         }
       }
 
+      if (abortSignal?.aborted) {
+        break;
+      }
+
       // Re-verify campaign state before sending
       const liveCampaign = await BlastCampaign.findById(campaignId);
       if (!liveCampaign || liveCampaign.status !== CampaignStatus.RUNNING) {
         break;
       }
+      if (liveCampaign.session_mode === 'SPECIFIC' && liveCampaign.selected_sessions && liveCampaign.selected_sessions.length > 0) {
+        const liveSessDoc = await resolveSessionDoc(sessionId);
+        if (liveSessDoc && !isSessionAllowed(liveSessDoc, liveCampaign.selected_sessions)) {
+          break;
+        }
+      }
 
       // Check session status and active window qualification
-      const sessionDoc = await WhatsAppSession.findById(sessionId);
+      const sessionDoc = await resolveSessionDoc(sessionId);
       const qualCheck = isSessionQualified(sessionDoc, userTimezone);
 
       if (!sessionDoc || !qualCheck.qualified) {

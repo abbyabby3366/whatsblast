@@ -31,7 +31,7 @@ export function getAppVersion(): string {
     }
   }
 
-  return 'v1.12';
+  return 'v1.13';
 }
 
 /**

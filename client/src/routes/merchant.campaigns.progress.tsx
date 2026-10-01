@@ -5,11 +5,12 @@ import { api, getErrorMessage } from '@/lib/api'
 import { safeText } from '@/lib/utils'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
-import { Activity, AlertCircle, ArrowLeft, Clock, ExternalLink, Loader2, Pause, Play, RefreshCw } from 'lucide-react'
+import { Activity, AlertCircle, ArrowLeft, CalendarClock, Clock, ExternalLink, Loader2, Pause, Play, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CampaignRetryAllDropdown } from '@/components/campaigns/CampaignRetryDropdown'
 import { CampaignProgressStatCards, type CampaignStatusFilter } from '@/components/campaigns/CampaignProgressStatCards'
 import { CampaignProgressTable } from '@/components/campaigns/CampaignProgressTable'
+import { CampaignRescheduleModal } from '@/components/campaigns/CampaignRescheduleModal'
 
 export const Route = createFileRoute('/merchant/campaigns/progress')({
   component: CampaignProgressPage,
@@ -40,6 +41,7 @@ function CampaignProgressPage() {
   const campaignStatus = (campaign?.status || '').toLowerCase()
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [activeFilter, setActiveFilter] = useState<CampaignStatusFilter>('all')
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false)
 
   // Fetch campaign execution logs
   const {
@@ -354,6 +356,18 @@ function CampaignProgressPage() {
             type="button"
             variant="outline"
             size="sm"
+            onClick={() => setIsRescheduleOpen(true)}
+            className="h-8 text-xs border-indigo-200 text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100 dark:border-indigo-900/50 dark:text-indigo-400 dark:bg-indigo-950/40 font-medium"
+            title="Redistribute remaining pending messages across connected sending phones"
+          >
+            <CalendarClock className="mr-1.5 h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+            Reschedule
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => { refetchCampaign(); refetchLogs(); }}
             className="h-8 text-xs text-slate-600 hover:text-slate-900"
           >
@@ -543,6 +557,20 @@ function CampaignProgressPage() {
           setActiveFilter={setActiveFilter}
         />
       </div>
+
+      {/* Campaign Reschedule Modal */}
+      {isRescheduleOpen && (
+        <CampaignRescheduleModal
+          isOpen={isRescheduleOpen}
+          onClose={() => setIsRescheduleOpen(false)}
+          campaign={campaign}
+          pendingCount={reportRows.filter((r) => ['pending', 'queued'].includes((r.status || '').toLowerCase())).length || Math.max(0, total - processed)}
+          onSuccess={() => {
+            refetchCampaign()
+            refetchLogs()
+          }}
+        />
+      )}
     </div>
   )
 }
