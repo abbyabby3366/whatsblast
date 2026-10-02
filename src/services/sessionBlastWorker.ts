@@ -37,12 +37,21 @@ export async function syncCampaignStatusAndStats(campaignId: string): Promise<vo
   }
 }
 
+const activeSessionWorkerLocks = new Set<string>();
+
 export async function runSessionQueueForCampaign(
   campaignId: string,
   sessionId: string,
   userTimezone = 'Asia/Kuala_Lumpur',
   abortSignal?: AbortSignal
 ): Promise<void> {
+  const sessionLockKey = sessionId.toString();
+  if (activeSessionWorkerLocks.has(sessionLockKey)) {
+    console.log(`⏳ Worker for session ${sessionId} is already active. Skipping duplicate queue runner.`);
+    return;
+  }
+  activeSessionWorkerLocks.add(sessionLockKey);
+
   try {
     while (true) {
       if (abortSignal?.aborted) {
@@ -71,6 +80,40 @@ export async function runSessionQueueForCampaign(
       if (!nextMsg) {
         // No more pending messages for this session
         break;
+      }
+
+      // Enforce strict minimum interval between outbound sends for this session across all campaigns
+      const intervalSessionDoc = await resolveSessionDoc(sessionId);
+      if (intervalSessionDoc) {
+        const { minMins, maxMins } = resolveCampaignInterval(campaign, intervalSessionDoc);
+        const minIntervalMs = Math.max(1, minMins) * 60 * 1000;
+
+        const sessionFilter = [
+          { session: intervalSessionDoc._id },
+          ...(intervalSessionDoc.phone_number ? [{ sender_phone: intervalSessionDoc.phone_number }] : []),
+        ];
+
+        const lastSentMsg = await Message.findOne({
+          $or: sessionFilter,
+          _id: { $ne: nextMsg._id },
+          status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
+        }).sort({ sent_at: -1, createdAt: -1 });
+
+        const lastSentTime = lastSentMsg?.sent_at || lastSentMsg?.createdAt;
+        if (lastSentTime) {
+          const lastSentMs = new Date(lastSentTime).getTime();
+          const elapsedMs = Date.now() - lastSentMs;
+          if (elapsedMs < minIntervalMs) {
+            const randIntervalMs = Math.floor((Math.random() * (maxMins - minMins) + minMins) * 60 * 1000);
+            const earliestAllowedMs = lastSentMs + randIntervalMs;
+            const currentSchedMs = nextMsg.scheduled_at ? new Date(nextMsg.scheduled_at).getTime() : 0;
+            if (currentSchedMs < earliestAllowedMs) {
+              nextMsg.scheduled_at = new Date(earliestAllowedMs);
+              await nextMsg.save();
+              console.log(`⏱️ Enforcing interval for session ${intervalSessionDoc.phone_number || sessionId}: shifted next message to ${new Date(earliestAllowedMs).toISOString()}`);
+            }
+          }
+        }
       }
 
       // Respect scheduled_at if set in the future
@@ -340,5 +383,7 @@ export async function runSessionQueueForCampaign(
     }
   } catch (queueErr) {
     console.error(`Error processing queue for session ${sessionId} in campaign ${campaignId}:`, queueErr);
+  } finally {
+    activeSessionWorkerLocks.delete(sessionLockKey);
   }
 }

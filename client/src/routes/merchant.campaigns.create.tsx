@@ -487,9 +487,6 @@ function CreateCampaignPage() {
         const created = await api.post('blast-campaigns/full-create/', { json: { ...payload, status: 'RUNNING' } }).json<any>()
         campaignId = created.id
       }
-      if (campaignId) {
-        await api.post(`blast-campaigns/${campaignId}/run/`).json().catch(() => null)
-      }
       return campaignId
     },
     onSuccess: () => {

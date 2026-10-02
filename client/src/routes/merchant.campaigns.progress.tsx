@@ -564,7 +564,11 @@ function CampaignProgressPage() {
           isOpen={isRescheduleOpen}
           onClose={() => setIsRescheduleOpen(false)}
           campaign={campaign}
-          pendingCount={reportRows.filter((r) => ['pending', 'queued'].includes((r.status || '').toLowerCase())).length || Math.max(0, total - processed)}
+          pendingCount={
+            reportRows.filter((r) =>
+              ['pending', 'queued', 'paused', 'expired'].includes((r.status || '').toLowerCase())
+            ).length || Math.max(0, total - sent - failed)
+          }
           onSuccess={() => {
             refetchCampaign()
             refetchLogs()

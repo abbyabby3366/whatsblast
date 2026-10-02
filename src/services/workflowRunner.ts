@@ -252,7 +252,12 @@ export async function handleIncomingMessageWorkflow(
   textContent: string,
   senderPhone: string,
   pushName: string,
-  fromJid?: string
+  fromJid?: string,
+  metadata?: {
+    selectedId?: string;
+    selectedDisplayText?: string;
+    messageType?: string;
+  }
 ) {
   try {
     const waSession = await WhatsAppSession.findOne({ session_id: sessionId });
@@ -280,7 +285,8 @@ export async function handleIncomingMessageWorkflow(
         triggerCfg.reply_session_mode === 'SPECIFIC' &&
         triggerCfg.reply_selected_sessions &&
         triggerCfg.reply_selected_sessions.length > 0 &&
-        !triggerCfg.reply_selected_sessions.includes(sessionId)
+        !triggerCfg.reply_selected_sessions.includes(sessionId) &&
+        !triggerCfg.reply_selected_sessions.includes(String(waSession._id))
       ) {
         continue;
       }
@@ -298,29 +304,47 @@ export async function handleIncomingMessageWorkflow(
       } else if (keywords.length === 0) {
         isMatched = true;
       } else {
-        const testText = isCaseSensitive ? normalizedMsg : normalizedMsg.toLowerCase();
+        const candidates = Array.from(new Set([
+          normalizedMsg,
+          (metadata?.selectedDisplayText || '').trim(),
+          (metadata?.selectedId || '').trim(),
+        ])).filter(Boolean);
 
-        for (const kw of keywords) {
-          const testKw = isCaseSensitive ? kw : kw.toLowerCase();
-          if (matchType === 'contains' && testText.includes(testKw)) {
-            isMatched = true;
-            matchedKeyword = kw;
-            break;
+        for (const candidate of candidates) {
+          const testText = isCaseSensitive ? candidate : candidate.toLowerCase();
+
+          for (const kw of keywords) {
+            const testKw = isCaseSensitive ? kw : kw.toLowerCase();
+            if (matchType === 'contains' && testText.includes(testKw)) {
+              isMatched = true;
+              matchedKeyword = kw;
+              break;
+            }
+            if (matchType === 'exact' && testText === testKw) {
+              isMatched = true;
+              matchedKeyword = kw;
+              break;
+            }
+            if (matchType === 'starts_with' && testText.startsWith(testKw)) {
+              isMatched = true;
+              matchedKeyword = kw;
+              break;
+            }
           }
-          if (matchType === 'exact' && testText === testKw) {
-            isMatched = true;
-            matchedKeyword = kw;
-            break;
-          }
-          if (matchType === 'starts_with' && testText.startsWith(testKw)) {
-            isMatched = true;
-            matchedKeyword = kw;
-            break;
-          }
+          if (isMatched) break;
         }
       }
 
       if (!isMatched) continue;
+
+      const triggerDetails = {
+        incoming_text: textContent,
+        matched_keyword: matchedKeyword,
+        selected_id: metadata?.selectedId,
+        selected_display_text: metadata?.selectedDisplayText,
+        sender_name: pushName,
+        sender_phone: cleanSender,
+      };
 
       // Filter out rapid auto-replies received within 15 seconds of an outbound message
       if (triggerCfg.filter_rapid_autoreplies) {
@@ -342,12 +366,7 @@ export async function handleIncomingMessageWorkflow(
             session_id: sessionId,
             status: 'SKIPPED',
             error_message: 'Ignored: Received within 15 seconds of outbound blast/message (auto-responder filter).',
-            trigger_details: {
-              incoming_text: textContent,
-              matched_keyword: matchedKeyword,
-              sender_name: pushName,
-              sender_phone: cleanSender,
-            },
+            trigger_details: triggerDetails,
           });
           continue;
         }
@@ -378,12 +397,7 @@ export async function handleIncomingMessageWorkflow(
           recipient_phone: cleanSender,
           status: 'FAILED',
           error_message: `WhatsApp session ${targetSessionId} is not connected.`,
-          trigger_details: {
-            incoming_text: textContent,
-            matched_keyword: matchedKeyword,
-            sender_name: pushName,
-            sender_phone: cleanSender,
-          },
+          trigger_details: triggerDetails,
         });
         continue;
       }
@@ -441,12 +455,7 @@ export async function handleIncomingMessageWorkflow(
             session_id: targetSessionId,
             status: 'SUCCESS',
             message_id: msgId,
-            trigger_details: {
-              incoming_text: textContent,
-              matched_keyword: matchedKeyword,
-              sender_name: pushName,
-              sender_phone: cleanSender,
-            },
+            trigger_details: triggerDetails,
           });
           sentCount++;
         } catch (err: any) {
@@ -460,12 +469,7 @@ export async function handleIncomingMessageWorkflow(
             session_id: targetSessionId,
             status: 'FAILED',
             error_message: err.message || String(err),
-            trigger_details: {
-              incoming_text: textContent,
-              matched_keyword: matchedKeyword,
-              sender_name: pushName,
-              sender_phone: cleanSender,
-            },
+            trigger_details: triggerDetails,
           });
         }
       }
@@ -514,12 +518,7 @@ export async function handleIncomingMessageWorkflow(
               session_id: targetSessionId,
               status: 'SUCCESS',
               message_id: msgId,
-              trigger_details: {
-                incoming_text: textContent,
-                matched_keyword: matchedKeyword,
-                sender_name: pushName,
-                sender_phone: cleanSender,
-              },
+              trigger_details: triggerDetails,
             });
             sentCount++;
           } catch (err: any) {
@@ -533,12 +532,7 @@ export async function handleIncomingMessageWorkflow(
               session_id: targetSessionId,
               status: 'FAILED',
               error_message: err.message || String(err),
-              trigger_details: {
-                incoming_text: textContent,
-                matched_keyword: matchedKeyword,
-                sender_name: pushName,
-                sender_phone: cleanSender,
-              },
+              trigger_details: triggerDetails,
             });
           }
         }

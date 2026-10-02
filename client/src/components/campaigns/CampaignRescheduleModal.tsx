@@ -67,18 +67,23 @@ export function CampaignRescheduleModal({
   const [minInterval, setMinInterval] = useState<number>(defaultMin)
   const [maxInterval, setMaxInterval] = useState<number>(defaultMax)
 
-  // Whenever modal opens or connected sessions load, default to ALL connected sessions
+  const [hasInitialized, setHasInitialized] = useState(false)
+
+  // Whenever modal opens, initialize selections and intervals
   useEffect(() => {
     if (isOpen) {
-      if (connectedSessions.length > 0) {
+      if (!hasInitialized && connectedSessions.length > 0) {
         setSelectedSessionIds(
           connectedSessions.map((s) => s.id || s._id || s.session_id)
         )
+        setHasInitialized(true)
       }
       setMinInterval(Number(campaign?.min_interval_seconds) || 10)
       setMaxInterval(Number(campaign?.max_interval_seconds) || 15)
+    } else {
+      setHasInitialized(false)
     }
-  }, [isOpen, connectedSessions, campaign])
+  }, [isOpen, connectedSessions.length, campaign?.min_interval_seconds, campaign?.max_interval_seconds, hasInitialized])
 
   const toggleSession = (id: string) => {
     setSelectedSessionIds((prev) =>
@@ -98,7 +103,15 @@ export function CampaignRescheduleModal({
 
   // Calculate estimated completion
   const selectedCount = selectedSessionIds.length
-  const effectivePending = Math.max(0, pendingCount)
+  const fallbackPending =
+    campaign?.stats?.pending !== undefined && campaign?.stats?.pending > 0
+      ? campaign.stats.pending
+      : Math.max(
+          0,
+          (campaign?.stats?.total || campaign?.recipient_phones?.length || campaign?.contacts?.length || 0) -
+            ((campaign?.stats?.sent || 0) + (campaign?.stats?.failed || 0))
+        )
+  const effectivePending = pendingCount > 0 ? pendingCount : fallbackPending
   const messagesPerPhone =
     selectedCount > 0 ? Math.ceil(effectivePending / selectedCount) : 0
   const avgIntervalMins = Math.max(0.1, (minInterval + maxInterval) / 2)
@@ -386,7 +399,7 @@ export function CampaignRescheduleModal({
             ) : (
               <>
                 <CalendarClock className="h-3.5 w-3.5" />
-                Reschedule {effectivePending} Messages
+                Reschedule {effectivePending > 0 ? `${effectivePending} Messages` : 'Campaign'}
               </>
             )}
           </Button>

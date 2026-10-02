@@ -41,10 +41,10 @@ export async function executeCampaignReschedule(
     };
   }
 
-  // 1. Find all remaining pending or queued messages for this campaign
+  // 1. Find all remaining pending, queued, or expired messages for this campaign
   const pendingMessages = await Message.find({
     campaign: campaign._id,
-    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.EXPIRED, 'expired', 'EXPIRED'] },
   }).sort({ scheduled_at: 1, createdAt: 1 });
 
   if (pendingMessages.length === 0) {
@@ -65,12 +65,12 @@ export async function executeCampaignReschedule(
 
   let targetSessions: any[] = [];
   if (Array.isArray(options.sessionIds) && options.sessionIds.length > 0) {
-    targetSessions = userSessions.filter((s) =>
+    targetSessions = connectedSessions.filter((s) =>
       isSessionAllowed(s, options.sessionIds!)
     );
   }
 
-  // If no specific valid sessions matched or none provided, use all connected sessions
+  // If no specific valid connected sessions matched or none provided, use all connected sessions
   if (targetSessions.length === 0) {
     targetSessions = connectedSessions;
   }
@@ -157,19 +157,14 @@ export async function executeCampaignReschedule(
   }
 
   campaign.error_message = undefined;
-
-  if (campaign.status === CampaignStatus.COMPLETED) {
-    campaign.status = CampaignStatus.RUNNING;
-    campaign.completed_at = undefined;
-  }
+  campaign.status = CampaignStatus.RUNNING;
+  campaign.completed_at = undefined;
+  campaign.started_at = campaign.started_at || new Date();
 
   await campaign.save();
 
-  // 8. If campaign is RUNNING, trigger immediate parallel execution across all assigned sessions
-  const isRunning = campaign.status === CampaignStatus.RUNNING;
-  if (isRunning) {
-    triggerCampaignExecution(campaign._id.toString());
-  }
+  // 8. Trigger immediate parallel execution across all assigned sessions
+  triggerCampaignExecution(campaign._id.toString());
 
   const phoneNumbers = targetSessions
     .map((s) => s.phone_number || s.session_id)
@@ -180,11 +175,7 @@ export async function executeCampaignReschedule(
     success: true,
     count: pendingMessages.length,
     assignedSessionsCount: targetSessions.length,
-    message: `Rescheduled ${pendingMessages.length} remaining message(s) across ${targetSessions.length} sending phone(s) (${phoneNumbers}).${
-      isRunning
-        ? ' Blasting will send in parallel according to the configured interval.'
-        : ' Messages will blast when the campaign is resumed.'
-    }`,
+    message: `Rescheduled ${pendingMessages.length} remaining message(s) across ${targetSessions.length} sending phone(s) (${phoneNumbers}). Blasting will proceed in parallel according to the configured interval.`,
     campaign,
   };
 }

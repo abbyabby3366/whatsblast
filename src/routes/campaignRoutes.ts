@@ -399,6 +399,27 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
         : minIntervalMins + 5;
     const sessionLastTimeMap = new Map<string, number>();
 
+    const distinctSessions = Array.from(
+      new Set(
+        pendingMsgs
+          .map((m) => m.session?.toString())
+          .filter((s): s is string => Boolean(s))
+      )
+    );
+    for (const sId of distinctSessions) {
+      const lastSent = await Message.findOne({
+        session: sId,
+        status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
+      }).sort({ sent_at: -1, createdAt: -1 });
+
+      if (lastSent && (lastSent.sent_at || lastSent.createdAt)) {
+        const lastSentMs = new Date(lastSent.sent_at || lastSent.createdAt).getTime();
+        if (now - lastSentMs < minIntervalMins * 60 * 1000) {
+          sessionLastTimeMap.set(sId, lastSentMs);
+        }
+      }
+    }
+
     for (const msg of pendingMsgs) {
       const sessKey = msg.session ? msg.session.toString() : 'default';
       let scheduledTimeMs = now;
@@ -407,6 +428,9 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
         const randomMinutes =
           Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
         scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
+        if (scheduledTimeMs < now) {
+          scheduledTimeMs = now;
+        }
       }
       sessionLastTimeMap.set(sessKey, scheduledTimeMs);
       msg.scheduled_at = new Date(scheduledTimeMs);
