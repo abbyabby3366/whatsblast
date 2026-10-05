@@ -37,6 +37,37 @@ export async function syncCampaignStatusAndStats(campaignId: string): Promise<vo
   }
 }
 
+async function cascadeSessionIntervalForward(
+  campaignId: string,
+  sessionId: string,
+  referenceTimeMs: number,
+  minMins: number,
+  maxMins: number,
+  excludeMsgId?: any
+): Promise<void> {
+  const minIntervalMs = Math.max(1, minMins) * 60 * 1000;
+  const subsequentPending = await Message.find({
+    campaign: campaignId,
+    session: sessionId,
+    ...(excludeMsgId ? { _id: { $ne: excludeMsgId } } : {}),
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+  }).sort({ scheduled_at: 1, createdAt: 1 });
+
+  let prevSchedMs = referenceTimeMs;
+  for (const subMsg of subsequentPending) {
+    const subCurrentMs = subMsg.scheduled_at ? new Date(subMsg.scheduled_at).getTime() : 0;
+    if (subCurrentMs - prevSchedMs < minIntervalMs) {
+      const randMs = Math.floor((Math.random() * (maxMins - minMins) + minMins) * 60 * 1000);
+      const newSchedMs = prevSchedMs + randMs;
+      subMsg.scheduled_at = new Date(newSchedMs);
+      await subMsg.save();
+      prevSchedMs = newSchedMs;
+    } else {
+      prevSchedMs = subCurrentMs;
+    }
+  }
+}
+
 const activeSessionWorkerLocks = new Set<string>();
 
 export async function runSessionQueueForCampaign(
@@ -114,6 +145,11 @@ export async function runSessionQueueForCampaign(
             }
           }
         }
+
+        // Auto-heal and cascade: ensure all subsequent pending messages for this session
+        // strictly maintain the configured interval from nextMsg.scheduled_at
+        const refSchedMs = nextMsg.scheduled_at ? new Date(nextMsg.scheduled_at).getTime() : Date.now();
+        await cascadeSessionIntervalForward(campaignId, sessionId, refSchedMs, minMins, maxMins, nextMsg._id);
       }
 
       // Respect scheduled_at if set in the future
@@ -266,6 +302,7 @@ export async function runSessionQueueForCampaign(
           if (subSchedMs < earliestAllowedNextMs) {
             subsequentMsg.scheduled_at = new Date(earliestAllowedNextMs);
             await subsequentMsg.save();
+            await cascadeSessionIntervalForward(campaignId, sessionId, earliestAllowedNextMs, minMins, maxMins, subsequentMsg._id);
           }
         }
         continue;
@@ -378,6 +415,7 @@ export async function runSessionQueueForCampaign(
           subsequentMsg.scheduled_at = new Date(earliestAllowedNextMs);
           await subsequentMsg.save();
           console.log(`⏱️ Session ${sessionDoc.phone_number || sessionId}: Next message scheduled for ${subsequentMsg.recipient_phone} at ${new Date(earliestAllowedNextMs).toISOString()}`);
+          await cascadeSessionIntervalForward(campaignId, sessionId, earliestAllowedNextMs, minMins, maxMins, subsequentMsg._id);
         }
       }
     }

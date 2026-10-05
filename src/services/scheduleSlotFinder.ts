@@ -39,7 +39,12 @@ export async function findNextAvailableSlotsForSession(options: FindSlotsOptions
     sessionFilter.push({ session: sessionDoc._id });
   }
   if (sessionDoc?.phone_number) {
-    sessionFilter.push({ sender_phone: sessionDoc.phone_number });
+    const raw = String(sessionDoc.phone_number).trim();
+    const digits = raw.replace(/[^0-9]/g, '');
+    sessionFilter.push({ sender_phone: raw });
+    if (digits && digits !== raw) {
+      sessionFilter.push({ sender_phone: digits });
+    }
   }
 
   let lastSentTimeMs: number | null = null;
@@ -48,14 +53,13 @@ export async function findNextAvailableSlotsForSession(options: FindSlotsOptions
     const lastSentMsg = await Message.findOne({
       $or: sessionFilter,
       status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
-    }).sort({ sent_at: -1, wa_timestamp: -1, updatedAt: -1 });
+    }).sort({ sent_at: -1, createdAt: -1, updatedAt: -1 });
 
-    const msgSentTime = lastSentMsg?.sent_at || lastSentMsg?.wa_timestamp || lastSentMsg?.updatedAt;
+    const msgSentTime = lastSentMsg?.sent_at || lastSentMsg?.createdAt || lastSentMsg?.wa_timestamp || lastSentMsg?.updatedAt;
 
     const candidateTimestamps = [
       msgSentTime ? new Date(msgSentTime).getTime() : null,
       sessionDoc?.last_physical_phone_sent_message_at ? new Date(sessionDoc.last_physical_phone_sent_message_at).getTime() : null,
-      sessionDoc?.last_phone_activity_at ? new Date(sessionDoc.last_phone_activity_at).getTime() : null,
     ].filter((t): t is number => typeof t === 'number' && !isNaN(t) && t > 0);
 
     if (candidateTimestamps.length > 0) {

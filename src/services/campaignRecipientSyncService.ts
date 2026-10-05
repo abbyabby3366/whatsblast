@@ -230,13 +230,46 @@ export async function syncCampaignRecipients(
 
     const sessKey = msg.session ? msg.session.toString() : 'default';
     let scheduledTimeMs = now;
-    if (sessionLastTimeMap.has(sessKey)) {
+
+    if (!sessionLastTimeMap.has(sessKey)) {
+      let earliestFirstMs = now;
+      if (msg.session) {
+        const sessionFilter: any[] = [{ session: msg.session }];
+        if (msg.sender_phone) {
+          const raw = String(msg.sender_phone).trim();
+          const digits = raw.replace(/[^0-9]/g, '');
+          sessionFilter.push({ sender_phone: raw });
+          if (digits && digits !== raw) {
+            sessionFilter.push({ sender_phone: digits });
+          }
+        }
+
+        const lastSent = await Message.findOne({
+          $or: sessionFilter,
+          status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
+        }).sort({ sent_at: -1, createdAt: -1, updatedAt: -1 });
+
+        const lastSentTime = lastSent?.sent_at || lastSent?.createdAt || lastSent?.wa_timestamp;
+        if (lastSentTime) {
+          const lastSentMs = new Date(lastSentTime).getTime();
+          const elapsedMs = now - lastSentMs;
+          const minMs = minIntervalMins * 60 * 1000;
+          if (elapsedMs < minMs) {
+            const randMinutes = Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
+            earliestFirstMs = Math.max(now + 10_000, lastSentMs + Math.floor(randMinutes * 60 * 1000));
+          }
+        }
+      }
+      scheduledTimeMs = earliestFirstMs;
+      sessionLastTimeMap.set(sessKey, scheduledTimeMs);
+    } else {
       const prevMs = sessionLastTimeMap.get(sessKey)!;
       const randomMinutes =
         Math.random() * (maxIntervalMins - minIntervalMins) + minIntervalMins;
-      scheduledTimeMs = prevMs + randomMinutes * 60 * 1000;
+      scheduledTimeMs = prevMs + Math.floor(randomMinutes * 60 * 1000);
+      sessionLastTimeMap.set(sessKey, scheduledTimeMs);
     }
-    sessionLastTimeMap.set(sessKey, scheduledTimeMs);
+
     msg.scheduled_at = new Date(scheduledTimeMs);
     await msg.save();
   }
