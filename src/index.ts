@@ -28,6 +28,7 @@ import { restoreAllSessions } from './services/baileysManager.js';
 import { startBlastRunner } from './services/blastRunner.js';
 import { startCrossChatRunner } from './services/crossChatRunner.js';
 import { initWorkflowScheduler } from './services/workflowScheduler.js';
+import { initMessageRetention } from './services/messageRetentionService.js';
 import { sendDeployNotification } from './utils/whatsappNotifier.js';
 import { getAppVersion, getLatestCommitMessage } from './utils/version.js';
 
@@ -162,6 +163,7 @@ async function main() {
   startBlastRunner();
   startCrossChatRunner();
   await initWorkflowScheduler();
+  await initMessageRetention();
 
   const serverDistPath = path.resolve(process.cwd(), 'client/dist/server/server.js');
   if (fs.existsSync(serverDistPath)) {

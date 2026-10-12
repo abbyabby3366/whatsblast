@@ -65,5 +65,8 @@ const MessageSchema = new Schema<IMessage>(
 
 MessageSchema.index({ session: 1, wa_timestamp: -1 });
 MessageSchema.index({ campaign: 1, status: 1 });
+// Supports the retention prune (see services/messageRetentionService.ts):
+// without this, "delete where createdAt < cutoff" scans the whole collection.
+MessageSchema.index({ createdAt: -1 });
 
 export const Message = mongoose.model<IMessage>('Message', MessageSchema);
