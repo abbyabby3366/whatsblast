@@ -51,7 +51,10 @@ async function cascadeSessionIntervalForward(
     session: sessionId,
     ...(excludeMsgId ? { _id: { $ne: excludeMsgId } } : {}),
     status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-  }).sort({ scheduled_at: 1, createdAt: 1 });
+  })
+    .select('_id scheduled_at')
+    .sort({ scheduled_at: 1, createdAt: 1 })
+    .lean();
 
   let prevSchedMs = referenceTimeMs;
   for (const subMsg of subsequentPending) {
@@ -59,8 +62,7 @@ async function cascadeSessionIntervalForward(
     if (subCurrentMs - prevSchedMs < minIntervalMs) {
       const randMs = Math.floor((Math.random() * (maxMins - minMins) + minMins) * 60 * 1000);
       const newSchedMs = prevSchedMs + randMs;
-      subMsg.scheduled_at = new Date(newSchedMs);
-      await subMsg.save();
+      await Message.updateOne({ _id: subMsg._id }, { $set: { scheduled_at: new Date(newSchedMs) } });
       prevSchedMs = newSchedMs;
     } else {
       prevSchedMs = subCurrentMs;
@@ -146,9 +148,15 @@ export async function runSessionQueueForCampaign(
           }
         }
 
+        // If nextMsg scheduled_at is in the past, update it to now so it doesn't appear expired
+        if (nextMsg.scheduled_at && new Date(nextMsg.scheduled_at).getTime() < Date.now()) {
+          nextMsg.scheduled_at = new Date();
+          await nextMsg.save();
+        }
+
         // Auto-heal and cascade: ensure all subsequent pending messages for this session
-        // strictly maintain the configured interval from nextMsg.scheduled_at
-        const refSchedMs = nextMsg.scheduled_at ? new Date(nextMsg.scheduled_at).getTime() : Date.now();
+        // strictly maintain the configured interval from nextMsg.scheduled_at or now
+        const refSchedMs = Math.max(Date.now(), nextMsg.scheduled_at ? new Date(nextMsg.scheduled_at).getTime() : Date.now());
         await cascadeSessionIntervalForward(campaignId, sessionId, refSchedMs, minMins, maxMins, nextMsg._id);
       }
 
@@ -167,16 +175,39 @@ export async function runSessionQueueForCampaign(
               break;
             }
 
-            const step = Math.min(1000, scheduledTime - Date.now());
+            const step = Math.min(2000, scheduledTime - Date.now());
             await new Promise((resolve) => {
-              const timer = setTimeout(resolve, step);
-              if (abortSignal) {
-                const onAbort = () => {
+              let timer: NodeJS.Timeout | null = null;
+              let onAbort: (() => void) | null = null;
+
+              const cleanup = () => {
+                if (timer) {
                   clearTimeout(timer);
+                  timer = null;
+                }
+                if (abortSignal && onAbort) {
+                  abortSignal.removeEventListener('abort', onAbort);
+                  onAbort = null;
+                }
+              };
+
+              onAbort = () => {
+                cleanup();
+                resolve(null);
+              };
+
+              if (abortSignal) {
+                if (abortSignal.aborted) {
                   resolve(null);
-                };
+                  return;
+                }
                 abortSignal.addEventListener('abort', onAbort, { once: true });
               }
+
+              timer = setTimeout(() => {
+                cleanup();
+                resolve(null);
+              }, step);
             });
 
             if (abortSignal?.aborted) {
@@ -184,7 +215,7 @@ export async function runSessionQueueForCampaign(
               break;
             }
 
-            const checkCampaign = await BlastCampaign.findById(campaignId).select('status session_mode selected_sessions');
+            const checkCampaign = await BlastCampaign.findById(campaignId).select('status session_mode selected_sessions').lean();
             if (!checkCampaign || checkCampaign.status !== CampaignStatus.RUNNING) {
               campaignHalted = true;
               break;

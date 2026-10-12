@@ -30,11 +30,19 @@ function formatMessage(m: any) {
   const isFailed = rawStatus === 'failed';
   const isPendingOrQueued = rawStatus === 'pending' || rawStatus === 'queued';
   const targetScheduled = obj.scheduled_at || obj.createdAt;
-  const isCampaignPaused = campaignObj && (campaignObj.status === 'PAUSED' || campaignObj.status === 'paused');
-  // Allow 2 minute grace period before marking as expired (so retried messages don't immediately show expired)
-  // If the campaign is paused, pending messages are on hold, NOT expired!
-  const EXPIRED_GRACE_MS = 2 * 60 * 1000;
-  const isExpired = !isCampaignPaused && (rawStatus === 'expired' || (isPendingOrQueued && targetScheduled && new Date(targetScheduled).getTime() + EXPIRED_GRACE_MS < Date.now()));
+  const campStatus = (campaignObj?.status || '').toLowerCase();
+  const isCampaignPaused = campStatus === 'paused';
+  const isCampaignActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus);
+
+  // If a campaign is actively running, scheduled, or paused, pending messages are waiting in queue, NOT expired!
+  // Only mark as expired if explicitly set to expired, or if a completed/stopped campaign left pending messages behind
+  const isExpired =
+    rawStatus === 'expired' ||
+    (!isCampaignActive &&
+      campaignObj &&
+      isPendingOrQueued &&
+      targetScheduled &&
+      new Date(targetScheduled).getTime() < Date.now());
 
   const computedStatus = isCampaignPaused && isPendingOrQueued ? 'paused' : (isExpired ? 'expired' : rawStatus || MessageStatus.PENDING);
   const isSentOrFailed = isSent || isFailed;
@@ -578,11 +586,13 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
 const retryAllFailed = async (req: AuthRequest, res: Response) => {
   try {
     const statusOrCond = [
-      { status: MessageStatus.FAILED },
-      { status: MessageStatus.EXPIRED },
-      { status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] }, scheduled_at: { $lt: new Date() } },
+      { status: { $in: [MessageStatus.FAILED, 'failed', 'FAILED', 'error', 'ERROR'] } },
+      { status: { $in: [MessageStatus.EXPIRED, 'expired', 'EXPIRED'] } },
     ];
-    const filter: any = { $or: statusOrCond };
+    const filter: any = {
+      $or: statusOrCond,
+      status: { $nin: ['sent', 'delivered', 'read', 'SENT', 'DELIVERED', 'READ', MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
+    };
     const { user_id, merchant_id, user } = req.query as any;
 
     if (req.user?.role !== 'admin') {

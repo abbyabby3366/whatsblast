@@ -1,12 +1,7 @@
 import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  Browsers,
-  AuthenticationState,
-  generateMessageIDV2,
-  generateMessageID,
+  DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore, Browsers, AuthenticationState,
+  generateMessageIDV2, generateMessageID,
 } from 'baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
@@ -14,11 +9,10 @@ import path from 'path';
 import fs from 'fs';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
-import { Customer } from '../models/Customer.js';
-import { User } from '../models/User.js';
 import { useRedisAuthState } from './redisAuthState.js';
 import { handleIncomingMessageWorkflow } from './workflowRunner.js';
 import { extractBaileysMessageContent } from './messageExtractor.js';
+import { BoundedSignalCache } from './signalCache.js';
 
 const SESSIONS_DIR = process.env.SESSIONS_DIR || './sessions';
 
@@ -30,6 +24,7 @@ interface ActiveSession {
   socket: ReturnType<typeof makeWASocket>;
   sessionId: string;
   clearCreds?: () => Promise<void>;
+  caches?: any[];
 }
 
 const activeSessions = new Map<string, ActiveSession>();
@@ -51,14 +46,24 @@ async function getBaileysVersion(): Promise<[number, number, number]> {
   }
 }
 
-export function destroySocket(sock: any): void {
+export function destroySocket(sock: any, caches?: any[]): void {
   if (!sock) return;
   try {
-    sock.ev?.removeAllListeners('creds.update');
-    sock.ev?.removeAllListeners('connection.update');
-    sock.ev?.removeAllListeners('messages.upsert');
-    sock.ev?.removeAllListeners('messages.update');
-    sock.ws?.removeAllListeners();
+    if (Array.isArray(caches)) {
+      for (const c of caches) {
+        c?.close?.();
+        c?.flushAll?.();
+      }
+    }
+    sock.ev?.removeAllListeners();
+    sock.ev?.destroy?.();
+    sock.signalRepository?.close?.();
+    if (sock.ws?.socket) {
+      sock.ws.socket.removeAllListeners?.();
+      sock.ws.socket.terminate?.();
+    }
+    sock.ws?.removeAllListeners?.();
+    sock.ws?.close?.().catch?.(() => {});
     if (typeof sock.end === 'function') {
       sock.end(undefined);
     }
@@ -67,6 +72,10 @@ export function destroySocket(sock: any): void {
 
 export function getActiveSession(sessionId: string): ActiveSession | undefined {
   return activeSessions.get(sessionId);
+}
+
+export function getActiveSessionsCount(): number {
+  return activeSessions.size;
 }
 
 export function removeActiveSession(sessionId: string): void {
@@ -80,7 +89,7 @@ export function removeActiveSession(sessionId: string): void {
 
   const active = activeSessions.get(sessionId);
   if (active) {
-    destroySocket(active.socket);
+    destroySocket(active.socket, active.caches);
     activeSessions.delete(sessionId);
   }
 }
@@ -105,7 +114,7 @@ export async function isSystemSentMessageId(msgId?: string): Promise<boolean> {
   try {
     const exists = await Message.exists({ message_id: msgId, direction: MessageDirection.OUTBOUND });
     if (exists) {
-      systemSentMessageIds.add(msgId);
+      markSystemSentMessageId(msgId);
       return true;
     }
   } catch (_) { }
@@ -175,7 +184,7 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
   // Clean up any stale active socket instance for this session before creating new one
   const existingActive = activeSessions.get(sessionId);
   if (existingActive) {
-    destroySocket(existingActive.socket);
+    destroySocket(existingActive.socket, existingActive.caches);
     activeSessions.delete(sessionId);
   }
 
@@ -211,12 +220,23 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
   const logger = pino({ level: 'silent' });
   const version = await getBaileysVersion();
 
+  const signalKeyCache = new BoundedSignalCache(2000, 300);
+  const msgRetryCache = new BoundedSignalCache(1000, 3600);
+  const userDevicesCache = new BoundedSignalCache(1000, 300);
+  const callOfferCache = new BoundedSignalCache(500, 300);
+  const placeholderResendCache = new BoundedSignalCache(1000, 3600);
+  const sessionCaches = [signalKeyCache, msgRetryCache, userDevicesCache, callOfferCache, placeholderResendCache];
+
   const sock = makeWASocket({
     version,
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
+      keys: makeCacheableSignalKeyStore(state.keys, logger, signalKeyCache),
     },
+    msgRetryCounterCache: msgRetryCache,
+    userDevicesCache,
+    callOfferCache,
+    placeholderResendCache,
     browser: Browsers.macOS('Chrome'),
     printQRInTerminal: false,
     logger,
@@ -243,7 +263,7 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
     return res;
   };
 
-  const sessionObj: ActiveSession = { socket: sock, sessionId, clearCreds };
+  const sessionObj: ActiveSession = { socket: sock, sessionId, clearCreds, caches: sessionCaches };
   activeSessions.set(sessionId, sessionObj);
 
   sock.ev.on('creds.update', saveCreds);
@@ -299,7 +319,7 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
       if (currentActive?.socket === sock) {
         activeSessions.delete(sessionId);
       }
-      destroySocket(sock);
+      destroySocket(sock, sessionObj.caches);
 
       // Verify if session still exists in MongoDB and check status
       const dbSession = await WhatsAppSession.findOne({ session_id: sessionId });
@@ -354,6 +374,12 @@ async function _createSession(sessionId: string): Promise<ActiveSession> {
           { session_id: sessionId },
           { $set: { status: SessionStatus.STARTING } }
         );
+
+        const existingTimer = reconnectTimers.get(sessionId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          reconnectTimers.delete(sessionId);
+        }
 
         const timer = setTimeout(() => {
           reconnectTimers.delete(sessionId);

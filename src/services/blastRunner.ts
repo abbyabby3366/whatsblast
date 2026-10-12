@@ -34,6 +34,34 @@ export function startBlastRunner(intervalMs = 3000): void {
       console.error('Error auto-resuming campaigns paused by daily message limit:', err);
     });
 
+  // Automatically heal any sent campaign messages that were erroneously marked pending
+  Message.updateMany(
+    {
+      campaign: { $exists: true, $ne: null },
+      status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+      message_id: { $exists: true, $nin: ['', null] },
+      $nor: [
+        { message_id: /^wf_/ },
+        { message_id: /^reply_/ },
+        { message_id: /^master_/ },
+      ],
+    },
+    {
+      $set: {
+        status: MessageStatus.SENT,
+        sent_at: new Date(),
+      },
+    }
+  )
+    .then((res) => {
+      if (res.modifiedCount > 0) {
+        console.log(`✨ Automatically healed ${res.modifiedCount} sent campaign message(s) that were erroneously marked pending.`);
+      }
+    })
+    .catch((err) => {
+      console.error('Error auto-healing sent campaign messages:', err);
+    });
+
   runnerInterval = setInterval(processCampaigns, intervalMs);
 }
 
@@ -86,7 +114,7 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
     const userTimezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
 
     // Find all pending or queued messages for this campaign
-    const pendingMessages = await Message.find({
+    let pendingMessages: any[] | null = await Message.find({
       campaign: campaignId,
       status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
     });
@@ -114,9 +142,11 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
       }
     }
 
-    // Reassign unassigned messages or messages assigned to disallowed sessions
-    const messagesToReassign = pendingMessages.filter((m) => {
+    // Reassign unassigned messages or messages assigned to disallowed or disconnected sessions
+    const connectedSessionIdSet = new Set(candidateSessions.map((s) => s._id.toString()));
+    const messagesToReassign = pendingMessages.filter((m: any) => {
       if (!m.session) return true;
+      if (candidateSessions.length > 0 && !connectedSessionIdSet.has(m.session.toString())) return true;
       if (campaign.session_mode === 'SPECIFIC' && candidateSessions.length > 0) {
         return !candidateSessions.some((s) => s._id.toString() === m.session?.toString());
       }
@@ -131,6 +161,9 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
         await messagesToReassign[i].save();
       }
     }
+
+    // Explicitly release large document array so it is NOT retained in closure during long Promise.allSettled
+    pendingMessages = null;
 
     if (abortController.signal.aborted) {
       return;

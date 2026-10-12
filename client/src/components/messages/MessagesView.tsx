@@ -298,9 +298,11 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const msg = info.row.original
           const isFailed = st === 'failed'
           const isSent = st === 'delivered' || st === 'sent' || st === 'read'
-          const isCampPaused = msg.campaign && typeof msg.campaign === 'object' && (msg.campaign.status === 'PAUSED' || msg.campaign.status === 'paused')
+          const campStatus = (msg.campaign && typeof msg.campaign === 'object' && msg.campaign.status ? msg.campaign.status : '').toLowerCase()
+          const isCampActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus)
+          const isCampPaused = campStatus === 'paused'
           const isPaused = st === 'paused' || (isCampPaused && (st === 'pending' || st === 'queued'))
-          const isExpired = !isPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+          const isExpired = st === 'expired' || (!isCampActive && (st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
           const isPending = (st === 'pending' || st === 'queued') && !isExpired && !isPaused
 
           const failedReason =
@@ -375,9 +377,11 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const st = (msg.status || '').toLowerCase()
           const isSent = st === 'sent' || st === 'delivered' || st === 'read'
           const isFailed = st === 'failed'
-          const isCampPaused = msg.campaign && typeof msg.campaign === 'object' && (msg.campaign.status === 'PAUSED' || msg.campaign.status === 'paused')
+          const campStatus = (msg.campaign && typeof msg.campaign === 'object' && msg.campaign.status ? msg.campaign.status : '').toLowerCase()
+          const isCampActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus)
+          const isCampPaused = campStatus === 'paused'
           const isPaused = st === 'paused' || (isCampPaused && (st === 'pending' || st === 'queued'))
-          const isExpired = !isPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+          const isExpired = st === 'expired' || (!isCampActive && (st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
           const targetTime = isSent
             ? (msg.sent_at || msg.wa_timestamp || msg.updatedAt)
             : (msg.scheduled_at || msg.created_at)
@@ -467,9 +471,9 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         cell: (info) => {
           const row = info.row.original
           const rowSt = (row.status || '').toLowerCase()
-          const isRowCampPaused = row.campaign && typeof row.campaign === 'object' && (row.campaign.status === 'PAUSED' || row.campaign.status === 'paused')
-          const isRowPaused = rowSt === 'paused' || (isRowCampPaused && (rowSt === 'pending' || rowSt === 'queued'))
-          const isRowExpired = !isRowPaused && (rowSt === 'expired' || ((rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+          const rowCampStatus = (row.campaign && typeof row.campaign === 'object' && row.campaign.status ? row.campaign.status : '').toLowerCase()
+          const isRowCampActive = ['running', 'paused', 'scheduled', 'draft'].includes(rowCampStatus)
+          const isRowExpired = rowSt === 'expired' || (!isRowCampActive && (rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).isBefore(dayjs()))
           const isFailed = rowSt === 'failed'
           const canRetry = isFailed || isRowExpired
           const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables?.msgId === row.id

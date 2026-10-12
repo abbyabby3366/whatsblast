@@ -73,16 +73,17 @@ export const CampaignProgressTable: React.FC<CampaignProgressTableProps> = ({
   // Determine row status classification
   const getRowCategory = (row: any): 'sent' | 'failed' | 'pending' => {
     const st = (row.status || 'pending').toLowerCase()
-    const isCampaignPaused = cStatus === 'paused'
     const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
     if (isSuccess) return 'sent'
     const isFailed = st === 'failed' || st === 'error'
+    const normalizedCampStatus = (cStatus || '').toLowerCase()
+    const isCampaignActive = ['running', 'paused', 'scheduled', 'draft'].includes(normalizedCampStatus)
     const isExpired =
-      !isCampaignPaused &&
-      (st === 'expired' ||
-        ((st === 'pending' || st === 'queued') &&
-          row.scheduled_at &&
-          dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+      st === 'expired' ||
+      (!isCampaignActive &&
+        (st === 'pending' || st === 'queued') &&
+        row.scheduled_at &&
+        dayjs(row.scheduled_at).isBefore(dayjs()))
     if (isFailed || isExpired) return 'failed'
     return 'pending'
   }
@@ -255,15 +256,17 @@ export const CampaignProgressTable: React.FC<CampaignProgressTableProps> = ({
           <TableBody>
             {paginatedRows.map((row, idx) => {
               const st = (row.status || 'pending').toLowerCase()
-              const isCampaignPaused = cStatus === 'paused'
+              const normalizedCampStatus = (cStatus || '').toLowerCase()
+              const isCampaignPaused = normalizedCampStatus === 'paused'
+              const isCampaignActive = ['running', 'paused', 'scheduled', 'draft'].includes(normalizedCampStatus)
               const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
               const isFailed = st === 'failed' || st === 'error'
               const isExpired =
-                !isCampaignPaused &&
-                (st === 'expired' ||
-                  ((st === 'pending' || st === 'queued') &&
-                    row.scheduled_at &&
-                    dayjs(row.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+                st === 'expired' ||
+                (!isCampaignActive &&
+                  (st === 'pending' || st === 'queued') &&
+                  row.scheduled_at &&
+                  dayjs(row.scheduled_at).isBefore(dayjs()))
               const isPaused = isCampaignPaused && (st === 'pending' || st === 'queued' || st === 'paused')
               const canRetry = isFailed || isExpired
 

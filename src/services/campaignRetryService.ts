@@ -4,8 +4,35 @@ import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { resolveCampaignInterval } from './blastUtils.js';
 import { findNextAvailableSlotsForSession } from './scheduleSlotFinder.js';
 
+export const COMPLETED_STATUSES = [
+  MessageStatus.SENT,
+  MessageStatus.DELIVERED,
+  MessageStatus.READ,
+  'sent',
+  'delivered',
+  'read',
+  'SENT',
+  'DELIVERED',
+  'READ',
+];
+
+export const FAILED_STATUSES = [
+  MessageStatus.FAILED,
+  'failed',
+  'FAILED',
+  'error',
+  'ERROR',
+];
+
+export const EXPIRED_STATUSES = [
+  MessageStatus.EXPIRED,
+  'expired',
+  'EXPIRED',
+];
+
 interface RetryItem {
-  contact: string;
+  msg: any;
+  phone: string;
   cleanPhone: string;
   possiblePhones: string[];
   sessionDoc: any;
@@ -13,8 +40,69 @@ interface RetryItem {
 }
 
 /**
+ * Restores any messages that were already sent via WhatsApp (have a valid WhatsApp message_id)
+ * but were mistakenly overwritten to PENDING by previous buggy retry logic.
+ */
+export async function healCorruptedCampaignMessages(campaignId: any): Promise<number> {
+  try {
+    const healed = await Message.updateMany(
+      {
+        campaign: campaignId,
+        status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+        message_id: { $exists: true, $nin: ['', null] },
+        $nor: [
+          { message_id: /^wf_/ },
+          { message_id: /^reply_/ },
+          { message_id: /^master_/ },
+        ],
+      },
+      {
+        $set: {
+          status: MessageStatus.SENT,
+          sent_at: new Date(),
+        },
+      }
+    );
+    return healed.modifiedCount || 0;
+  } catch (err) {
+    console.error(`Error healing corrupted messages for campaign ${campaignId}:`, err);
+    return 0;
+  }
+}
+
+/**
+ * Recomputes and persists accurate campaign stats directly from the Message collection.
+ */
+export async function recomputeCampaignStats(campaign: any): Promise<any> {
+  const sentCount = await Message.countDocuments({
+    campaign: campaign._id,
+    status: { $in: COMPLETED_STATUSES },
+  });
+  const failedCount = await Message.countDocuments({
+    campaign: campaign._id,
+    status: { $in: FAILED_STATUSES },
+  });
+  const pendingCount = await Message.countDocuments({
+    campaign: campaign._id,
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+  });
+
+  const total = sentCount + failedCount + pendingCount;
+  campaign.stats = {
+    ...(campaign.stats || {}),
+    total,
+    sent: sentCount,
+    failed: failedCount,
+    pending: pendingCount,
+  };
+  campaign.current_index = sentCount;
+  await campaign.save();
+  return campaign;
+}
+
+/**
  * Retries all failed and expired messages for a campaign.
- * Keeps original sending phones intact and calculates intervals per individual sending phone.
+ * STRICT SAFETY: Already sent messages (SENT, DELIVERED, READ) are NEVER modified or turned to pending.
  */
 export const executeCampaignRetryFailed = async (
   campaignDocOrId: any,
@@ -29,53 +117,47 @@ export const executeCampaignRetryFailed = async (
     return { success: false, count: 0, message: 'Campaign not found' };
   }
 
-  const allContacts = campaign.contacts || campaign.recipient_phones || [];
+  // 1. Auto-heal any messages that were already sent but erroneously flipped to pending
+  await healCorruptedCampaignMessages(campaign._id);
 
-  // Identify all successfully sent recipients
-  const sentMessages = await Message.find({
+  // 2. Query ONLY the messages that are genuinely failed or expired
+  // STRICTLY EXCLUDE completed messages (SENT, DELIVERED, READ) and messages with a WhatsApp message_id
+  const EXPIRED_GRACE_MS = 2 * 60 * 1000;
+  const cutoff = new Date(Date.now() - EXPIRED_GRACE_MS);
+
+  const retryMessages = await Message.find({
     campaign: campaign._id,
-    status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
-  });
-  const sentPhones = new Set<string>();
-  sentMessages.forEach((m) => {
-    const raw = m.recipient_phone ? m.recipient_phone.replace(/[^0-9]/g, '') : '';
-    if (raw) {
-      sentPhones.add(raw);
-      if (raw.startsWith('0')) sentPhones.add('60' + raw.slice(1));
-      if (raw.startsWith('60')) sentPhones.add('0' + raw.slice(2));
-    }
-  });
+    status: { $nin: COMPLETED_STATUSES },
+    $and: [
+      {
+        $or: [
+          { message_id: { $exists: false } },
+          { message_id: null },
+          { message_id: '' },
+        ],
+      },
+      {
+        $or: [
+          { status: { $in: [...FAILED_STATUSES, ...EXPIRED_STATUSES] } },
+          ...(![CampaignStatus.PAUSED, CampaignStatus.RUNNING, 'running', 'paused', 'scheduled', 'SCHEDULED'].includes(campaign.status as any)
+            ? [
+                {
+                  status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+                  scheduled_at: { $lt: cutoff },
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
+  }).sort({ scheduled_at: 1, createdAt: 1 });
 
-  const retryContacts: string[] = [];
-  const successfulContacts: string[] = [];
-
-  for (const c of allContacts) {
-    const clean = c.replace(/[^0-9]/g, '');
-    const norm = clean.startsWith('0') ? '60' + clean.slice(1) : (clean.startsWith('60') ? '0' + clean.slice(2) : clean);
-    if (sentPhones.has(clean) || sentPhones.has(norm)) {
-      successfulContacts.push(c);
-    } else {
-      retryContacts.push(c);
-    }
-  }
-
-  if (retryContacts.length === 0) {
+  if (retryMessages.length === 0) {
+    await recomputeCampaignStats(campaign);
     return { success: true, count: 0, message: 'No failed or expired messages to retry', campaign };
   }
 
-  // Load existing messages for this campaign to check previous sending phones & sessions
-  const existingMessages = await Message.find({ campaign: campaign._id });
-  const messageByPhone = new Map<string, any>();
-  for (const m of existingMessages) {
-    if (m.recipient_phone) {
-      const raw = m.recipient_phone.replace(/[^0-9]/g, '');
-      messageByPhone.set(raw, m);
-      if (raw.startsWith('0')) messageByPhone.set('60' + raw.slice(1), m);
-      if (raw.startsWith('60')) messageByPhone.set('0' + raw.slice(2), m);
-    }
-  }
-
-  // Pre-load user sessions into map for fast lookup
+  // 3. Resolve user sessions for assigning
   const userSessions = await WhatsAppSession.find({ user: campaign.user });
   const sessionDocMap = new Map<string, any>();
   for (const s of userSessions) {
@@ -83,7 +165,6 @@ export const executeCampaignRetryFailed = async (
     if (s.session_id) sessionDocMap.set(s.session_id, s);
   }
 
-  // Resolve connected candidate sessions
   const allowedSessionIds: string[] | undefined =
     campaign.session_mode === 'SPECIFIC' && campaign.selected_sessions?.length > 0
       ? campaign.selected_sessions
@@ -119,17 +200,15 @@ export const executeCampaignRetryFailed = async (
     };
   }
 
-  // Group retry contacts by their target sending phone / session
+  // 4. Group retry messages by their target sending phone / session
   const sessionQueueMap = new Map<string, RetryItem[]>();
 
-  for (let idx = 0; idx < retryContacts.length; idx++) {
-    const contact = retryContacts[idx];
-    const rawRecip = contact.replace(/[^0-9]/g, '');
+  for (let idx = 0; idx < retryMessages.length; idx++) {
+    const msg = retryMessages[idx];
+    const rawRecip = String(msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : '')).replace(/[^0-9]/g, '');
     const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
     const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
     const clean = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
-
-    const existingMsg = messageByPhone.get(clean) || messageByPhone.get(normRecip) || messageByPhone.get(rawRecip);
 
     let sessionDoc = null;
     if (specificTargetSession) {
@@ -137,28 +216,27 @@ export const executeCampaignRetryFailed = async (
     } else if (targetSessionId === 'random') {
       sessionDoc = connectedSessions[idx % connectedSessions.length];
     } else {
-      // Preserve assigned session from existing message (original behavior)
-      let assignedSessionId: any = existingMsg?.session;
+      let assignedSessionId: any = msg.session;
       sessionDoc = assignedSessionId ? sessionDocMap.get(assignedSessionId.toString()) : null;
-
       if (assignedSessionId && !sessionDoc) {
         sessionDoc = await WhatsAppSession.findById(assignedSessionId);
         if (sessionDoc) {
           sessionDocMap.set(sessionDoc._id.toString(), sessionDoc);
         }
       }
-
-      // Fallback only if message had no assigned session at all
-      if (!sessionDoc && userSessions.length > 0) {
+      if (!sessionDoc && connectedSessions.length > 0) {
+        sessionDoc = connectedSessions[idx % connectedSessions.length];
+      } else if (!sessionDoc && userSessions.length > 0) {
         sessionDoc = userSessions[idx % userSessions.length];
       }
     }
 
-    const senderPhone = sessionDoc?.phone_number || existingMsg?.sender_phone;
+    const senderPhone = sessionDoc?.phone_number || msg.sender_phone;
     const sessKey = sessionDoc ? sessionDoc._id.toString() : 'default';
 
     const item: RetryItem = {
-      contact,
+      msg,
+      phone: rawRecip,
       cleanPhone: clean,
       possiblePhones,
       sessionDoc,
@@ -170,15 +248,11 @@ export const executeCampaignRetryFailed = async (
     sessionQueueMap.set(sessKey, queue);
   }
 
-  const now = new Date();
-  const nowMs = now.getTime();
-
-  // For each individual sending phone, schedule independently
+  // 5. For each sending session, schedule retry messages conflict-free and update BY ID
   for (const [, items] of sessionQueueMap.entries()) {
     const sampleItem = items[0];
     const sessionDoc = sampleItem.sessionDoc;
 
-    // Allocate conflict-free slots following interval, last sending time, and occupied slots
     const retryPhonesForThisSession = items.flatMap((it) => it.possiblePhones);
     const scheduledSlots = await findNextAvailableSlotsForSession({
       sessionDoc,
@@ -191,33 +265,15 @@ export const executeCampaignRetryFailed = async (
       const item = items[i];
       const scheduledTime = scheduledSlots[i] || new Date();
 
-      const updated = await Message.findOneAndUpdate(
-        { campaign: campaign._id, recipient_phone: { $in: item.possiblePhones } },
-        {
-          status: MessageStatus.PENDING,
-          session: sessionDoc ? sessionDoc._id : undefined,
-          sender_phone: item.senderPhone,
-          $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
-          scheduled_at: scheduledTime,
-          $inc: { retry_count: 1 },
-        }
-      );
-
-      if (!updated) {
-        await Message.create({
-          campaign: campaign._id,
-          session: sessionDoc ? sessionDoc._id : undefined,
-          sender_phone: item.senderPhone,
-          direction: MessageDirection.OUTBOUND,
-          type: 'text',
-          status: MessageStatus.PENDING,
-          recipient_phone: item.cleanPhone,
-          to_jid: `${item.cleanPhone}@s.whatsapp.net`,
-          template: campaign.template || null,
-          scheduled_at: scheduledTime,
-          retry_count: 1,
-        });
-      }
+      // Update strictly by document _id to guarantee no other message is affected
+      await Message.findByIdAndUpdate(item.msg._id, {
+        status: MessageStatus.PENDING,
+        session: sessionDoc ? sessionDoc._id : item.msg.session,
+        sender_phone: item.senderPhone,
+        $unset: { error: 1 },
+        scheduled_at: scheduledTime,
+        $inc: { retry_count: 1 },
+      });
     }
   }
 
@@ -225,19 +281,14 @@ export const executeCampaignRetryFailed = async (
     (s) => s.status === SessionStatus.CONNECTED
   );
 
-  campaign.contacts = [...successfulContacts, ...retryContacts];
-  campaign.recipient_phones = campaign.contacts;
-  campaign.current_index = successfulContacts.length;
-  campaign.stats.total = campaign.contacts.length;
-  campaign.stats.sent = successfulContacts.length;
-  campaign.stats.failed = 0;
+  // 6. Recalculate campaign stats directly from DB
+  await recomputeCampaignStats(campaign);
+
   if (campaign.status !== CampaignStatus.PAUSED) {
     campaign.status = CampaignStatus.RUNNING;
   }
-  campaign.scheduled_at = new Date();
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
-
   await campaign.save();
 
   const statusNotice = campaign.status === CampaignStatus.PAUSED
@@ -256,8 +307,8 @@ export const executeCampaignRetryFailed = async (
 
   return {
     success: true,
-    count: retryContacts.length,
-    message: `Retrying ${retryContacts.length} recipient(s)${phoneNotice}${statusNotice}${warningMsg}`,
+    count: retryMessages.length,
+    message: `Retrying ${retryMessages.length} recipient(s)${phoneNotice}${statusNotice}${warningMsg}`,
     warning: !hasConnectedSession ? 'No connected WhatsApp session found' : undefined,
     campaign,
   };
@@ -265,7 +316,7 @@ export const executeCampaignRetryFailed = async (
 
 /**
  * Retries a single recipient message within a campaign.
- * Supports targetSessionId: 'random', 'original', or specific session ID.
+ * STRICT SAFETY: Already sent messages can never be turned back to pending.
  */
 export const executeCampaignRetryRecipient = async (
   campaign: any,
@@ -276,7 +327,32 @@ export const executeCampaignRetryRecipient = async (
   const normRecip = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : (rawRecip.startsWith('60') ? '0' + rawRecip.slice(2) : rawRecip);
   const possiblePhones = Array.from(new Set([rawRecip, normRecip])).filter(Boolean);
   const cleanPhone = rawRecip.startsWith('0') ? '60' + rawRecip.slice(1) : rawRecip;
-  const now = new Date();
+
+  // 1. Auto-heal any corrupted sent message for this campaign first
+  await healCorruptedCampaignMessages(campaign._id);
+
+  // 2. Find existing message for this recipient
+  const existingMsg = await Message.findOne({
+    campaign: campaign._id,
+    $or: [
+      { recipient_phone: { $in: possiblePhones } },
+      { to_jid: { $in: possiblePhones.map((p) => `${p}@s.whatsapp.net`) } },
+    ],
+  }).sort({ scheduled_at: -1, createdAt: -1 });
+
+  // STRICT GUARD: If message is already successfully sent, do not overwrite it
+  if (existingMsg) {
+    const isAlreadySent =
+      COMPLETED_STATUSES.includes(existingMsg.status) ||
+      (Boolean(existingMsg.message_id) && !String(existingMsg.message_id).startsWith('wf_'));
+    if (isAlreadySent) {
+      return {
+        success: false,
+        message: `Message to ${cleanPhone} has already been sent successfully.`,
+        error: `Message to ${cleanPhone} has already been sent successfully.`,
+      };
+    }
+  }
 
   const userSessions = await WhatsAppSession.find({ user: campaign.user });
   const allowedSessionIds: string[] | undefined =
@@ -294,10 +370,7 @@ export const executeCampaignRetryRecipient = async (
     }
   }
 
-  // Find existing message to check original session
-  const existingMsg = await Message.findOne({ campaign: campaign._id, recipient_phone: { $in: possiblePhones } });
   let sessionDoc = null;
-
   if (targetSessionId === 'random') {
     if (connectedSessions.length === 0) {
       return {
@@ -325,7 +398,6 @@ export const executeCampaignRetryRecipient = async (
       };
     }
   } else {
-    // Original behavior: preserve assigned session from existing message
     if (existingMsg?.session) {
       sessionDoc = await WhatsAppSession.findById(existingMsg.session);
     }
@@ -334,7 +406,6 @@ export const executeCampaignRetryRecipient = async (
     }
   }
 
-  // Allocate next available conflict-free slot following interval, last sending time, and occupied slots
   const [scheduledTime = new Date()] = await findNextAvailableSlotsForSession({
     sessionDoc,
     campaign,
@@ -344,21 +415,16 @@ export const executeCampaignRetryRecipient = async (
 
   const senderPhone = sessionDoc?.phone_number || existingMsg?.sender_phone;
 
-  // Update or create message in PENDING status
-  const updatedMsg = await Message.findOneAndUpdate(
-    { campaign: campaign._id, recipient_phone: { $in: possiblePhones } },
-    {
+  if (existingMsg) {
+    await Message.findByIdAndUpdate(existingMsg._id, {
       status: MessageStatus.PENDING,
-      session: sessionDoc ? sessionDoc._id : undefined,
+      session: sessionDoc ? sessionDoc._id : existingMsg.session,
       sender_phone: senderPhone,
-      $unset: { error: 1, sent_at: 1, wa_timestamp: 1 },
+      $unset: { error: 1 },
       scheduled_at: scheduledTime,
       $inc: { retry_count: 1 },
-    },
-    { new: true }
-  );
-
-  if (!updatedMsg) {
+    });
+  } else {
     await Message.create({
       campaign: campaign._id,
       session: sessionDoc ? sessionDoc._id : undefined,
@@ -374,25 +440,7 @@ export const executeCampaignRetryRecipient = async (
     });
   }
 
-  // Ensure contact is queued in campaign.contacts for background worker
-  const currentContacts = campaign.contacts || campaign.recipient_phones || [];
-  const cleanContacts = currentContacts.map((c: string) => c.replace(/[^0-9]/g, ''));
-
-  const isUpcoming = cleanContacts.slice(campaign.current_index).includes(cleanPhone);
-  if (!isUpcoming) {
-    const remaining = currentContacts.slice(campaign.current_index);
-    const past = currentContacts.slice(0, campaign.current_index).filter((c: string) => c.replace(/[^0-9]/g, '') !== cleanPhone);
-    const originalPhoneEntry = currentContacts.find((c: string) => c.replace(/[^0-9]/g, '') === cleanPhone) || cleanPhone;
-
-    campaign.contacts = [...past, ...remaining, originalPhoneEntry];
-    campaign.recipient_phones = campaign.contacts;
-    campaign.current_index = past.length;
-    campaign.stats.total = campaign.contacts.length;
-  }
-
-  if (campaign.stats.failed > 0) {
-    campaign.stats.failed = Math.max(0, campaign.stats.failed - 1);
-  }
+  await recomputeCampaignStats(campaign);
 
   if (campaign.status !== CampaignStatus.PAUSED) {
     campaign.status = CampaignStatus.RUNNING;

@@ -320,6 +320,51 @@ export async function checkAndAutoHealCampaignRecipients(
       return false;
     }
 
+    // Auto-heal any messages that were already sent via WhatsApp (have a valid WhatsApp message_id)
+    // but were mistakenly marked PENDING
+    const healed = await Message.updateMany(
+      {
+        campaign: campaign._id,
+        status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+        message_id: { $exists: true, $nin: ['', null] },
+        $nor: [
+          { message_id: /^wf_/ },
+          { message_id: /^reply_/ },
+          { message_id: /^master_/ },
+        ],
+      },
+      {
+        $set: {
+          status: MessageStatus.SENT,
+          sent_at: new Date(),
+        },
+      }
+    );
+
+    if (healed.modifiedCount > 0) {
+      const sentCount = await Message.countDocuments({
+        campaign: campaign._id,
+        status: { $in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ, 'sent', 'delivered', 'read', 'SENT', 'DELIVERED', 'READ'] },
+      });
+      const failedCount = await Message.countDocuments({
+        campaign: campaign._id,
+        status: { $in: [MessageStatus.FAILED, MessageStatus.EXPIRED, 'failed', 'expired', 'FAILED', 'EXPIRED', 'error', 'ERROR'] },
+      });
+      const pendingCount = await Message.countDocuments({
+        campaign: campaign._id,
+        status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+      });
+      campaign.stats = {
+        ...(campaign.stats || {}),
+        total: sentCount + failedCount + pendingCount,
+        sent: sentCount,
+        failed: failedCount,
+        pending: pendingCount,
+      };
+      campaign.current_index = sentCount;
+      await campaign.save();
+    }
+
     const cleanRecipients = new Set<string>(
       campaign.recipient_phones.map((p: any) => normalizePhoneNumber(p))
     );
@@ -341,6 +386,16 @@ export async function checkAndAutoHealCampaignRecipients(
       MessageStatus.READ,
       MessageStatus.FAILED,
       MessageStatus.EXPIRED,
+      'sent',
+      'delivered',
+      'read',
+      'failed',
+      'expired',
+      'SENT',
+      'DELIVERED',
+      'READ',
+      'FAILED',
+      'EXPIRED',
     ];
 
     const executedMsgs = await Message.find({

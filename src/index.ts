@@ -29,6 +29,7 @@ import { startBlastRunner } from './services/blastRunner.js';
 import { startCrossChatRunner } from './services/crossChatRunner.js';
 import { initWorkflowScheduler } from './services/workflowScheduler.js';
 import { initMessageRetention } from './services/messageRetentionService.js';
+import { startMemoryMonitor } from './services/memoryMonitor.js';
 import { sendDeployNotification } from './utils/whatsappNotifier.js';
 import { getAppVersion, getLatestCommitMessage } from './utils/version.js';
 
@@ -164,6 +165,7 @@ async function main() {
   startCrossChatRunner();
   await initWorkflowScheduler();
   await initMessageRetention();
+  startMemoryMonitor();
 
   const serverDistPath = path.resolve(process.cwd(), 'client/dist/server/server.js');
   if (fs.existsSync(serverDistPath)) {

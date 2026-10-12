@@ -8,8 +8,6 @@ export async function applyMessageStatusFilter(filter: any, status?: any): Promi
   }
 
   const s = String(status).toLowerCase();
-  const EXPIRED_GRACE_MS = 2 * 60 * 1000;
-  const cutoff = new Date(Date.now() - EXPIRED_GRACE_MS);
 
   if (s === 'sent') {
     filter.status = { $in: ['sent', 'delivered', 'read', 'SENT', 'DELIVERED', 'READ'] };
@@ -68,22 +66,24 @@ export async function applyMessageStatusFilter(filter: any, status?: any): Promi
 
     filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] };
 
-    // Pending/queued messages must not be expired
-    filter.$and = filter.$and || [];
-    filter.$and.push({
-      $or: [
-        { scheduled_at: { $gte: cutoff } },
-        { scheduled_at: null, createdAt: { $gte: cutoff } },
-        { scheduled_at: { $exists: false }, createdAt: { $gte: cutoff } },
-      ],
-    });
   } else if (s === 'expired') {
-    const rawPausedCampaignIds = await BlastCampaign.find({
-      status: { $in: [CampaignStatus.PAUSED, 'paused', 'PAUSED'] },
+    const activeCampaignIds = await BlastCampaign.find({
+      status: {
+        $in: [
+          CampaignStatus.RUNNING,
+          CampaignStatus.PAUSED,
+          CampaignStatus.DRAFT,
+          'running',
+          'paused',
+          'scheduled',
+          'draft',
+          'RUNNING',
+          'PAUSED',
+          'SCHEDULED',
+          'DRAFT',
+        ],
+      },
     }).distinct('_id');
-    const pausedCampaignIds = rawPausedCampaignIds.map((id: any) =>
-      typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id
-    );
 
     filter.$and = filter.$and || [];
     filter.$and.push({
@@ -91,12 +91,12 @@ export async function applyMessageStatusFilter(filter: any, status?: any): Promi
         { status: { $in: [MessageStatus.EXPIRED, 'expired', 'EXPIRED'] } },
         {
           status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+          campaign: { $nin: activeCampaignIds },
           $or: [
-            { scheduled_at: { $lt: cutoff } },
-            { scheduled_at: null, createdAt: { $lt: cutoff } },
-            { scheduled_at: { $exists: false }, createdAt: { $lt: cutoff } },
+            { scheduled_at: { $lt: new Date() } },
+            { scheduled_at: null, createdAt: { $lt: new Date() } },
+            { scheduled_at: { $exists: false }, createdAt: { $lt: new Date() } },
           ],
-          campaign: { $nin: pausedCampaignIds },
         },
       ],
     });

@@ -284,14 +284,14 @@ function CampaignProgressPage() {
   }, [reportRows, sortOrder])
 
   const cStatus = (campaign.status || 'draft').toUpperCase()
-  const isCampaignPaused = cStatus === 'PAUSED'
 
   // Calculate live accurate counts from logs when available, falling back to campaign.stats
   const logSentCount = reportRows.filter((r) => ['sent', 'delivered', 'read'].includes((r.status || '').toLowerCase())).length
   const logFailedCount = reportRows.filter((r) => ['failed', 'error'].includes((r.status || '').toLowerCase())).length
   const logExpiredCount = reportRows.filter((r) => {
     const st = (r.status || '').toLowerCase()
-    return !isCampaignPaused && (st === 'expired' || ((st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).add(2, 'minute').isBefore(dayjs())))
+    const isCampActive = ['RUNNING', 'PAUSED', 'SCHEDULED', 'DRAFT'].includes(cStatus)
+    return st === 'expired' || (!isCampActive && (st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).isBefore(dayjs()))
   }).length
 
   const hasLogData = logs.length > 0 || reportRows.length > 0
