@@ -66,6 +66,9 @@ export function Step5Summary({
   const templates = propsTemplates || propsTemplateDrafts || []
   const submitFn = handleFinalSubmit || onSubmit || (() => {})
   const isLoading = isLaunching || isSubmitting || false
+  // Save Draft and Launch are mutually exclusive: while either request is in
+  // flight both are disabled so we can't end up creating two campaigns.
+  const isBusy = isLoading || Boolean(isSavingDraft)
 
   const filteredRecipients = recipients.filter((phone) =>
     !recipientSearch ? true : phone.toLowerCase().includes(recipientSearch.toLowerCase())
@@ -157,7 +160,7 @@ export function Step5Summary({
                   variant="outline"
                   size="sm"
                   onClick={onSaveDraft}
-                  disabled={isSavingDraft}
+                  disabled={isBusy}
                   className="text-xs gap-1.5"
                 >
                   {isSavingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
@@ -169,7 +172,7 @@ export function Step5Summary({
             <Button
               type="button"
               onClick={submitFn}
-              disabled={isLoading || !name.trim() || recipients.length === 0}
+              disabled={isBusy || !name.trim() || recipients.length === 0}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 text-xs px-6 gap-2 shadow-md"
             >
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}

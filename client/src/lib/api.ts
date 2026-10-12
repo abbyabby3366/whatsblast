@@ -1,6 +1,7 @@
 import ky from 'ky';
 import { env } from '@/env';
 import { useAuthStore } from '@/store/auth/useAuthStore';
+import { clearQueryCache } from '@/integrations/tanstack-query/root-provider';
 
 export const baseInstance = ky.create({
   baseUrl: env.VITE_BACKEND_URL,
@@ -21,6 +22,7 @@ let refreshPromise: Promise<string | null> | null = null;
 
 function redirectToLogin() {
   useAuthStore.getState().logout();
+  clearQueryCache();
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
     window.location.replace('/login');
   }

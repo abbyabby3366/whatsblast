@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,6 +16,7 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [phoneNumber, setPhoneNumber] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -49,6 +51,9 @@ function LoginPage() {
       const res: any = await baseInstance.post('login/', { 
         json: { phone_number: phoneNumber, password } 
       }).json()
+      // Start the new session with an empty cache so nothing from a previous
+      // account can be shown.
+      queryClient.clear()
       setTokens(res.access, res.refresh)
       const me: any = await api.get('users/me/').json()
       toast.success('Successfully logged in!')

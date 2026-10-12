@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { createFileRoute, useNavigate, useSearch, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, getErrorMessage } from '@/lib/api'
@@ -33,12 +33,12 @@ function CampaignProgressPage() {
     queryKey: ['campaign', campaignId],
     queryFn: () => api.get(`blast-campaigns/${campaignId}/`).json<any>(),
     enabled: Boolean(campaignId),
-    refetchInterval: (data: any) =>
-      (data?.status || '').toLowerCase() === 'running' ? 3000 : false,
+    refetchInterval: (q) =>
+      (q.state.data?.status || '').toUpperCase() === 'RUNNING' ? 3000 : false,
   })
 
   // Track whether a retry recently happened, to keep auto-refresh active
-  const campaignStatus = (campaign?.status || '').toLowerCase()
+  const campaignStatus = (campaign?.status || '').toUpperCase()
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [activeFilter, setActiveFilter] = useState<CampaignStatusFilter>('all')
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false)
@@ -62,7 +62,7 @@ function CampaignProgressPage() {
         })
         .json<any>(),
     enabled: Boolean(campaignId),
-    refetchInterval: campaignStatus === 'running' ? 3000 : false,
+    refetchInterval: campaignStatus === 'RUNNING' ? 3000 : false,
   })
 
   // Retry failed mutation
@@ -266,22 +266,23 @@ function CampaignProgressPage() {
     })
   }
 
-  // Sort reportRows chronologically by effective date & time
-  const sortedReportRows = useMemo(() => {
-    return [...reportRows].sort((a, b) => {
-      const getTargetTime = (row: any) => {
-        const st = (row.status || 'pending').toLowerCase()
-        const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
-        const t = isSuccess
-          ? (row.sent_at || row.scheduled_at || row.created_at)
-          : (row.scheduled_at || row.created_at)
-        return t ? dayjs(t).valueOf() : 0
-      }
-      const timeA = getTargetTime(a)
-      const timeB = getTargetTime(b)
-      return sortOrder === 'asc' ? timeA - timeB : timeB - timeA
-    })
-  }, [reportRows, sortOrder])
+  // Sort reportRows chronologically by effective date & time.
+  // NOTE: computed inline (not useMemo) because this runs after the early
+  // returns above — a hook here would violate the Rules of Hooks (React #310).
+  // reportRows is rebuilt every render anyway, so memoization bought nothing.
+  const sortedReportRows = [...reportRows].sort((a, b) => {
+    const getTargetTime = (row: any) => {
+      const st = (row.status || 'pending').toLowerCase()
+      const isSuccess = st === 'sent' || st === 'delivered' || st === 'read'
+      const t = isSuccess
+        ? (row.sent_at || row.scheduled_at || row.created_at)
+        : (row.scheduled_at || row.created_at)
+      return t ? dayjs(t).valueOf() : 0
+    }
+    const timeA = getTargetTime(a)
+    const timeB = getTargetTime(b)
+    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA
+  })
 
   const cStatus = (campaign.status || 'draft').toUpperCase()
 
@@ -316,7 +317,7 @@ function CampaignProgressPage() {
         </Link>
 
         <div className="flex items-center gap-2">
-          {cStatus === 'running' && (
+          {cStatus === 'RUNNING' && (
             <Button
               type="button"
               variant="outline"
@@ -334,7 +335,7 @@ function CampaignProgressPage() {
             </Button>
           )}
 
-          {cStatus === 'paused' && (
+          {cStatus === 'PAUSED' && (
             <Button
               type="button"
               variant="default"
@@ -414,17 +415,17 @@ function CampaignProgressPage() {
           <div>
             <span
               className={`inline-block rounded-full px-3.5 py-1 text-xs font-semibold border ${
-                cStatus === 'COMPLETED' || cStatus === 'completed'
+                cStatus === 'COMPLETED'
                   ? retryableCount > 0
                     ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                     : 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                  : cStatus === 'RUNNING' || cStatus === 'running'
+                  : cStatus === 'RUNNING'
                   ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800 animate-pulse'
-                  : cStatus === 'PAUSED' || cStatus === 'paused'
+                  : cStatus === 'PAUSED'
                   ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800'
-                  : cStatus === 'SCHEDULED' || cStatus === 'scheduled'
+                  : cStatus === 'SCHEDULED'
                   ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                  : cStatus === 'FAILED' || cStatus === 'failed'
+                  : cStatus === 'FAILED'
                   ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
                   : 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800'
               }`}
@@ -435,7 +436,7 @@ function CampaignProgressPage() {
         </div>
 
         {/* Paused Campaign Notice Banner */}
-        {cStatus === 'paused' && (
+        {cStatus === 'PAUSED' && (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-orange-200 bg-orange-50/90 p-3 text-xs text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-200">
             <div className="flex items-center gap-2">
               <Pause className="h-4 w-4 text-orange-600 shrink-0" />
@@ -469,9 +470,9 @@ function CampaignProgressPage() {
                     ? `${failed} message(s) failed`
                     : `${expired} message(s) expired`}
                 </strong>{' '}
-                {cStatus === 'completed'
+                {cStatus === 'COMPLETED'
                   ? 'during blast execution. You can retry them now:'
-                  : cStatus === 'paused'
+                  : cStatus === 'PAUSED'
                   ? 'contacts can be rescheduled to send once resumed:'
                   : 'contacts can be retried now:'}
               </span>

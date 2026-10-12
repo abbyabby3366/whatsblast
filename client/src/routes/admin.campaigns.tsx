@@ -58,6 +58,10 @@ function AdminCampaignsPage() {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
+  // Original template objects + the text shown in the edit form, so a save can
+  // tell whether the text was edited and merge it back without dropping
+  // message_type / file_ids / buttons / footer etc.
+  const [editOriginal, setEditOriginal] = useState<{ templates: any[]; text: string } | null>(null)
   const [filters, setFilters] = useState(defaultFilters)
   const [selected, setSelected] = useState<string[]>([])
   const [deleteTarget, setDeleteTarget] = useState<{ ids: string[]; label: string } | null>(null)
@@ -125,17 +129,71 @@ function AdminCampaignsPage() {
   const isFiltered = filters.search !== '' || filters.status !== 'all' || filters.user !== 'all' || filters.ordering !== '-created_at'
   const clearFilters = () => { setFilters(defaultFilters); setPage(1) }
 
-  const templateTexts = () => form.text.split(/\n---+\n/).map((text) => text.trim()).filter(Boolean)
-  const payload = () => ({
-    name: form.name,
-    user: form.user,
-    recipient_phones: form.recipient_phones.split(/[\n,]/).map((p) => p.trim()).filter(Boolean),
-    templates: (templateTexts().length ? templateTexts() : ['Hello']).map((text) => ({ text })),
-    enable_warmup: form.enable_warmup,
-    retry_on_failure: form.retry_on_failure,
-  })
+  const TEMPLATE_SEPARATOR = /\n---+\n/
+  const templateText = (t: any) => String(t?.text ?? t?.template ?? t?.caption ?? '')
+  const templateHasMedia = (t: any) =>
+    Boolean(
+      (Array.isArray(t?.file_ids) && t.file_ids.length > 0) ||
+      t?.file_id ||
+      (Array.isArray(t?.buttons) && t.buttons.length > 0)
+    )
 
-  const save = useMutation({ mutationFn: () => form.id ? api.patch(`blast-campaigns/${form.id}/`, { json: payload() }).json() : api.post('blast-campaigns/', { json: payload() }).json(), onSuccess: () => { refresh(); setOpen(false); setForm(emptyForm); toast.success('Campaign saved') }, onError: () => toast.error('Unable to save campaign') })
+  const openEdit = (c: Campaign) => {
+    const originalTemplates = Array.isArray(c.templates) && c.templates.length > 0
+      ? c.templates
+      : (c.template ? [c.template] : [])
+    const text = originalTemplates.map(templateText).join('\n---\n')
+    setEditOriginal({ templates: originalTemplates, text })
+    setForm({
+      id: c.id,
+      name: c.name || '',
+      user: ownerId(c.user),
+      recipient_phones: (c.recipient_phones || []).join('\n'),
+      text,
+      enable_warmup: c.enable_warmup !== false,
+      retry_on_failure: c.retry_on_failure !== false,
+    })
+    setOpen(true)
+  }
+
+  const payload = () => {
+    const base: Record<string, any> = {
+      name: form.name,
+      user: form.user,
+      recipient_phones: form.recipient_phones.split(/[\n,]/).map((p) => p.trim()).filter(Boolean),
+      enable_warmup: form.enable_warmup,
+      retry_on_failure: form.retry_on_failure,
+    }
+
+    if (!form.id) {
+      const texts = form.text.split(TEMPLATE_SEPARATOR).map((text) => text.trim()).filter(Boolean)
+      if (texts.length === 0) throw new Error('Message content is required.')
+      base.templates = texts.map((text) => ({ text, template: text }))
+      return base
+    }
+
+    // Editing: leave templates untouched unless the text actually changed.
+    if (!editOriginal || form.text === editOriginal.text) return base
+
+    const originals = editOriginal.templates
+    // Keep empty segments so positions stay aligned with the originals
+    // (media-only templates have no text).
+    const segments = form.text.split(TEMPLATE_SEPARATOR).map((text) => text.trim())
+    const merged = segments
+      .map((text, i) => {
+        const orig = originals[i]
+        if (orig && typeof orig === 'object') {
+          return { ...orig, text: text || undefined, template: text || undefined }
+        }
+        return text ? { text, template: text } : null
+      })
+      .filter((t): t is Record<string, any> => Boolean(t && (t.text || templateHasMedia(t))))
+    if (merged.length === 0) throw new Error('Message content is required.')
+    base.templates = merged
+    return base
+  }
+
+  const save = useMutation({ mutationFn: async () => { const body = payload(); return form.id ? api.patch(`blast-campaigns/${form.id}/`, { json: body }).json() : api.post('blast-campaigns/', { json: body }).json() }, onSuccess: () => { refresh(); setOpen(false); setForm(emptyForm); setEditOriginal(null); toast.success('Campaign saved') }, onError: async (err: any) => toast.error(await getErrorMessage(err, 'Unable to save campaign')) })
   const remove = useMutation({ mutationFn: (id: string) => api.delete(`blast-campaigns/${id}/`), onSuccess: () => { refresh(); toast.success('Campaign deleted') }, onError: () => toast.error('Unable to delete campaign') })
   const bulkDelete = useMutation({ mutationFn: async (ids: string[]) => { await Promise.all(ids.map((id) => api.delete(`blast-campaigns/${id}/`))) }, onSuccess: () => { setSelected([]); refresh(); toast.success('Selected campaigns deleted') }, onError: () => toast.error('Unable to bulk delete campaigns') })
 
@@ -182,7 +240,7 @@ function AdminCampaignsPage() {
             </Button>
           </div>
 
-          <Button onClick={() => { setForm(emptyForm); setOpen(true) }}>
+          <Button onClick={() => { setForm(emptyForm); setEditOriginal(null); setOpen(true) }}>
             <Plus className="mr-2 h-4 w-4" /> Add Campaign For Merchant
           </Button>
         </div>
@@ -519,18 +577,7 @@ function AdminCampaignsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                setForm({
-                                  id: c.id,
-                                  name: c.name || '',
-                                  user: ownerId(c.user),
-                                  recipient_phones: (c.recipient_phones || []).join('\n'),
-                                  text: (c.templates || []).map((t) => t.text || '').join('\n---\n'),
-                                  enable_warmup: c.enable_warmup !== false,
-                                  retry_on_failure: c.retry_on_failure !== false,
-                                })
-                                setOpen(true)
-                              }}
+                              onClick={() => openEdit(c)}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -628,18 +675,7 @@ function AdminCampaignsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            setForm({
-                              id: c.id,
-                              name: c.name || '',
-                              user: ownerId(c.user),
-                              recipient_phones: (c.recipient_phones || []).join('\n'),
-                              text: (c.templates || []).map((t) => t.text || '').join('\n---\n'),
-                              enable_warmup: c.enable_warmup !== false,
-                              retry_on_failure: c.retry_on_failure !== false,
-                            })
-                            setOpen(true)
-                          }}
+                          onClick={() => openEdit(c)}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>

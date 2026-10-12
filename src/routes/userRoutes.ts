@@ -8,6 +8,7 @@ import { Customer } from '../models/Customer.js';
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { computeCampaignsStats } from './campaignRoutes.js';
+import { escapeRegex } from '../utils/messageFilterHelper.js';
 
 const router = Router();
 
@@ -29,13 +30,14 @@ const getUsers = async (req: AuthRequest, res: Response) => {
     const filter: any = {};
 
     if (search) {
+      const escapedSearch = escapeRegex(String(search));
       filter.$or = [
-        { phone_number: { $regex: String(search), $options: 'i' } },
-        { role: { $regex: String(search), $options: 'i' } },
+        { phone_number: { $regex: escapedSearch, $options: 'i' } },
+        { role: { $regex: escapedSearch, $options: 'i' } },
       ];
     }
     if (role && role !== 'all') {
-      filter.role = role;
+      filter.role = String(role);
     }
     if (is_active && is_active !== 'all') {
       filter.is_active = is_active === 'true';
@@ -70,7 +72,8 @@ const getUsersMe = async (req: AuthRequest, res: Response) => {
 router.get('/users/me', getUsersMe);
 
 const patchUsersMe = async (req: AuthRequest, res: Response) => {
-  const { min_interval_minutes, sync_existing_sessions } = req.body;
+  const { sync_existing_sessions } = req.body;
+  const min_interval_minutes = req.body.min_interval_minutes != null ? String(req.body.min_interval_minutes).trim() : '';
   if (min_interval_minutes && req.user) {
     req.user.min_interval_minutes = min_interval_minutes;
     await req.user.save();
@@ -127,6 +130,9 @@ const createUser = async (req: AuthRequest, res: Response) => {
   if (!phone_number) {
     return res.status(400).json({ error: 'Phone number is required' });
   }
+  if (password !== undefined && password !== null && password !== '' && typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password must be a string' });
+  }
 
   const cleanPhone = String(phone_number).trim();
   const existing = await User.findOne({ phone_number: cleanPhone });
@@ -138,9 +144,9 @@ const createUser = async (req: AuthRequest, res: Response) => {
   const newUser = await User.create({
     phone_number: cleanPhone,
     password: hashedPassword,
-    role: role || 'merchant',
+    role: role ? String(role) : 'merchant',
     is_active: is_active !== undefined ? Boolean(is_active) : true,
-    min_interval_minutes: min_interval_minutes || '10-15',
+    min_interval_minutes: min_interval_minutes ? String(min_interval_minutes) : '10-15',
   });
 
   return res.status(201).json(formatUser(newUser));
@@ -155,7 +161,11 @@ const updateUser = async (req: AuthRequest, res: Response) => {
   }
 
   const { id } = req.params;
-  const { phone_number, password, role, is_active, min_interval_minutes } = req.body;
+  const { phone_number, password, role, is_active } = req.body;
+  const min_interval_minutes = req.body.min_interval_minutes != null ? String(req.body.min_interval_minutes).trim() : '';
+  if (password && typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password must be a string' });
+  }
 
   const targetUser = await User.findById(id);
   if (!targetUser) {
@@ -163,7 +173,7 @@ const updateUser = async (req: AuthRequest, res: Response) => {
   }
 
   if (phone_number) targetUser.phone_number = String(phone_number).trim();
-  if (role) targetUser.role = role;
+  if (role) targetUser.role = String(role) as any;
   if (is_active !== undefined) targetUser.is_active = Boolean(is_active);
   if (min_interval_minutes) {
     targetUser.min_interval_minutes = min_interval_minutes;
@@ -258,11 +268,18 @@ const getAgentPhones = async (req: AuthRequest, res: Response) => {
 router.get('/agent-phone-numbers', getAgentPhones);
 
 const createAgentPhone = async (req: AuthRequest, res: Response) => {
-  const { session_id, session, phone_number } = req.body;
-  const targetSessionId = session_id || session;
-  if (!targetSessionId || !phone_number) {
+  const { session_id, session } = req.body;
+  const rawSessionId = session_id || session;
+  if (
+    !rawSessionId ||
+    !req.body.phone_number ||
+    (typeof rawSessionId !== 'string' && typeof rawSessionId !== 'number') ||
+    (typeof req.body.phone_number !== 'string' && typeof req.body.phone_number !== 'number')
+  ) {
     return res.status(400).json({ error: 'session and phone_number are required' });
   }
+  const targetSessionId = String(rawSessionId).trim();
+  const phone_number = String(req.body.phone_number).trim();
 
   const filter: any = {
     $or: [{ session_id: targetSessionId }, { _id: targetSessionId.match(/^[0-9a-fA-F]{24}$/) ? targetSessionId : null }],

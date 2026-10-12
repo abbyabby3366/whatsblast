@@ -86,6 +86,8 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false)
   const [isRetryAllConfirmOpen, setIsRetryAllConfirmOpen] = useState(false)
+  // Session choice from the Retry All dropdown, applied once the user confirms.
+  const [pendingRetryAllSessionId, setPendingRetryAllSessionId] = useState<string | undefined>(undefined)
   const [isTestSendOpen, setIsTestSendOpen] = useState(false)
 
   // Fetch users for admin merchant filter & display
@@ -146,6 +148,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       setIsRetryAllConfirmOpen(false)
+      setPendingRetryAllSessionId(undefined)
     },
     onError: async (err) => {
       toast.error(await getErrorMessage(err, 'Failed to retry messages.'))
@@ -555,7 +558,14 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         <CampaignRetryAllDropdown
           variant="outline"
           isPending={retryAllFailedMutation.isPending}
-          onRetryAll={(sessionId) => retryAllFailedMutation.mutate(sessionId)}
+          onRetryAll={(sessionId) => {
+            setPendingRetryAllSessionId(sessionId)
+            setIsRetryAllConfirmOpen(true)
+          }}
+          // Admins viewing ALL merchants can't route every merchant's messages
+          // through one specific phone; they must pick a merchant first.
+          disableSpecificSessions={isAdmin && selectedMerchant === 'ALL'}
+          specificSessionsDisabledHint="Select a merchant in the filter first to send via a specific phone."
         />
 
         <Button
@@ -918,7 +928,13 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       )}
 
       {/* Retry All Failed Confirm Modal */}
-      <Dialog open={isRetryAllConfirmOpen} onOpenChange={setIsRetryAllConfirmOpen}>
+      <Dialog
+        open={isRetryAllConfirmOpen}
+        onOpenChange={(open) => {
+          setIsRetryAllConfirmOpen(open)
+          if (!open) setPendingRetryAllSessionId(undefined)
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <div className="flex items-center gap-2.5">
@@ -961,7 +977,10 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsRetryAllConfirmOpen(false)}
+              onClick={() => {
+                setIsRetryAllConfirmOpen(false)
+                setPendingRetryAllSessionId(undefined)
+              }}
               disabled={retryAllFailedMutation.isPending}
             >
               Cancel
@@ -970,7 +989,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               size="sm"
               className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5"
               disabled={retryAllFailedMutation.isPending}
-              onClick={() => retryAllFailedMutation.mutate()}
+              onClick={() => retryAllFailedMutation.mutate(pendingRetryAllSessionId)}
             >
               {retryAllFailedMutation.isPending ? (
                 <>

@@ -9,10 +9,85 @@ import { User } from '../models/User.js';
 import { FileModel } from '../models/File.js';
 import { retryCampaignRecipient, executeCampaignRetryFailed } from './campaignRoutes.js';
 import { findNextAvailableSlotsForSession } from '../services/scheduleSlotFinder.js';
-import { applyMessageStatusFilter } from '../utils/messageFilterHelper.js';
+import { applyMessageStatusFilter, escapeRegex } from '../utils/messageFilterHelper.js';
+import { isOwnS3Url } from '../services/s3Service.js';
+import net from 'net';
 
 const router = Router();
 router.use(authenticateToken);
+
+function isAdminRequest(req: AuthRequest): boolean {
+  return req.user?.role === 'admin';
+}
+
+function sameId(a: any, b: any): boolean {
+  if (!a || !b) return false;
+  const aId = typeof a === 'object' && a._id ? a._id : a;
+  const bId = typeof b === 'object' && b._id ? b._id : b;
+  return String(aId) === String(bId);
+}
+
+/** Query-string value as a plain string (first element if repeated), or undefined. */
+function queryString(v: any): string | undefined {
+  if (Array.isArray(v)) v = v[0];
+  if (v === undefined || v === null || typeof v === 'object') return undefined;
+  return String(v);
+}
+
+function isBlockedIPv4(ip: string): boolean {
+  const [a, b, c] = ip.split('.').map(Number);
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
+}
+
+/**
+ * SSRF guard for media URLs that Baileys will fetch server-side: only http(s), no
+ * localhost / private / link-local IP literals. Our own S3 bucket is always allowed.
+ * Note: hostnames are not DNS-resolved, so a public name pointing at a private IP is not caught.
+ */
+function isSafeRemoteMediaUrl(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (_) {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (isOwnS3Url(rawUrl)) return true;
+  if (parsed.username || parsed.password) return false;
+
+  let host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  if (!host) return false;
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host === 'metadata.google.internal'
+  ) {
+    return false;
+  }
+  if (net.isIPv4(host)) return !isBlockedIPv4(host);
+  if (net.isIPv6(host)) {
+    if (host === '::' || host === '::1') return false;
+    if (/^f[cd]/.test(host)) return false; // unique local fc00::/7
+    if (/^fe[89ab]/.test(host)) return false; // link-local fe80::/10
+    if (host.startsWith('::ffff:') || host.startsWith('64:ff9b:')) return false; // IPv4-mapped / NAT64
+    return true;
+  }
+  return true;
+}
 
 function formatMessage(m: any) {
   const obj = m.toObject ? m.toObject() : m;
@@ -66,7 +141,18 @@ function formatMessage(m: any) {
 
 const getMessages = async (req: AuthRequest, res: Response) => {
   const filter: any = {};
-  const { status, session_id, campaign_id, user_id, merchant_id, user, direction, is_campaign, search, start_date, end_date, created_at_after, created_at_before } = req.query;
+  const { direction, is_campaign } = req.query;
+  const status = queryString(req.query.status);
+  const session_id = queryString(req.query.session_id);
+  const campaign_id = queryString(req.query.campaign_id);
+  const user_id = queryString(req.query.user_id);
+  const merchant_id = queryString(req.query.merchant_id);
+  const user = queryString(req.query.user);
+  const search = queryString(req.query.search);
+  const start_date = queryString(req.query.start_date);
+  const end_date = queryString(req.query.end_date);
+  const created_at_after = queryString(req.query.created_at_after);
+  const created_at_before = queryString(req.query.created_at_before);
 
   if (req.user?.role !== 'admin') {
     const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
@@ -117,7 +203,7 @@ const getMessages = async (req: AuthRequest, res: Response) => {
   if (search) {
     const searchStr = String(search).trim();
     if (searchStr) {
-      const searchRegex = new RegExp(searchStr, 'i');
+      const searchRegex = new RegExp(escapeRegex(searchStr), 'i');
 
       const matchingUsers = await User.find({
         $or: [{ phone_number: searchRegex }, { email: searchRegex }, { name: searchRegex }],
@@ -148,8 +234,8 @@ const getMessages = async (req: AuthRequest, res: Response) => {
     }
   }
 
-  const startDateVal = (start_date || created_at_after) as string | undefined;
-  const endDateVal = (end_date || created_at_before) as string | undefined;
+  const startDateVal = start_date || created_at_after;
+  const endDateVal = end_date || created_at_before;
 
   if (startDateVal || endDateVal) {
     const dateCond: any = {};
@@ -369,31 +455,53 @@ const getMessages = async (req: AuthRequest, res: Response) => {
 
 router.get('/messages', getMessages);
 
+/**
+ * Loads a WhatsApp session by its session_id and checks the caller may send from it.
+ * Sends the 404/403 response itself and returns null when not allowed.
+ */
+async function loadSendableSession(req: AuthRequest, res: Response, sessionId: string) {
+  const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
+  if (!sessionDoc) {
+    res.status(404).json({ error: 'WhatsApp session not found' });
+    return null;
+  }
+  if (!isAdminRequest(req) && !sameId(sessionDoc.user, req.user?._id)) {
+    res.status(403).json({ error: 'You do not have access to this WhatsApp session' });
+    return null;
+  }
+  return sessionDoc;
+}
+
 const sendTextMessage = async (req: AuthRequest, res: Response) => {
-  const sessionId = req.params.session_id as string;
+  const sessionId = String(req.params.session_id);
   const { to, text } = req.body;
 
   if (!to || !text) {
     return res.status(400).json({ error: 'to and text fields are required' });
   }
-
-  let active = getActiveSession(sessionId);
-  if (!active) {
-    active = await initWhatsAppSession(sessionId);
+  if ((typeof to !== 'string' && typeof to !== 'number') || typeof text !== 'string') {
+    return res.status(400).json({ error: 'to and text must be strings' });
   }
 
-  const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(active.socket, to);
-  if (!cleanPhone || !exists) {
-    return res.status(400).json({ error: `Recipient phone number (${to}) is not registered on WhatsApp` });
-  }
+  const sessionDoc = await loadSendableSession(req, res, sessionId);
+  if (!sessionDoc) return;
 
   try {
+    let active = getActiveSession(sessionId);
+    if (!active) {
+      active = await initWhatsAppSession(sessionId);
+    }
+
+    const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(active.socket, String(to));
+    if (!cleanPhone || !exists) {
+      return res.status(400).json({ error: `Recipient phone number (${to}) is not registered on WhatsApp` });
+    }
+
     const result = await active.socket.sendMessage(targetJid, { text });
-    const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
 
     const now = new Date();
     const msg = await Message.create({
-      session: sessionDoc?._id,
+      session: sessionDoc._id,
       direction: MessageDirection.OUTBOUND,
       type: 'text',
       status: MessageStatus.SENT,
@@ -415,46 +523,55 @@ const sendTextMessage = async (req: AuthRequest, res: Response) => {
 router.post('/messages/:session_id/send-text', sendTextMessage);
 
 const sendImageMessage = async (req: AuthRequest, res: Response) => {
-  const sessionId = req.params.session_id as string;
-  const { to, url, caption } = req.body;
+  const sessionId = String(req.params.session_id);
+  const { to, url } = req.body;
+  const caption = req.body.caption != null ? String(req.body.caption) : '';
 
   if (!to || !url) {
     return res.status(400).json({ error: 'to and url fields are required' });
   }
-
-  let active = getActiveSession(sessionId);
-  if (!active) {
-    active = await initWhatsAppSession(sessionId);
+  if ((typeof to !== 'string' && typeof to !== 'number') || typeof url !== 'string') {
+    return res.status(400).json({ error: 'to and url must be strings' });
   }
 
-  const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(active.socket, to);
-  if (!cleanPhone || !exists) {
-    return res.status(400).json({ error: `Recipient phone number (${to}) is not registered on WhatsApp` });
+  let targetUrl = url.trim();
+  const match = targetUrl.match(/^https?:\/\/([^/]+)\.linodeobjects\.com\/(.+)$/i);
+  if (match) {
+    const hostPrefix = match[1];
+    const pathKey = match[2];
+    if (hostPrefix.includes('.')) {
+      const parts = hostPrefix.split('.');
+      const endpoint = parts.pop();
+      const bucket = parts.join('.');
+      targetUrl = `https://${endpoint}.linodeobjects.com/${bucket}/${pathKey}`;
+    }
   }
+  if (!isSafeRemoteMediaUrl(targetUrl)) {
+    return res.status(400).json({ error: 'url must be a public http(s) URL' });
+  }
+
+  const sessionDoc = await loadSendableSession(req, res, sessionId);
+  if (!sessionDoc) return;
 
   try {
-    let targetUrl = url;
-    const match = targetUrl.match(/^https?:\/\/([^/]+)\.linodeobjects\.com\/(.+)$/i);
-    if (match) {
-      const hostPrefix = match[1];
-      const pathKey = match[2];
-      if (hostPrefix.includes('.')) {
-        const parts = hostPrefix.split('.');
-        const endpoint = parts.pop();
-        const bucket = parts.join('.');
-        targetUrl = `https://${endpoint}.linodeobjects.com/${bucket}/${pathKey}`;
-      }
+    let active = getActiveSession(sessionId);
+    if (!active) {
+      active = await initWhatsAppSession(sessionId);
+    }
+
+    const { jid: targetJid, exists, cleanPhone } = await verifyAndFormatJid(active.socket, String(to));
+    if (!cleanPhone || !exists) {
+      return res.status(400).json({ error: `Recipient phone number (${to}) is not registered on WhatsApp` });
     }
 
     const result = await active.socket.sendMessage(targetJid, {
       image: { url: targetUrl },
-      caption: caption || '',
+      caption,
     });
-    const sessionDoc = await WhatsAppSession.findOne({ session_id: sessionId });
 
     const now = new Date();
     const msg = await Message.create({
-      session: sessionDoc?._id,
+      session: sessionDoc._id,
       direction: MessageDirection.OUTBOUND,
       type: 'image',
       status: MessageStatus.SENT,
@@ -499,9 +616,20 @@ const clearMessages = async (req: AuthRequest, res: Response) => {
 
 const retryMessage = async (req: AuthRequest, res: Response) => {
   try {
-    const msg = await Message.findById(req.params.id);
+    const msg = await Message.findById(String(req.params.id));
     if (!msg) {
       return res.status(404).json({ error: 'Message not found' });
+    }
+
+    // Non-admins may only retry messages from their own session or campaign.
+    if (!isAdminRequest(req)) {
+      const [ownsSession, ownsCampaign] = await Promise.all([
+        msg.session ? WhatsAppSession.exists({ _id: msg.session, user: req.user?._id }) : null,
+        msg.campaign ? BlastCampaign.exists({ _id: msg.campaign, user: req.user?._id }) : null,
+      ]);
+      if (!ownsSession && !ownsCampaign) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
     }
 
     const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
@@ -520,10 +648,14 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
 
     let sessionId: string | null = null;
     try {
-      if (req.body?.sessionId && req.body.sessionId !== 'original' && req.body.sessionId !== 'random') {
+      const requestedSessionId = req.body?.sessionId != null ? String(req.body.sessionId) : '';
+      if (requestedSessionId && requestedSessionId !== 'original' && requestedSessionId !== 'random') {
         const customSession = await WhatsAppSession.findOne({
           user: req.user?._id,
-          $or: [{ _id: req.body.sessionId }, { session_id: req.body.sessionId }],
+          $or: [
+            { session_id: requestedSessionId },
+            ...(mongoose.Types.ObjectId.isValid(requestedSessionId) ? [{ _id: requestedSessionId }] : []),
+          ],
         });
         if (customSession) sessionId = customSession.session_id;
       }
@@ -583,8 +715,11 @@ const retryMessage = async (req: AuthRequest, res: Response) => {
   }
 };
 
+const RETRY_ALL_BATCH_SIZE = 200;
+
 const retryAllFailed = async (req: AuthRequest, res: Response) => {
   try {
+    const isAdminUser = isAdminRequest(req);
     const statusOrCond = [
       { status: { $in: [MessageStatus.FAILED, 'failed', 'FAILED', 'error', 'ERROR'] } },
       { status: { $in: [MessageStatus.EXPIRED, 'expired', 'EXPIRED'] } },
@@ -593,127 +728,181 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
       $or: statusOrCond,
       status: { $nin: ['sent', 'delivered', 'read', 'SENT', 'DELIVERED', 'READ', MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ] },
     };
-    const { user_id, merchant_id, user } = req.query as any;
 
-    if (req.user?.role !== 'admin') {
-      const userSessions = await WhatsAppSession.find({ user: req.user?._id }).select('_id');
-      const userCampaigns = await BlastCampaign.find({ user: req.user?._id }).select('_id');
-      filter.$and = [
-        { $or: statusOrCond },
-        { $or: [{ session: { $in: userSessions.map((s) => s._id) } }, { campaign: { $in: userCampaigns.map((c) => c._id) } }] },
-      ];
-      delete filter.$or;
+    // Merchant filter is only honoured for admins; merchants are always scoped to themselves.
+    let targetUserId: string | undefined;
+    if (!isAdminUser) {
+      targetUserId = req.user?._id?.toString();
     } else {
-      const targetUserId = user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
-      if (targetUserId && targetUserId !== 'all') {
-        const uSessions = await WhatsAppSession.find({ user: targetUserId }).select('_id');
-        const uCampaigns = await BlastCampaign.find({ user: targetUserId }).select('_id');
-        filter.$and = [
-          { $or: statusOrCond },
-          { $or: [{ session: { $in: uSessions.map((s) => s._id) } }, { campaign: { $in: uCampaigns.map((c) => c._id) } }] },
-        ];
-        delete filter.$or;
+      const user = queryString(req.query.user);
+      const requestedUser = queryString(req.query.user_id) || queryString(req.query.merchant_id) || (user && user !== 'ALL' && user !== 'all' ? user : undefined);
+      if (requestedUser && requestedUser !== 'all') {
+        if (!mongoose.Types.ObjectId.isValid(requestedUser)) {
+          return res.status(400).json({ error: 'Invalid user id' });
+        }
+        targetUserId = requestedUser;
       }
     }
 
-    const failedMessages = await Message.find(filter);
-    if (failedMessages.length === 0) {
+    if (targetUserId) {
+      const uSessions = await WhatsAppSession.find({ user: targetUserId }).select('_id').lean();
+      const uCampaigns = await BlastCampaign.find({ user: targetUserId }).select('_id').lean();
+      filter.$and = [
+        { $or: statusOrCond },
+        { $or: [{ session: { $in: uSessions.map((s) => s._id) } }, { campaign: { $in: uCampaigns.map((c) => c._id) } }] },
+      ];
+      delete filter.$or;
+    }
+
+    const totalFailed = await Message.countDocuments(filter);
+    if (totalFailed === 0) {
       return res.json({ success: true, count: 0, message: 'No failed messages found to retry' });
     }
 
-    const { sessionId: requestedSessionId } = req.body || {};
+    // Resolve the requested sender session ('random' / 'original' are modes, anything else is a session).
+    const rawRequested = req.body?.sessionId;
+    const requestedSessionId: string | undefined =
+      rawRequested !== undefined && rawRequested !== null && rawRequested !== '' ? String(rawRequested) : undefined;
+    let requestedSessionDoc: any = null;
+    if (requestedSessionId && requestedSessionId !== 'random' && requestedSessionId !== 'original') {
+      requestedSessionDoc = await WhatsAppSession.findOne({
+        $or: [
+          { session_id: requestedSessionId },
+          ...(mongoose.Types.ObjectId.isValid(requestedSessionId) ? [{ _id: requestedSessionId }] : []),
+        ],
+      });
+      if (!requestedSessionDoc) {
+        return res.status(404).json({ error: 'Selected WhatsApp session not found' });
+      }
+      if (!isAdminUser && !sameId(requestedSessionDoc.user, req.user?._id)) {
+        return res.status(403).json({ error: 'You do not have access to this WhatsApp session' });
+      }
+    }
 
-    const campaignIdSet = new Set<string>();
-    const nonCampaignMsgs: any[] = [];
-    for (const msg of failedMessages) {
-      if (msg.campaign) campaignIdSet.add(msg.campaign.toString());
-      else nonCampaignMsgs.push(msg);
+    // --- Campaign messages: delegate per campaign. A specific requested session is only passed
+    // through for campaigns owned by that session's owner (never route merchant A's retries via B).
+    const rawCampaignIds = await Message.distinct('campaign', filter);
+    const campaignIds = rawCampaignIds.filter(Boolean);
+    const campaignOwners = new Map<string, string>();
+    if (campaignIds.length > 0) {
+      const campDocs = await BlastCampaign.find({ _id: { $in: campaignIds } }).select('_id user').lean();
+      for (const c of campDocs) campaignOwners.set(String(c._id), c.user ? String(c.user) : '');
     }
 
     let retriedCount = 0;
     let retriedCampaignsCount = 0;
-    for (const cId of Array.from(campaignIdSet)) {
-      const campRes = await executeCampaignRetryFailed(cId, requestedSessionId);
+    for (const rawId of campaignIds) {
+      const cId = String(rawId);
+      let campaignSessionArg: string | undefined = requestedSessionId;
+      if (requestedSessionDoc) {
+        campaignSessionArg = sameId(requestedSessionDoc.user, campaignOwners.get(cId)) ? requestedSessionId : undefined;
+      }
+      const campRes = await executeCampaignRetryFailed(cId, campaignSessionArg);
       if (campRes.success && campRes.count > 0) {
         retriedCount += campRes.count;
         retriedCampaignsCount += 1;
       }
     }
 
-    let hasAnyConnectedSession = false;
-    let connectedSessionsForNonCampaign: any[] = [];
-    const effectiveUserId = req.user?.role !== 'admin'
-      ? req.user?._id
-      : (user_id || merchant_id || (user && user !== 'ALL' && user !== 'all' ? user : undefined));
+    // --- Non-campaign messages: processed in _id-ordered batches (never all in memory).
+    const connectedSessionsForNonCampaign: any[] = await WhatsAppSession.find(
+      targetUserId ? { user: targetUserId, status: SessionStatus.CONNECTED } : { status: SessionStatus.CONNECTED }
+    );
+    const hasAnyConnectedSession = connectedSessionsForNonCampaign.length > 0;
 
-    if (effectiveUserId) {
-      connectedSessionsForNonCampaign = await WhatsAppSession.find({ user: effectiveUserId, status: SessionStatus.CONNECTED });
-      hasAnyConnectedSession = connectedSessionsForNonCampaign.length > 0;
-    } else {
-      connectedSessionsForNonCampaign = await WhatsAppSession.find({ status: SessionStatus.CONNECTED });
-      hasAnyConnectedSession = connectedSessionsForNonCampaign.length > 0;
-    }
+    const sessionInfoCache = new Map<string, { session_id: string; user?: any } | null>();
+    const getSessionInfo = async (sessionObjId: any) => {
+      const key = String(sessionObjId);
+      if (!sessionInfoCache.has(key)) {
+        const sDoc = await WhatsAppSession.findById(sessionObjId).select('session_id user').lean();
+        sessionInfoCache.set(key, sDoc ? { session_id: sDoc.session_id, user: sDoc.user } : null);
+      }
+      return sessionInfoCache.get(key) || null;
+    };
 
-    for (let i = 0; i < nonCampaignMsgs.length; i++) {
-      const msg = nonCampaignMsgs[i];
-      const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
-      if (recipientPhone) {
+    const nonCampaignFilter = { $and: [filter, { campaign: null }] };
+    let lastId: any = null;
+    let index = 0;
+    for (;;) {
+      const batch: any[] = await Message.find(lastId ? { $and: [nonCampaignFilter, { _id: { $gt: lastId } }] } : nonCampaignFilter)
+        .sort({ _id: 1 })
+        .limit(RETRY_ALL_BATCH_SIZE)
+        .lean();
+      if (batch.length === 0) break;
+      lastId = batch[batch.length - 1]._id;
+
+      for (const msg of batch) {
+        const i = index++;
+        const recipientPhone = msg.recipient_phone || (msg.to_jid ? msg.to_jid.split('@')[0] : null);
+        if (!recipientPhone) continue;
+
         try {
+          const originalSession = msg.session ? await getSessionInfo(msg.session) : null;
+          const ownerId: string | undefined = originalSession?.user ? String(originalSession.user) : undefined;
+
           let sessionId: string | null = null;
           if (requestedSessionId === 'random') {
-            if (connectedSessionsForNonCampaign.length > 0) {
-              sessionId = connectedSessionsForNonCampaign[i % connectedSessionsForNonCampaign.length].session_id;
+            // Only rotate across connected sessions belonging to the message's owner.
+            const candidates = ownerId
+              ? connectedSessionsForNonCampaign.filter((s) => sameId(s.user, ownerId))
+              : [];
+            if (candidates.length > 0) {
+              sessionId = candidates[i % candidates.length].session_id;
             }
-          } else if (requestedSessionId && requestedSessionId !== 'original') {
-            const matchDoc = connectedSessionsForNonCampaign.find(
-              (s) => s._id.toString() === requestedSessionId || s.session_id === requestedSessionId
-            );
-            sessionId = matchDoc?.session_id || requestedSessionId;
+          } else if (requestedSessionDoc && ownerId && sameId(requestedSessionDoc.user, ownerId)) {
+            sessionId = requestedSessionDoc.session_id;
           }
 
           if (!sessionId) {
-            if (msg.session) {
-              const sDoc = await WhatsAppSession.findById(msg.session);
-              sessionId = sDoc?.session_id || (await pickUserSession(req.user?._id?.toString() || ''));
-            } else {
-              sessionId = await pickUserSession(req.user?._id?.toString() || '');
-            }
+            sessionId = originalSession?.session_id || (await pickUserSession(ownerId || req.user?._id?.toString() || ''));
           }
           let activeSession = sessionId ? getActiveSession(sessionId) : null;
           if (!activeSession && sessionId) {
             try { activeSession = await initWhatsAppSession(sessionId); } catch (_) {}
           }
 
-          const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
+          const cleanPhone = String(recipientPhone).replace(/[^0-9]/g, '');
           const targetJid = `${cleanPhone}@s.whatsapp.net`;
           const textContent = msg.content?.text || msg.content?.caption || 'Hello';
 
           if (activeSession?.socket) {
             const result = await activeSession.socket.sendMessage(targetJid, { text: textContent });
-            msg.status = MessageStatus.SENT;
-            msg.sent_at = new Date();
-            msg.wa_timestamp = new Date();
-            msg.message_id = result?.key?.id || msg.message_id;
-            msg.error = undefined;
+            const now = new Date();
+            await Message.updateOne(
+              { _id: msg._id },
+              {
+                $set: {
+                  status: MessageStatus.SENT,
+                  sent_at: now,
+                  wa_timestamp: now,
+                  message_id: result?.key?.id || msg.message_id,
+                },
+                $unset: { error: 1 },
+                $inc: { retry_count: 1 },
+              }
+            );
           } else {
-            msg.status = MessageStatus.PENDING;
             const targetDoc = sessionId ? connectedSessionsForNonCampaign.find((s) => s.session_id === sessionId) : null;
             const [scheduledTime = new Date()] = await findNextAvailableSlotsForSession({
               sessionDoc: targetDoc,
               count: 1,
               excludePhones: [cleanPhone],
             });
-            msg.scheduled_at = scheduledTime;
-            msg.error = undefined;
+            await Message.updateOne(
+              { _id: msg._id },
+              {
+                $set: { status: MessageStatus.PENDING, scheduled_at: scheduledTime },
+                $unset: { error: 1 },
+                $inc: { retry_count: 1 },
+              }
+            );
           }
-
-          msg.retry_count = (msg.retry_count || 0) + 1;
-          await msg.save();
           retriedCount += 1;
         } catch (err: any) {
-          msg.status = MessageStatus.PENDING;
-          msg.retry_count = (msg.retry_count || 0) + 1;
-          await msg.save();
+          await Message.updateOne(
+            { _id: msg._id },
+            { $set: { status: MessageStatus.PENDING }, $inc: { retry_count: 1 } }
+          );
           retriedCount += 1;
         }
       }
@@ -725,10 +914,10 @@ const retryAllFailed = async (req: AuthRequest, res: Response) => {
 
     return res.json({
       success: true,
-      count: retriedCount || failedMessages.length,
+      count: retriedCount || totalFailed,
       campaignsCount: retriedCampaignsCount,
       warning: !hasAnyConnectedSession ? 'No connected WhatsApp session found' : undefined,
-      message: `Successfully queued retry for ${retriedCount || failedMessages.length} failed/expired message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}${warningText}`,
+      message: `Successfully queued retry for ${retriedCount || totalFailed} failed/expired message(s)${retriedCampaignsCount > 0 ? ` across ${retriedCampaignsCount} campaign(s)` : ''}${warningText}`,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to retry all failed/expired messages' });

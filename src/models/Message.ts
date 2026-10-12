@@ -8,6 +8,10 @@ export enum MessageDirection {
 export enum MessageStatus {
   QUEUED = 'queued',
   PENDING = 'pending',
+  // Claimed by a blast worker and currently being sent. Only the worker that
+  // atomically flipped PENDING/QUEUED -> SENDING may send it; every other path
+  // (sync, reschedule, reassignment, retry) must leave it alone.
+  SENDING = 'sending',
   SENT = 'sent',
   DELIVERED = 'delivered',
   READ = 'read',
@@ -32,6 +36,9 @@ export interface IMessage extends Document {
   content?: Record<string, any>;
   error?: string;
   retry_count?: number;
+  // Number of campaign templates already delivered for this message. Lets a
+  // multi-template send that failed partway resume instead of re-sending.
+  templates_sent?: number;
   scheduled_at?: Date;
   sent_at?: Date;
   wa_timestamp?: Date;
@@ -56,6 +63,7 @@ const MessageSchema = new Schema<IMessage>(
     content: { type: Schema.Types.Mixed, default: {} },
     error: { type: String },
     retry_count: { type: Number, default: 0 },
+    templates_sent: { type: Number },
     scheduled_at: { type: Date, index: true },
     sent_at: { type: Date },
     wa_timestamp: { type: Date },

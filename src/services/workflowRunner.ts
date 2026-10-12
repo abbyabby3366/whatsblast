@@ -67,6 +67,107 @@ function cleanPhoneNumber(raw: string): string {
   return String(raw || '').replace(/[^0-9]/g, '');
 }
 
+// ---------------------------------------------------------------------------
+// Run lock: prevents the same workflow from running concurrently (cron + run-now)
+// ---------------------------------------------------------------------------
+const runningWorkflows = new Set<string>();
+
+export class WorkflowAlreadyRunningError extends Error {
+  constructor(workflowId: string) {
+    super(`Workflow ${workflowId} is already running`);
+    this.name = 'WorkflowAlreadyRunningError';
+  }
+}
+
+export function isWorkflowRunning(workflowId: string): boolean {
+  return runningWorkflows.has(String(workflowId));
+}
+
+/** Marks a workflow as running. Returns false if it was already running. */
+export function tryMarkWorkflowRunning(workflowId: string): boolean {
+  const id = String(workflowId);
+  if (runningWorkflows.has(id)) return false;
+  runningWorkflows.add(id);
+  return true;
+}
+
+export function markWorkflowFinished(workflowId: string): void {
+  runningWorkflows.delete(String(workflowId));
+}
+
+export function getRunningWorkflowIds(): string[] {
+  return Array.from(runningWorkflows);
+}
+
+// ---------------------------------------------------------------------------
+// Auto-reply loop protection
+// ---------------------------------------------------------------------------
+const SESSION_PHONE_CACHE_TTL_MS = 60 * 1000;
+let sessionPhoneCache: { phones: Set<string>; fetchedAt: number } | null = null;
+let sessionPhoneFetch: Promise<Set<string>> | null = null;
+
+/** Set of (digits-only) phone numbers of every WhatsApp session in the system, cached ~60s. */
+async function getAllSessionPhones(): Promise<Set<string>> {
+  if (sessionPhoneCache && Date.now() - sessionPhoneCache.fetchedAt < SESSION_PHONE_CACHE_TTL_MS) {
+    return sessionPhoneCache.phones;
+  }
+  if (sessionPhoneFetch) return sessionPhoneFetch;
+
+  sessionPhoneFetch = (async () => {
+    try {
+      const sessions = await WhatsAppSession.find({ phone_number: { $exists: true, $ne: '' } })
+        .select('phone_number')
+        .lean();
+      const phones = new Set<string>();
+      for (const s of sessions) {
+        const clean = cleanPhoneNumber((s as any).phone_number);
+        if (clean) phones.add(clean);
+      }
+      sessionPhoneCache = { phones, fetchedAt: Date.now() };
+      return phones;
+    } catch (err) {
+      console.error('[Workflow] Failed to load session phone numbers for loop protection:', err);
+      // Fall back to stale cache (if any) rather than disabling protection entirely
+      return sessionPhoneCache?.phones || new Set<string>();
+    } finally {
+      sessionPhoneFetch = null;
+    }
+  })();
+  return sessionPhoneFetch;
+}
+
+const AUTOREPLY_COOLDOWN_MS = (() => {
+  const raw = Number(process.env.AUTOREPLY_COOLDOWN_SEC);
+  return (Number.isFinite(raw) && raw >= 0 ? raw : 300) * 1000;
+})();
+const AUTOREPLY_COOLDOWN_MAX_ENTRIES = 20000;
+const autoReplyCooldowns = new Map<string, number>(); // key -> last reply timestamp
+
+const PROCESSED_MSG_TTL_MS = 10 * 60 * 1000;
+const PROCESSED_MSG_MAX_ENTRIES = 20000;
+const processedInboundMsgIds = new Map<string, number>(); // `${sessionId}|${msgId}` -> seen at
+
+function setBounded(map: Map<string, number>, key: string, value: number, maxEntries: number) {
+  map.delete(key); // re-insert to keep Map insertion order ~ recency
+  map.set(key, value);
+  while (map.size > maxEntries) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+}
+
+const loopProtectionPruneTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of autoReplyCooldowns) {
+    if (now - ts >= AUTOREPLY_COOLDOWN_MS) autoReplyCooldowns.delete(key);
+  }
+  for (const [key, ts] of processedInboundMsgIds) {
+    if (now - ts >= PROCESSED_MSG_TTL_MS) processedInboundMsgIds.delete(key);
+  }
+}, 60 * 1000);
+loopProtectionPruneTimer.unref?.();
+
 function formatMasterNotification(
   senderName: string,
   senderPhone: string,
@@ -141,17 +242,53 @@ export async function executeWorkflowForRecipients(
   const maxInterval = Math.max(minInterval, workflow.action_config.max_interval_seconds || 10);
 
   let sessionIdx = 0;
+  const wasActiveAtStart = Boolean(workflow.is_active);
+  const candidateDbSessions = activeSockets.map((item) => item.dbSession);
 
   for (let i = 0; i < recipients.length; i++) {
     const rawPhone = recipients[i];
     const cleanPhone = cleanPhoneNumber(rawPhone);
     if (!cleanPhone) continue;
 
-    const currentPair = activeSockets[sessionIdx % activeSockets.length];
-    sessionIdx++;
+    // Stop if the workflow was deleted, or deactivated mid-run. (Manual runs of an
+    // already-inactive workflow are allowed to proceed; only deletion stops them.)
+    const current = await Workflow.findById(workflow._id).select('is_active').lean();
+    if (!current || (wasActiveAtStart && !current.is_active)) {
+      const reason = !current ? 'deleted' : 'deactivated';
+      console.warn(`[Workflow] Workflow ${workflow._id} was ${reason} mid-run; stopping after ${i}/${recipients.length} recipients.`);
+      errors.push(`Workflow was ${reason} during execution; stopped after ${i} of ${recipients.length} recipients.`);
+      break;
+    }
 
-    const sock = currentPair.active!.socket;
-    const dbSession = currentPair.dbSession;
+    // Re-resolve the socket per recipient (sockets are replaced on reconnect).
+    let sock: any = null;
+    let dbSession: any = null;
+    for (let attempt = 0; attempt < candidateDbSessions.length; attempt++) {
+      const candidate = candidateDbSessions[sessionIdx % candidateDbSessions.length];
+      sessionIdx++;
+      const active = getActiveSession(candidate.session_id);
+      if (active?.socket) {
+        sock = active.socket;
+        dbSession = candidate;
+        break;
+      }
+    }
+
+    if (!sock || !dbSession) {
+      const errorMsg = 'No connected and working WhatsApp sessions available for this recipient.';
+      errors.push(`Failed for ${cleanPhone}: ${errorMsg}`);
+      failedCount++;
+      await WorkflowLog.create({
+        workflow: workflow._id,
+        user: workflow.user,
+        trigger_type: triggerType,
+        recipient_phone: cleanPhone,
+        status: 'FAILED',
+        error_message: errorMsg,
+      });
+      continue;
+    }
+
     const targetJid = `${cleanPhone}@s.whatsapp.net`;
 
     const rawTpl = templates[i % templates.length];
@@ -231,20 +368,39 @@ export async function executeWorkflowForRecipients(
   return { successCount, failedCount, errors };
 }
 
+/**
+ * Runs a workflow manually. The run lock is taken synchronously on call (before any await),
+ * so callers can check isWorkflowRunning() and then call this without a race.
+ * Rejects with WorkflowAlreadyRunningError if the workflow is already running.
+ */
 export async function executeManualWorkflow(workflowId: string, userId: string) {
-  const workflow = await Workflow.findOne({ _id: workflowId, user: userId });
-  if (!workflow) throw new Error('Workflow not found');
+  if (!tryMarkWorkflowRunning(workflowId)) throw new WorkflowAlreadyRunningError(workflowId);
+  try {
+    const workflow = await Workflow.findOne({ _id: workflowId, user: userId });
+    if (!workflow) throw new Error('Workflow not found');
 
-  const recipients = workflow.action_config.recipient_phones || [];
-  return executeWorkflowForRecipients(workflow, recipients, 'MANUAL');
+    const recipients = workflow.action_config.recipient_phones || [];
+    return await executeWorkflowForRecipients(workflow, recipients, 'MANUAL');
+  } finally {
+    markWorkflowFinished(workflowId);
+  }
 }
 
+/** Runs a cron workflow. Silently skips if the same workflow is already running. */
 export async function executeCronWorkflow(workflowId: string) {
-  const workflow = await Workflow.findById(workflowId);
-  if (!workflow || !workflow.is_active || workflow.trigger_type !== 'CRON') return;
+  if (!tryMarkWorkflowRunning(workflowId)) {
+    console.warn(`[Workflow] Cron workflow ${workflowId} is already running; skipping.`);
+    return;
+  }
+  try {
+    const workflow = await Workflow.findById(workflowId);
+    if (!workflow || !workflow.is_active || workflow.trigger_type !== 'CRON') return;
 
-  const recipients = workflow.action_config.recipient_phones || [];
-  return executeWorkflowForRecipients(workflow, recipients, 'CRON');
+    const recipients = workflow.action_config.recipient_phones || [];
+    return await executeWorkflowForRecipients(workflow, recipients, 'CRON');
+  } finally {
+    markWorkflowFinished(workflowId);
+  }
 }
 
 export async function handleIncomingMessageWorkflow(
@@ -257,14 +413,29 @@ export async function handleIncomingMessageWorkflow(
     selectedId?: string;
     selectedDisplayText?: string;
     messageType?: string;
-  }
+  },
+  msgId?: string
 ) {
   try {
-    const waSession = await WhatsAppSession.findOne({ session_id: sessionId });
-    if (!waSession || !waSession.user) return;
+    // (c) Dedupe: the same inbound message (e.g. re-delivered on reconnect) is only processed once.
+    if (msgId) {
+      const dedupeKey = `${sessionId}|${msgId}`;
+      const seenAt = processedInboundMsgIds.get(dedupeKey);
+      if (seenAt !== undefined && Date.now() - seenAt < PROCESSED_MSG_TTL_MS) return;
+      setBounded(processedInboundMsgIds, dedupeKey, Date.now(), PROCESSED_MSG_MAX_ENTRIES);
+    }
 
     const cleanSender = cleanPhoneNumber(senderPhone);
     if (!cleanSender) return;
+
+    // (a) Never auto-reply to another WhatsApp session managed by this system
+    // (e.g. cross-chat warmup partners) — that creates infinite reply loops.
+    const sessionPhones = await getAllSessionPhones();
+    if (sessionPhones.has(cleanSender)) return;
+
+    const waSession = await WhatsAppSession.findOne({ session_id: sessionId });
+    if (!waSession || !waSession.user) return;
+    if (cleanPhoneNumber(waSession.phone_number || '') === cleanSender) return;
 
     // Find all active REPLY workflows for this user
     const replyWorkflows = await Workflow.find({
@@ -372,6 +543,43 @@ export async function handleIncomingMessageWorkflow(
         }
       }
 
+      // (b) Per (session, sender, workflow, inbound text/button) cooldown on replies to the
+      // sender — breaks ping-pong loops with auto-responders/bots (which repeat the same
+      // message) while still answering a customer who asks something different.
+      const inboundKey = String(metadata?.selectedId || textContent || '').trim().toLowerCase().slice(0, 200);
+      const cooldownKey = `${sessionId}|${cleanSender}|${String(workflow._id)}|${inboundKey}`;
+      const lastReplyAt = autoReplyCooldowns.get(cooldownKey);
+      const senderOnCooldown = AUTOREPLY_COOLDOWN_MS > 0 &&
+        lastReplyAt !== undefined &&
+        Date.now() - lastReplyAt < AUTOREPLY_COOLDOWN_MS;
+      if (senderOnCooldown) {
+        const cfgTarget = workflow.action_config.reply_target || 'SENDER';
+        const hasMasters = (workflow.action_config.master_phones || []).map(cleanPhoneNumber).some(Boolean);
+        const wouldAlertMaster = (cfgTarget === 'MASTER_PHONE' || cfgTarget === 'BOTH') && hasMasters;
+        if (!wouldAlertMaster) {
+          console.log(`[Workflow] Auto-reply cooldown active for ${cleanSender} on session ${sessionId} (workflow ${workflow._id}); skipping.`);
+          await WorkflowLog.create({
+            workflow: workflow._id,
+            user: waSession.user,
+            trigger_type: 'REPLY',
+            recipient_phone: cleanSender,
+            session_id: sessionId,
+            status: 'SKIPPED',
+            error_message: `Ignored: already auto-replied to this same message from this sender within the last ${Math.round(AUTOREPLY_COOLDOWN_MS / 1000)}s (loop protection).`,
+            trigger_details: triggerDetails,
+          });
+          continue;
+        }
+      }
+
+      // Reserve the cooldown slot now (before any await) so concurrent inbound messages
+      // from the same sender don't both reply. Released again if the reply isn't sent.
+      const replyTargetCfg = workflow.action_config.reply_target || 'SENDER';
+      const willReplyToSender = !senderOnCooldown && (replyTargetCfg === 'SENDER' || replyTargetCfg === 'BOTH');
+      if (willReplyToSender && AUTOREPLY_COOLDOWN_MS > 0) {
+        setBounded(autoReplyCooldowns, cooldownKey, Date.now(), AUTOREPLY_COOLDOWN_MAX_ENTRIES);
+      }
+
       // Match found! Resolve session to send reply from
       let targetSessionId = sessionId;
       if (workflow.action_config.reply_session_id) {
@@ -390,6 +598,7 @@ export async function handleIncomingMessageWorkflow(
       const activeSockPair = getActiveSession(targetSessionId) || getActiveSession(sessionId);
       if (!activeSockPair?.socket) {
         console.warn(`[Workflow] No active socket for session ${targetSessionId} on reply workflow ${workflow._id}`);
+        if (willReplyToSender) autoReplyCooldowns.delete(cooldownKey);
         await WorkflowLog.create({
           workflow: workflow._id,
           user: waSession.user,
@@ -426,7 +635,7 @@ export async function handleIncomingMessageWorkflow(
       let failCount = 0;
 
       // 1. Reply to sender
-      if (sendToSender) {
+      if (sendToSender && !senderOnCooldown) {
         const senderJid = (fromJid && fromJid.includes('@')) ? fromJid : `${cleanSender}@s.whatsapp.net`;
         const senderTpl = { ...chosenTpl, text: renderedText };
 
@@ -460,6 +669,7 @@ export async function handleIncomingMessageWorkflow(
           sentCount++;
         } catch (err: any) {
           console.error(`[Workflow] Failed replying to sender ${cleanSender}:`, err);
+          autoReplyCooldowns.delete(cooldownKey); // allow a retry on the next inbound message
           failCount++;
           await WorkflowLog.create({
             workflow: workflow._id,

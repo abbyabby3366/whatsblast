@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import type { ScheduledTask } from 'node-cron';
 import { Message, MessageStatus } from '../models/Message.js';
+import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 
 /**
  * Automatic message retention / pruning.
@@ -20,8 +21,13 @@ import { Message, MessageStatus } from '../models/Message.js';
  *   NOISE   newsletter + group traffic and cross-chat warmup messages -> short window (7 days)
  *   GENERAL everything else: real customer conversations and campaign messages -> longer window (30 days)
  *
- * Messages that are not finished yet (`queued` / `pending`) are never deleted,
- * so a long-running or far-future-scheduled campaign can't lose its work queue.
+ * Messages that are not finished yet (`queued` / `pending` / `sending`) are never
+ * deleted, so a long-running or far-future-scheduled campaign can't lose its work
+ * queue. Messages of campaigns that are still live (RUNNING / PAUSED / DRAFT /
+ * scheduled) are never deleted either: the recipient sync treats "no Message row"
+ * as "never sent", so pruning them would re-blast those recipients. The general
+ * tier ages messages by send time (sent_at, falling back to updatedAt), not by
+ * createdAt, so a long-queued message is not pruned right after it is sent.
  *
  * Environment (all optional):
  *   MESSAGE_RETENTION_ENABLED          'true' | 'false'          (default: true)
@@ -48,7 +54,15 @@ const DEFAULTS = {
 const STARTUP_DELAY_MS = 60_000;
 
 /** Never delete messages that still have work to do. */
-const UNFINISHED: string[] = [MessageStatus.QUEUED, MessageStatus.PENDING];
+const UNFINISHED: string[] = [MessageStatus.QUEUED, MessageStatus.PENDING, MessageStatus.SENDING];
+
+/** Campaign statuses whose messages must be kept regardless of age. */
+const LIVE_CAMPAIGN_STATUSES: string[] = [
+  CampaignStatus.RUNNING,
+  CampaignStatus.PAUSED,
+  CampaignStatus.DRAFT,
+  'SCHEDULED',
+];
 
 let scheduledTask: ScheduledTask | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
@@ -93,11 +107,20 @@ function noiseFilter(cutoff: Date) {
   };
 }
 
-function generalFilter(cutoff: Date) {
+function generalFilter(cutoff: Date, liveCampaignIds: unknown[]) {
+  const olderThanCutoff = { $gte: new Date(0), $lt: cutoff };
   return {
     $nor: NOISE_CONDITIONS,
     status: { $nin: UNFINISHED },
-    createdAt: { $gte: new Date(0), $lt: cutoff },
+    // $nin also matches messages without a campaign (customer conversations).
+    campaign: { $nin: liveCampaignIds },
+    // sent_at/updatedAt are always >= createdAt, so this keeps the createdAt
+    // index usable as a pre-filter without changing the result.
+    createdAt: olderThanCutoff,
+    $or: [
+      { sent_at: olderThanCutoff },
+      { sent_at: { $in: [null] }, updatedAt: olderThanCutoff },
+    ],
   };
 }
 
@@ -155,7 +178,13 @@ export async function pruneOldMessages(): Promise<{ noise: number; general: numb
 
   try {
     const noise = await pruneFilter('noise (newsletters/groups/warmup)', noiseFilter(noiseCutoff), batchSize, batchDelayMs);
-    const general = await pruneFilter('general (customer/campaign)', generalFilter(generalCutoff), batchSize, batchDelayMs);
+    const liveCampaignIds = await BlastCampaign.distinct('_id', { status: { $in: LIVE_CAMPAIGN_STATUSES } });
+    const general = await pruneFilter(
+      'general (customer/campaign)',
+      generalFilter(generalCutoff, liveCampaignIds),
+      batchSize,
+      batchDelayMs
+    );
 
     const total = noise + general;
     const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);

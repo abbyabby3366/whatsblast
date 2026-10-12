@@ -2,6 +2,14 @@ import mongoose from 'mongoose';
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { MessageStatus } from '../models/Message.js';
 
+/**
+ * Escapes RegExp metacharacters so user input can be safely embedded in a
+ * `new RegExp(...)` / Mongo `$regex` as a literal substring match.
+ */
+export function escapeRegex(str: string): string {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function applyMessageStatusFilter(filter: any, status?: any): Promise<void> {
   if (!status || status === 'all' || status === 'ALL') {
     return;
@@ -64,7 +72,7 @@ export async function applyMessageStatusFilter(filter: any, status?: any): Promi
       filter.campaign = { $nin: pausedCampaignIds };
     }
 
-    filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] };
+    filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.SENDING, 'pending', 'queued', 'PENDING', 'QUEUED'] };
 
   } else if (s === 'expired') {
     const activeCampaignIds = await BlastCampaign.find({

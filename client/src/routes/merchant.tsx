@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/sidebar'
 import { LayoutDashboard, Users, Megaphone, LogOut, MessageSquare, Smartphone, User, ChevronsUpDown, Zap, Workflow as WorkflowIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth/useAuthStore'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
@@ -47,6 +48,9 @@ function MerchantLayout() {
   const location = useLocation()
   const [isLogoutOpen, setIsLogoutOpen] = useState(false)
   const [isCheckingRole, setIsCheckingRole] = useState(true)
+  const [authCheckError, setAuthCheckError] = useState(false)
+  const [authCheckAttempt, setAuthCheckAttempt] = useState(0)
+  const queryClient = useQueryClient()
   const [userMe, setUserMe] = useState<{ role?: string; phone_number?: string } | null>(null)
 
   const getPageHeader = () => {
@@ -98,17 +102,46 @@ function MerchantLayout() {
         setUserMe(me)
         setIsCheckingRole(false)
       })
-      .catch(() => {
+      .catch((err: any) => {
         if (!isMounted) return
 
-        logout()
-        navigate({ to: '/login', replace: true })
+        // Only treat genuine auth failures as "logged out". A 401 here means
+        // the API client's token refresh already failed. Network blips / 5xx
+        // must not wipe the session.
+        const status = err?.response?.status
+        if (status === 401 || status === 403) {
+          logout()
+          queryClient.clear()
+          navigate({ to: '/login', replace: true })
+          return
+        }
+
+        setAuthCheckError(true)
       })
 
     return () => {
       isMounted = false
     }
-  }, [token, logout, navigate])
+  }, [token, logout, navigate, queryClient, authCheckAttempt])
+
+  if (token && authCheckError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-4 text-center">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Could not verify your session. Please check your connection and try again.
+        </p>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setAuthCheckError(false)
+            setAuthCheckAttempt((n) => n + 1)
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    )
+  }
 
   if (!token || isCheckingRole) {
     return null
@@ -254,6 +287,7 @@ function MerchantLayout() {
               onClick={() => {
                 setIsLogoutOpen(false)
                 logout()
+                queryClient.clear()
                 navigate({ to: '/login' })
               }}
             >

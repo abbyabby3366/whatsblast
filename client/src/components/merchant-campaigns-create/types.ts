@@ -155,7 +155,6 @@ export const resolveDraftMediaList = (tmpl: TemplateDraft, userFiles?: any[]) =>
 }
 
 export const buildTemplatePayload = (tmpl: TemplateDraft) => {
-  const isMedia = ['image', 'video', 'document'].includes(tmpl.messageType)
   const isButtons = tmpl.messageType === 'buttons'
 
   const file_ids = (tmpl.attachedFiles || []).map((f) => f.id).filter(Boolean)
