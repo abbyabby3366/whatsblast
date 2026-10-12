@@ -95,7 +95,6 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
 
   const campStatus = (campaign?.status || '').toLowerCase()
   const isCampaignPaused = campStatus === 'paused'
-  const isCampaignActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus)
 
   const customerRows =
     recipientPhones.length > 0
@@ -109,7 +108,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
           if (matchedLog) {
             const rawSt = (matchedLog.status || 'sent').toLowerCase()
             const targetTime = matchedLog.scheduled_at || matchedLog.scheduled_datetime
-            const isExp = rawSt === 'expired' || (!isCampaignActive && (rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).isBefore(dayjs()))
+            const isPastGrace = (rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs())
+            const isExp = rawSt === 'expired' || isPastGrace
             const rowStatus = isExp ? 'expired' : (isCampaignPaused && (rawSt === 'pending' || rawSt === 'queued') ? 'paused' : rawSt)
             return {
               phone,
@@ -147,7 +147,8 @@ export function CustomerListModal({ campaign, onClose, invalidateQueryKey = ['ca
       : logs.map((l) => {
           const rawSt = (l.status || 'sent').toLowerCase()
           const targetTime = l.scheduled_at || l.scheduled_datetime
-          const isExp = rawSt === 'expired' || (!isCampaignActive && (rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).isBefore(dayjs()))
+          const isPastGrace = (rawSt === 'pending' || rawSt === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs())
+          const isExp = rawSt === 'expired' || isPastGrace
           const rowStatus = isExp ? 'expired' : (isCampaignPaused && (rawSt === 'pending' || rawSt === 'queued') ? 'paused' : rawSt)
           return {
             phone: l.recipient_phone || l.to_jid || 'Recipient',

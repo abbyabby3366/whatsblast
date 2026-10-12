@@ -107,19 +107,18 @@ function formatMessage(m: any) {
   const targetScheduled = obj.scheduled_at || obj.createdAt;
   const campStatus = (campaignObj?.status || '').toLowerCase();
   const isCampaignPaused = campStatus === 'paused';
-  const isCampaignActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus);
 
-  // If a campaign is actively running, scheduled, or paused, pending messages are waiting in queue, NOT expired!
-  // Only mark as expired if explicitly set to expired, or if a completed/stopped campaign left pending messages behind
-  const isExpired =
-    rawStatus === 'expired' ||
-    (!isCampaignActive &&
-      campaignObj &&
-      isPendingOrQueued &&
-      targetScheduled &&
-      new Date(targetScheduled).getTime() < Date.now());
+  // 2-minute grace window past scheduled time before marking unsent messages as expired
+  const EXPIRED_GRACE_MS = 2 * 60 * 1000;
+  const isPastGrace =
+    isPendingOrQueued &&
+    targetScheduled &&
+    new Date(targetScheduled).getTime() + EXPIRED_GRACE_MS < Date.now();
 
-  const computedStatus = isCampaignPaused && isPendingOrQueued ? 'paused' : (isExpired ? 'expired' : rawStatus || MessageStatus.PENDING);
+  const isExpired = rawStatus === 'expired' || isPastGrace;
+  const computedStatus = isExpired
+    ? 'expired'
+    : (isCampaignPaused && isPendingOrQueued ? 'paused' : rawStatus || MessageStatus.PENDING);
   const isSentOrFailed = isSent || isFailed;
   const validWaTimestamp = obj.wa_timestamp && new Date(obj.wa_timestamp).getFullYear() > 2000 ? obj.wa_timestamp : null;
 
@@ -720,9 +719,19 @@ const RETRY_ALL_BATCH_SIZE = 200;
 const retryAllFailed = async (req: AuthRequest, res: Response) => {
   try {
     const isAdminUser = isAdminRequest(req);
+    const EXPIRED_GRACE_MS = 2 * 60 * 1000;
+    const cutoff = new Date(Date.now() - EXPIRED_GRACE_MS);
     const statusOrCond = [
       { status: { $in: [MessageStatus.FAILED, 'failed', 'FAILED', 'error', 'ERROR'] } },
       { status: { $in: [MessageStatus.EXPIRED, 'expired', 'EXPIRED'] } },
+      {
+        status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+        $or: [
+          { scheduled_at: { $lt: cutoff } },
+          { scheduled_at: null, createdAt: { $lt: cutoff } },
+          { scheduled_at: { $exists: false }, createdAt: { $lt: cutoff } },
+        ],
+      },
     ];
     const filter: any = {
       $or: statusOrCond,

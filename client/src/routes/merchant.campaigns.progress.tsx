@@ -291,8 +291,8 @@ function CampaignProgressPage() {
   const logFailedCount = reportRows.filter((r) => ['failed', 'error'].includes((r.status || '').toLowerCase())).length
   const logExpiredCount = reportRows.filter((r) => {
     const st = (r.status || '').toLowerCase()
-    const isCampActive = ['RUNNING', 'PAUSED', 'SCHEDULED', 'DRAFT'].includes(cStatus)
-    return st === 'expired' || (!isCampActive && (st === 'pending' || st === 'queued') && r.scheduled_at && dayjs(r.scheduled_at).isBefore(dayjs()))
+    const targetTime = r.scheduled_at || r.created_at
+    return st === 'expired' || ((st === 'pending' || st === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs()))
   }).length
 
   const hasLogData = logs.length > 0 || reportRows.length > 0

@@ -4,6 +4,7 @@ import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { resolveCampaignInterval } from './blastUtils.js';
 import { findNextAvailableSlotsForSession } from './scheduleSlotFinder.js';
 import { getProcessedPhoneSet, normalizePhoneNumber } from './campaignRecipientSyncService.js';
+import { triggerCampaignExecution } from './blastRunner.js';
 
 export const COMPLETED_STATUSES = [
   MessageStatus.SENT,
@@ -143,14 +144,14 @@ export const executeCampaignRetryFailed = async (
       {
         $or: [
           { status: { $in: [...FAILED_STATUSES, ...EXPIRED_STATUSES] } },
-          ...(![CampaignStatus.PAUSED, CampaignStatus.RUNNING, 'running', 'paused', 'scheduled', 'SCHEDULED'].includes(campaign.status as any)
-            ? [
-                {
-                  status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
-                  scheduled_at: { $lt: cutoff },
-                },
-              ]
-            : []),
+          {
+            status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+            $or: [
+              { scheduled_at: { $lt: cutoff } },
+              { scheduled_at: null, createdAt: { $lt: cutoff } },
+              { scheduled_at: { $exists: false }, createdAt: { $lt: cutoff } },
+            ],
+          },
         ],
       },
     ],
@@ -299,6 +300,10 @@ export const executeCampaignRetryFailed = async (
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
   await campaign.save();
+
+  if (campaign.status === CampaignStatus.RUNNING) {
+    triggerCampaignExecution(campaign._id.toString());
+  }
 
   const statusNotice = campaign.status === CampaignStatus.PAUSED
     ? ' (Campaign is paused. Messages will send when resumed.)'
@@ -472,6 +477,10 @@ export const executeCampaignRetryRecipient = async (
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
   await campaign.save();
+
+  if (campaign.status === CampaignStatus.RUNNING) {
+    triggerCampaignExecution(campaign._id.toString());
+  }
 
   const phoneNotice = sessionDoc?.phone_number ? ` via phone ${sessionDoc.phone_number}` : '';
   const isPaused = campaign.status === CampaignStatus.PAUSED;
