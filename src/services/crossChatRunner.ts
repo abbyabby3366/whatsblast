@@ -25,7 +25,6 @@ let isRunningCycle = false;
 const userLastInitiatedMap: Map<string, number> = new Map();
 const pairNextScheduledTimeMap: Map<string, number> = new Map(); // Fixed scheduled time per pair ID
 const pairLastSentTimeMap: Map<string, number> = new Map(); // Last sent time per pair ID
-const forceSendInProgress: Set<string> = new Set(); // Guards concurrent send-now calls (keyed by pair or user)
 
 
 export function getCanonicalPairKey(idA: string, idB: string): string {
@@ -35,7 +34,7 @@ export function getCanonicalPairKey(idA: string, idB: string): string {
 export function startCrossChatRunner(intervalMs = 8000): void {
   if (runnerInterval) return;
   console.log('🔄 Cross-Chat Session Warmup runner initialized.');
-  runnerInterval = setInterval(() => { void processCrossChat(); }, intervalMs);
+  runnerInterval = setInterval(processCrossChat, intervalMs);
 }
 
 export function stopCrossChatRunner(): void {
@@ -100,12 +99,8 @@ export async function getRandomWarmupImageUrl(): Promise<string> {
   return `https://picsum.photos/seed/${seed}/800/600`;
 }
 
-/**
- * Runs one runner cycle. Returns false if a cycle was already in progress
- * (nothing was processed by this call), true otherwise.
- */
-async function processCrossChat(): Promise<boolean> {
-  if (isRunningCycle) return false;
+async function processCrossChat(): Promise<void> {
+  if (isRunningCycle) return;
   isRunningCycle = true;
 
   try {
@@ -473,7 +468,6 @@ async function processCrossChat(): Promise<boolean> {
   } finally {
     isRunningCycle = false;
   }
-  return true;
 }
 
 export function getLocalTimeInTimezone(date: Date, timeZone: string = 'Asia/Kuala_Lumpur') {
@@ -739,60 +733,21 @@ export function getCrossChatStatus(userId: string) {
   });
 }
 
-function getBusySessionIds(userId: string): Set<string> {
-  const busy = new Set<string>();
-  for (const d of activeDialogues.values()) {
-    if (d.user_id !== userId) continue;
-    busy.add(d.session_a_id);
-    busy.add(d.session_b_id);
-  }
-  return busy;
-}
-
-const BUSY_RESPONSE = { success: false, message: 'busy, try again' };
-
 export async function forceSendNextTurn(
   userId: string,
   sessionAId?: string,
   sessionBId?: string
 ): Promise<{ success: boolean; message: string }> {
-  // A runner cycle is in progress: processCrossChat() would be a no-op, so don't report success.
-  if (isRunningCycle) return BUSY_RESPONSE;
-
-  const guardKey = (sessionAId && sessionBId)
-    ? `pair:${getCanonicalPairKey(sessionAId, sessionBId)}`
-    : `user:${userId}`;
-  if (forceSendInProgress.has(guardKey)) return BUSY_RESPONSE;
-  forceSendInProgress.add(guardKey);
-
-  try {
-    return await forceSendNextTurnInner(userId, sessionAId, sessionBId);
-  } finally {
-    forceSendInProgress.delete(guardKey);
-  }
-}
-
-async function forceSendNextTurnInner(
-  userId: string,
-  sessionAId?: string,
-  sessionBId?: string
-): Promise<{ success: boolean; message: string }> {
   if (sessionAId && sessionBId) {
-    if (sessionAId === sessionBId) {
-      return { success: false, message: 'Session A and Session B must be different' };
-    }
-
-    const findExisting = () => Array.from(activeDialogues.values()).find(
+    const existing = Array.from(activeDialogues.values()).find(
       (d) => d.user_id === userId &&
         ((d.session_a_id === sessionAId && d.session_b_id === sessionBId) ||
          (d.session_a_id === sessionBId && d.session_b_id === sessionAId))
     );
 
-    const existing = findExisting();
     if (existing) {
       existing.next_turn_at = Date.now();
-      const ran = await processCrossChat();
-      if (!ran) return BUSY_RESPONSE;
+      await processCrossChat();
       return { success: true, message: 'Message sent immediately for this session pair!' };
     } else {
       const sessionA = await WhatsAppSession.findOne({ session_id: sessionAId, user: userId });
@@ -825,13 +780,6 @@ async function forceSendNextTurnInner(
       const maxTurns = user?.cross_chat_max_turns ?? 5;
       const targetTurns = Math.floor(Math.random() * (Math.max(minTurns, maxTurns) - Math.min(minTurns, maxTurns) + 1)) + Math.min(minTurns, maxTurns);
 
-      // Re-check state after the awaits above (no awaits between here and activeDialogues.set).
-      if (isRunningCycle || findExisting()) return BUSY_RESPONSE;
-      const busy = getBusySessionIds(userId);
-      if (busy.has(sessionA.session_id) || busy.has(sessionB.session_id)) {
-        return { success: false, message: 'One of these sessions is already in another active dialogue' };
-      }
-
       const script = getRandomScript();
       const dialogueId = `dialogue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -848,11 +796,7 @@ async function forceSendNextTurnInner(
         next_turn_at: Date.now(),
       });
 
-      const ran = await processCrossChat();
-      if (!ran) {
-        // Dialogue stays queued and will be sent by the next runner cycle.
-        return { success: false, message: 'busy, try again (dialogue queued for next cycle)' };
-      }
+      await processCrossChat();
       return { success: true, message: 'Started and sent first turn immediately for this pair!' };
     }
   }
@@ -871,39 +815,33 @@ async function forceSendNextTurnInner(
       phone_number: { $exists: true, $ne: '' },
     });
 
-    // Re-check after awaits: a runner cycle may have started a dialogue meanwhile.
-    if (isRunningCycle) return BUSY_RESPONSE;
-    const busy = getBusySessionIds(userId);
-
-    if (busy.size === 0) {
-      if (connectedSessions.length < 2) {
-        return { success: false, message: 'Need at least 2 connected and cross-chat enabled WhatsApp sessions' };
-      }
-
-      const shuffled = [...connectedSessions].sort(() => Math.random() - 0.5);
-      const sessionA = shuffled[0];
-      const sessionB = shuffled[1];
-
-      const minTurns = user?.cross_chat_min_turns ?? 3;
-      const maxTurns = user?.cross_chat_max_turns ?? 5;
-      const targetTurns = Math.floor(Math.random() * (Math.max(minTurns, maxTurns) - Math.min(minTurns, maxTurns) + 1)) + Math.min(minTurns, maxTurns);
-
-      const script = getRandomScript();
-      const dialogueId = `dialogue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-      activeDialogues.set(dialogueId, {
-        id: dialogueId,
-        user_id: userId,
-        session_a_id: sessionA.session_id,
-        session_a_phone: sessionA.phone_number || '',
-        session_b_id: sessionB.session_id,
-        session_b_phone: sessionB.phone_number || '',
-        script,
-        current_turn_index: 0,
-        target_turns: targetTurns,
-        next_turn_at: Date.now(),
-      });
+    if (connectedSessions.length < 2) {
+      return { success: false, message: 'Need at least 2 connected and cross-chat enabled WhatsApp sessions' };
     }
+
+    const shuffled = [...connectedSessions].sort(() => Math.random() - 0.5);
+    const sessionA = shuffled[0];
+    const sessionB = shuffled[1];
+
+    const minTurns = user?.cross_chat_min_turns ?? 3;
+    const maxTurns = user?.cross_chat_max_turns ?? 5;
+    const targetTurns = Math.floor(Math.random() * (Math.max(minTurns, maxTurns) - Math.min(minTurns, maxTurns) + 1)) + Math.min(minTurns, maxTurns);
+
+    const script = getRandomScript();
+    const dialogueId = `dialogue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    activeDialogues.set(dialogueId, {
+      id: dialogueId,
+      user_id: userId,
+      session_a_id: sessionA.session_id,
+      session_a_phone: sessionA.phone_number || '',
+      session_b_id: sessionB.session_id,
+      session_b_phone: sessionB.phone_number || '',
+      script,
+      current_turn_index: 0,
+      target_turns: targetTurns,
+      next_turn_at: Date.now(),
+    });
   }
 
   const targetDialogue = Array.from(activeDialogues.values()).find((d) => d.user_id === userId);
@@ -912,8 +850,7 @@ async function forceSendNextTurnInner(
   }
 
   targetDialogue.next_turn_at = Date.now();
-  const ran = await processCrossChat();
-  if (!ran) return BUSY_RESPONSE;
+  await processCrossChat();
 
   return { success: true, message: 'Next scheduled message sent immediately!' };
 }

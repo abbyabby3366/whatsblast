@@ -23,7 +23,9 @@ import {
   CheckCheck,
   XCircle,
   Users,
+  Check,
   ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 
 import { api, getErrorMessage } from '@/lib/api'
@@ -234,9 +236,9 @@ function CrossChatPage() {
       })
       return { prev }
     },
-    onError: async (err, _vars, context) => {
+    onError: (err, _vars, context) => {
       if (context?.prev) queryClient.setQueryData(['whatsapp-sessions'], context.prev)
-      toast.error(await getErrorMessage(err))
+      toast.error(getErrorMessage(err))
     },
     onSuccess: (data, vars) => {
       const name = data?.alias || data?.phone_number || data?.session_id || 'Session'
@@ -255,8 +257,8 @@ function CrossChatPage() {
       queryClient.invalidateQueries({ queryKey: ['cross-chat-settings'] })
       toast.success(vars.enabled ? 'Enabled cross-chat for all connected WhatsApp accounts' : 'Disabled cross-chat for all WhatsApp accounts')
     },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err))
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
     },
   })
 
@@ -350,8 +352,8 @@ function CrossChatPage() {
       queryClient.setQueryData(['cross-chat-settings'], data)
       toast.success(data.cross_chat_enabled ? 'Auto Cross-Chat Warmup Enabled' : 'Cross-Chat Warmup Disabled')
     },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err))
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
     },
   })
 
@@ -381,8 +383,8 @@ function CrossChatPage() {
       queryClient.invalidateQueries({ queryKey: ['cross-chat-settings'] })
       toast.success('Cross-Chat Configurations Saved Successfully!')
     },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err))
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
     },
   })
 
@@ -419,8 +421,8 @@ function CrossChatPage() {
       queryClient.invalidateQueries({ queryKey: ['cross-chat-settings'] })
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
     },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err))
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
     },
   })
 

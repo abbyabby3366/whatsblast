@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, RefreshCw, AlertCircle, CheckCircle2, Phone, Clock, Trash2 } from 'lucide-react'
+import { Loader2, RefreshCw, AlertCircle, CheckCircle2, Phone, Calendar, Clock, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { WorkflowItem, WorkflowLogItem } from './types'
 

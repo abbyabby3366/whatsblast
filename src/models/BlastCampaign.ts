@@ -15,10 +15,6 @@ export interface IBlastCampaign extends Document {
   templates?: Array<any>;
   contacts: string[];
   recipient_phones?: string[];
-  // Durable record of recipients (normalized phone) that were successfully sent.
-  // Survives message retention so a recipient sync never re-blasts them.
-  // May be missing on older campaigns — treat missing as empty.
-  processed_phones?: string[];
   status: CampaignStatus;
   error_message?: string;
   min_interval_seconds: number;
@@ -48,9 +44,6 @@ const BlastCampaignSchema = new Schema<IBlastCampaign>(
     templates: [{ type: Schema.Types.Mixed }],
     contacts: [{ type: String }],
     recipient_phones: [{ type: String }],
-    // default: undefined so a stale in-memory doc never writes back an empty
-    // default array over phones $addToSet'd concurrently by the blast worker.
-    processed_phones: { type: [String], default: undefined },
     status: { type: String, enum: Object.values(CampaignStatus), default: CampaignStatus.DRAFT },
     error_message: { type: String },
     min_interval_seconds: { type: Number, default: 10 },

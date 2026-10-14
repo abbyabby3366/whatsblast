@@ -1,31 +1,11 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router, Response } from 'express';
 import multer from 'multer';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { FileModel, FileType, IFile } from '../models/File.js';
-import { uploadToS3, resolveUploadMimeType } from '../services/s3Service.js';
+import { uploadToS3 } from '../services/s3Service.js';
 
 const router = Router();
-
-// WhatsApp media limits: ~16MB for images/video/audio, up to 100MB for documents.
-// Files are buffered in memory, so keep this modest; override with MAX_UPLOAD_MB.
-const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB) > 0 ? Number(process.env.MAX_UPLOAD_MB) : 25;
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 1 },
-});
-
-const uploadSingleFile = (req: AuthRequest, res: Response, next: NextFunction) => {
-  upload.single('file')(req, res, (err: any) => {
-    if (!err) return next();
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ error: `File too large. Maximum size is ${MAX_UPLOAD_MB}MB` });
-      }
-      return res.status(400).json({ error: err.message || 'Invalid file upload' });
-    }
-    return next(err);
-  });
-};
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(authenticateToken);
 
@@ -50,13 +30,9 @@ const createFile = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
-  const mime = resolveUploadMimeType(req.file.mimetype, req.file.originalname);
-  if (!mime) {
-    return res.status(400).json({ error: `File type not allowed: ${req.file.mimetype || 'unknown'}` });
-  }
-
   try {
     let fileType = FileType.DOCUMENT;
+    const mime = req.file.mimetype;
 
     if (mime.startsWith('image/')) fileType = FileType.IMAGE;
     else if (mime.startsWith('video/')) fileType = FileType.VIDEO;
@@ -71,7 +47,7 @@ const createFile = async (req: AuthRequest, res: Response) => {
       file_name: req.file.originalname,
       file_size: req.file.size,
       mimetype: mime,
-      caption: req.body.caption ? String(req.body.caption) : '',
+      caption: req.body.caption || '',
     });
 
     return res.status(201).json(formatFile(fileDoc));
@@ -81,7 +57,7 @@ const createFile = async (req: AuthRequest, res: Response) => {
   }
 };
 
-router.post('/files', uploadSingleFile, createFile);
+router.post('/files', upload.single('file'), createFile);
 
 const deleteFile = async (req: AuthRequest, res: Response) => {
   await FileModel.deleteOne({ _id: req.params.id, user: req.user?._id });

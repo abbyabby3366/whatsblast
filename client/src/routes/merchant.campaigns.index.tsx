@@ -89,7 +89,7 @@ function CampaignsPage() {
   })
 
   const handleEdit = (campaign: any) => {
-    navigate({ to: '/merchant/campaigns/create', search: { edit: String(campaign.id), step: undefined } })
+    navigate({ to: '/merchant/campaigns/create', search: { edit: campaign.id } })
   }
 
   const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
@@ -141,7 +141,7 @@ function CampaignsPage() {
           </div>
 
           <Button
-            onClick={() => navigate({ to: '/merchant/campaigns/create', search: { edit: undefined, step: undefined } })}
+            onClick={() => navigate({ to: '/merchant/campaigns/create' })}
             className="bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700"
           >
             <Plus className="mr-2 h-4 w-4" /> Create New Campaign

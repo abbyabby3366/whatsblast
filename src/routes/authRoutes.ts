@@ -10,12 +10,6 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-whatsblast-2026';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'super-secret-refresh-key-whatsblast-2026';
 
-// Phone numbers / OTPs may arrive as JSON numbers; passwords must be strings.
-// Anything else (objects, arrays) is rejected so it can't reach bcrypt or Mongo filters.
-function isStringOrNumber(v: unknown): v is string | number {
-  return typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v));
-}
-
 function sendAuthTokens(user: any, res: Response, statusCode = 200) {
   const access = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
   const refresh = jwt.sign({ userId: user._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
@@ -93,9 +87,6 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   if (!phone_number || !otp || !password) {
     return res.status(400).json({ detail: 'Phone number, OTP, and new password are required' });
   }
-  if (!isStringOrNumber(phone_number) || !isStringOrNumber(otp) || typeof password !== 'string') {
-    return res.status(400).json({ detail: 'Phone number, OTP, and new password must be strings' });
-  }
 
   const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
   const validOtp: IOTP | null = await OTP.findOne({ phone_number: cleanPhone, code: String(otp).trim() });
@@ -121,9 +112,6 @@ router.post('/register', async (req: Request, res: Response) => {
 
   if (!phone_number || !password) {
     return res.status(400).json({ error: 'Phone number and password are required' });
-  }
-  if (!isStringOrNumber(phone_number) || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Phone number and password must be strings' });
   }
 
   const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');
@@ -151,9 +139,6 @@ router.post('/login', async (req: Request, res: Response) => {
 
   if (!phone_number || !password) {
     return res.status(400).json({ detail: 'Phone number and password are required' });
-  }
-  if (!isStringOrNumber(phone_number) || typeof password !== 'string') {
-    return res.status(400).json({ detail: 'Phone number and password must be strings' });
   }
 
   const cleanPhone = String(phone_number).trim().replace(/[^0-9]/g, '');

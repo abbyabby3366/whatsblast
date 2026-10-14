@@ -7,7 +7,6 @@ import {
   BufferJSON,
 } from 'baileys';
 import { Redis } from 'ioredis';
-import { isValidSessionId } from '../utils/sessionPath.js';
 
 let redisClient: Redis | null = null;
 
@@ -50,28 +49,19 @@ export async function useRedisAuthState(sessionId: string): Promise<{
   if (!redis) {
     throw new Error('Redis client not configured');
   }
-  // sessionId becomes part of a SCAN MATCH pattern in clearCreds; glob characters
-  // like '*' would match (and delete) other sessions' credentials.
-  if (!isValidSessionId(sessionId)) {
-    throw new Error(`Invalid session id for Redis auth state: ${sessionId}`);
-  }
 
   const credsKey = `wa_session:${sessionId}:creds`;
   const keysPrefix = `wa_session:${sessionId}:keys:`;
 
-  // Connection errors must propagate: treating an unreachable Redis as "no creds"
-  // would start a fresh device (QR) and later overwrite the real credentials.
-  const parseData = (key: string, data: string | null) => {
-    if (!data) return null;
+  const readData = async (key: string) => {
     try {
+      const data = await redis.get(key);
+      if (!data) return null;
       return JSON.parse(data, BufferJSON.reviver);
-    } catch (err) {
-      console.error(`Corrupt JSON in Redis key ${key}:`, err);
+    } catch (_) {
       return null;
     }
   };
-
-  const readData = async (key: string) => parseData(key, await redis.get(key));
 
   const writeData = async (key: string, value: any) => {
     try {
@@ -94,12 +84,8 @@ export async function useRedisAuthState(sessionId: string): Promise<{
       keys: {
         get: async (type, ids) => {
           const data: { [id: string]: any } = {};
-          if (ids.length === 0) return data;
-          const redisKeys = ids.map((id) => `${keysPrefix}${type}:${id}`);
-          const raws = await redis.mget(...redisKeys);
-          for (let i = 0; i < ids.length; i++) {
-            const id = ids[i];
-            const value = parseData(redisKeys[i], raws[i]);
+          for (const id of ids) {
+            const value = await readData(`${keysPrefix}${type}:${id}`);
             if (value) {
               if (type === 'app-state-sync-key' && value) {
                 data[id] = proto.Message.AppStateSyncKeyData.fromObject(value);
@@ -127,15 +113,10 @@ export async function useRedisAuthState(sessionId: string): Promise<{
       await writeData(credsKey, creds);
     },
     clearCreds: async () => {
-      // SCAN instead of KEYS so we don't block Redis for every other session
-      let cursor = '0';
-      do {
-        const [next, keys] = await redis.scan(cursor, 'MATCH', `wa_session:${sessionId}:*`, 'COUNT', 500);
-        cursor = next;
-        if (keys.length > 0) {
-          await redis.unlink(...keys);
-        }
-      } while (cursor !== '0');
+      const keys = await redis.keys(`wa_session:${sessionId}:*`);
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
     },
   };
 }

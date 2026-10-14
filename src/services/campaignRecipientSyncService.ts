@@ -20,25 +20,6 @@ export interface SyncRecipientsOptions {
   selectedSessions?: string[];
   minIntervalSeconds?: number;
   maxIntervalSeconds?: number;
-  /**
-   * Allow creating new PENDING rows even when the campaign is COMPLETED.
-   * Only explicit retry paths should set this; otherwise a sync on a finished
-   * campaign (e.g. after message retention pruned its rows) must not re-blast.
-   */
-  allowCreateWhenCompleted?: boolean;
-}
-
-const UNSENT_STATUSES = [MessageStatus.PENDING, MessageStatus.QUEUED];
-const SENT_STATUSES = [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ];
-
-/** Normalized phones the campaign has durably recorded as sent (missing field = empty). */
-export function getProcessedPhoneSet(campaign: any): Set<string> {
-  const list: any[] = Array.isArray(campaign?.processed_phones) ? campaign.processed_phones : [];
-  return new Set(list.map((p) => normalizePhoneNumber(p)).filter(Boolean));
-}
-
-function messagePhone(m: any): string {
-  return normalizePhoneNumber(m.recipient_phone || (m.to_jid ? m.to_jid.split('@')[0] : ''));
 }
 
 export interface SyncRecipientsResult {
@@ -77,10 +58,10 @@ export async function syncCampaignRecipients(
     }
   }
 
-  const existingMsgs = await Message.find({ campaign: campaign._id })
-    .select('_id status recipient_phone to_jid')
-    .sort({ scheduled_at: 1, createdAt: 1 })
-    .lean();
+  const existingMsgs = await Message.find({ campaign: campaign._id }).sort({
+    scheduled_at: 1,
+    createdAt: 1,
+  });
 
   const executedStatuses = [
     MessageStatus.SENT,
@@ -91,56 +72,33 @@ export async function syncCampaignRecipients(
   ];
 
   const executedMsgs = existingMsgs.filter((m) => executedStatuses.includes(m.status));
-  // Messages a worker has claimed and is sending right now: never delete or
-  // touch them, but count their recipient as covered so no duplicate is created.
-  const inFlightMsgs = existingMsgs.filter((m) => m.status === MessageStatus.SENDING);
-  const unsentMsgs = existingMsgs.filter(
-    (m) => !executedStatuses.includes(m.status) && m.status !== MessageStatus.SENDING
-  );
+  const unsentMsgs = existingMsgs.filter((m) => !executedStatuses.includes(m.status));
 
   const executedPhoneSet = new Set<string>();
-  const sentRowPhones: string[] = [];
   for (const m of executedMsgs) {
-    const p = messagePhone(m);
-    if (p) executedPhoneSet.add(p);
-    if (p && SENT_STATUSES.includes(m.status)) sentRowPhones.push(p);
-  }
-
-  // Durable "already sent" record that survives message retention.
-  const processedPhoneSet = getProcessedPhoneSet(campaign);
-  // Backfill it from existing sent rows (campaigns created before the field existed).
-  const newlyProcessed = Array.from(new Set(sentRowPhones)).filter((p) => !processedPhoneSet.has(p));
-  if (newlyProcessed.length > 0) {
-    await BlastCampaign.updateOne(
-      { _id: campaign._id },
-      { $addToSet: { processed_phones: { $each: newlyProcessed } } }
+    const p = normalizePhoneNumber(
+      m.recipient_phone || (m.to_jid ? m.to_jid.split('@')[0] : '')
     );
-    newlyProcessed.forEach((p) => processedPhoneSet.add(p));
-  }
-
-  const keptUnsentPhoneSet = new Set<string>();
-  for (const m of inFlightMsgs) {
-    const p = messagePhone(m);
-    if (p) keptUnsentPhoneSet.add(p);
+    if (p) executedPhoneSet.add(p);
   }
 
   // 1. Delete unsent messages that are no longer targeted, or that were already executed
   const msgsToDeleteIds: mongoose.Types.ObjectId[] = [];
+  const keptUnsentPhoneSet = new Set<string>();
 
   for (const m of unsentMsgs) {
-    const p = messagePhone(m);
-    if (!seenNew.has(p) || executedPhoneSet.has(p) || processedPhoneSet.has(p) || keptUnsentPhoneSet.has(p)) {
-      msgsToDeleteIds.push(m._id as mongoose.Types.ObjectId);
+    const p = normalizePhoneNumber(
+      m.recipient_phone || (m.to_jid ? m.to_jid.split('@')[0] : '')
+    );
+    if (!seenNew.has(p) || executedPhoneSet.has(p) || keptUnsentPhoneSet.has(p)) {
+      msgsToDeleteIds.push(m._id);
     } else {
       keptUnsentPhoneSet.add(p);
     }
   }
 
-  let deletedCount = 0;
   if (msgsToDeleteIds.length > 0) {
-    // Status guard: a message claimed by a worker in the meantime is not deleted.
-    const del = await Message.deleteMany({ _id: { $in: msgsToDeleteIds }, status: { $in: UNSENT_STATUSES } });
-    deletedCount = del.deletedCount ?? 0;
+    await Message.deleteMany({ _id: { $in: msgsToDeleteIds } });
   }
 
   // 2. Resolve available sessions for assigning
@@ -169,15 +127,10 @@ export async function syncCampaignRecipients(
     availableSessions = fallbackSessions;
   }
 
-  // 3. Identify missing recipients who need a pending message created.
-  // A finished campaign never gets new rows here unless a retry path explicitly asks.
-  const canCreate =
-    campaign.status !== CampaignStatus.COMPLETED || options.allowCreateWhenCompleted === true;
-  const missingPhones = canCreate
-    ? cleanNewRecipients.filter(
-        (p) => !executedPhoneSet.has(p) && !processedPhoneSet.has(p) && !keptUnsentPhoneSet.has(p)
-      )
-    : [];
+  // 3. Identify missing recipients who need a pending message created
+  const missingPhones = cleanNewRecipients.filter(
+    (p) => !executedPhoneSet.has(p) && !keptUnsentPhoneSet.has(p)
+  );
 
   const templateObjs = options.templates || campaign.templates || [];
   const primaryTpl = templateObjs.length > 0 ? templateObjs[0] : null;
@@ -225,7 +178,7 @@ export async function syncCampaignRecipients(
     await Message.updateMany(
       {
         campaign: campaign._id,
-        status: { $in: UNSENT_STATUSES },
+        status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
       },
       {
         $set: {
@@ -239,11 +192,8 @@ export async function syncCampaignRecipients(
   // 5. Reschedule and assign sessions for all pending messages sequentially
   const allUnsentMsgs = await Message.find({
     campaign: campaign._id,
-    status: { $in: UNSENT_STATUSES },
-  })
-    .select('_id session sender_phone')
-    .sort({ createdAt: 1 })
-    .lean();
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+  }).sort({ createdAt: 1 });
 
   const minIntervalMins =
     Number(options.minIntervalSeconds ?? campaign.min_interval_seconds) || 10;
@@ -254,7 +204,6 @@ export async function syncCampaignRecipients(
 
   const sessionLastTimeMap = new Map<string, number>();
   const now = Date.now();
-  const scheduleOps: any[] = [];
 
   for (let idx = 0; idx < allUnsentMsgs.length; idx++) {
     const msg = allUnsentMsgs[idx];
@@ -266,12 +215,11 @@ export async function syncCampaignRecipients(
         availableSessions.some(
           (s: any) => s._id.toString() === msg.session?.toString()
         );
-      // Only redistribute valid assignments when an explicit, non-empty session
-      // selection is in effect (callers always pass selectedSessions, often as []).
       const shouldReassign =
         !isSessionValid ||
-        (selectedSessionsList.length > 0 &&
-          (sessionModeVal === 'SPECIFIC' || options.selectedSessions !== undefined));
+        sessionModeVal === 'SPECIFIC' ||
+        options.sessionMode !== undefined ||
+        options.selectedSessions !== undefined;
 
       if (shouldReassign) {
         const assignedSession = availableSessions[idx % availableSessions.length];
@@ -323,40 +271,24 @@ export async function syncCampaignRecipients(
     }
 
     msg.scheduled_at = new Date(scheduledTimeMs);
-    scheduleOps.push({
-      updateOne: {
-        // Status guard: never move/reschedule a message a worker has claimed.
-        filter: { _id: msg._id, status: { $in: UNSENT_STATUSES } },
-        update: {
-          $set: { session: msg.session, sender_phone: msg.sender_phone, scheduled_at: msg.scheduled_at },
-        },
-      },
-    });
-  }
-
-  if (scheduleOps.length > 0) {
-    await Message.bulkWrite(scheduleOps, { ordered: false });
+    await msg.save();
   }
 
   // 6. Update campaign document
   campaign.recipient_phones = cleanNewRecipients;
   campaign.contacts = cleanNewRecipients;
 
-  // Recipients recorded as sent whose Message rows were pruned still count as sent.
-  let prunedSentCount = 0;
-  for (const p of processedPhoneSet) {
-    if (!executedPhoneSet.has(p)) prunedSentCount++;
-  }
-  const sentCount =
-    executedMsgs.filter((m) => SENT_STATUSES.includes(m.status)).length + prunedSentCount;
+  const sentCount = executedMsgs.filter((m) =>
+    [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ].includes(m.status)
+  ).length;
   const failedCount = executedMsgs.filter((m) =>
     [MessageStatus.FAILED, MessageStatus.EXPIRED].includes(m.status)
   ).length;
-  const pendingCount = allUnsentMsgs.length + inFlightMsgs.length;
+  const pendingCount = allUnsentMsgs.length;
 
   campaign.stats = {
     ...(campaign.stats || {}),
-    total: executedMsgs.length + prunedSentCount + pendingCount,
+    total: executedMsgs.length + pendingCount,
     sent: sentCount,
     failed: failedCount,
     pending: pendingCount,
@@ -365,7 +297,7 @@ export async function syncCampaignRecipients(
   await campaign.save();
 
   return {
-    deletedCount,
+    deletedCount: msgsToDeleteIds.length,
     createdCount: missingPhones.length,
     remainingPendingCount: pendingCount,
     executedCount: executedMsgs.length,
@@ -438,10 +370,8 @@ export async function checkAndAutoHealCampaignRecipients(
     );
     const pendingMsgs = await Message.find({
       campaign: campaign._id,
-      status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.SENDING] },
-    })
-      .select('recipient_phone to_jid')
-      .lean();
+      status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
+    }).select('recipient_phone to_jid');
 
     const hasStale = pendingMsgs.some((m) => {
       const p = normalizePhoneNumber(
@@ -471,13 +401,17 @@ export async function checkAndAutoHealCampaignRecipients(
     const executedMsgs = await Message.find({
       campaign: campaign._id,
       status: { $in: executedStatuses },
-    })
-      .select('recipient_phone to_jid')
-      .lean();
+    }).select('recipient_phone to_jid');
 
-    const executedPhones = new Set(executedMsgs.map((m) => messagePhone(m)).filter(Boolean));
-    // Recipients recorded as sent (their rows may have been pruned) count as executed too.
-    for (const p of getProcessedPhoneSet(campaign)) executedPhones.add(p);
+    const executedPhones = new Set(
+      executedMsgs
+        .map((m) =>
+          normalizePhoneNumber(
+            m.recipient_phone || (m.to_jid ? m.to_jid.split('@')[0] : '')
+          )
+        )
+        .filter(Boolean)
+    );
 
     let targetExecutedCount = 0;
     for (const r of cleanRecipients) {
@@ -486,11 +420,7 @@ export async function checkAndAutoHealCampaignRecipients(
       }
     }
 
-    // A COMPLETED campaign never gets new pending rows from a sync, so don't flag a mismatch for it.
-    const expectedPendingCount =
-      campaign.status === CampaignStatus.COMPLETED
-        ? pendingMsgs.length
-        : Math.max(0, cleanRecipients.size - targetExecutedCount);
+    const expectedPendingCount = Math.max(0, cleanRecipients.size - targetExecutedCount);
     const isCountMismatched = pendingMsgs.length !== expectedPendingCount;
 
     if (hasStale || isCountMismatched) {

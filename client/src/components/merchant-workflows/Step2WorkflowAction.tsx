@@ -1,20 +1,29 @@
 import { useState } from 'react'
 import {
   Sparkles,
+  Users,
   Smartphone,
+  Plus,
+  Trash2,
   Phone,
   FileSpreadsheet,
   Check,
   Search,
+  MessageSquare,
+  AlertCircle,
+  HelpCircle,
   Clock,
+  ShieldCheck,
+  ExternalLink,
   ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import type { TriggerType, IActionConfig } from './types'
-import type { TemplateDraft } from '@/components/merchant-campaigns-create/types'
+import type { TemplateDraft, AttachedFile } from '@/components/merchant-campaigns-create/types'
 import { Step2MessageTemplates } from '@/components/merchant-campaigns-create/components/Step2MessageTemplates'
 import { CsvImportModal } from '@/components/merchant-campaigns-create/components/CsvImportModal'
 

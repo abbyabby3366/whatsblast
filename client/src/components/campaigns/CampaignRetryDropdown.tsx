@@ -186,9 +186,6 @@ export interface CampaignRetryAllDropdownProps {
   buttonText?: string
   size?: 'sm' | 'default'
   variant?: 'default' | 'outline'
-  /** Disable the "Send All Via Specific Phone" options (e.g. admin with no merchant selected). */
-  disableSpecificSessions?: boolean
-  specificSessionsDisabledHint?: string
 }
 
 export function CampaignRetryAllDropdown({
@@ -200,8 +197,6 @@ export function CampaignRetryAllDropdown({
   buttonText,
   size = 'default',
   variant = 'default',
-  disableSpecificSessions = false,
-  specificSessionsDisabledHint,
 }: CampaignRetryAllDropdownProps) {
   const { data: userSessions = [] } = useQuery({
     queryKey: ['whatsapp-sessions'],
@@ -287,12 +282,6 @@ export function CampaignRetryAllDropdown({
           Send All Via Specific Phone
         </DropdownMenuLabel>
 
-        {disableSpecificSessions && specificSessionsDisabledHint && connectedSessions.length > 0 && (
-          <div className="px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-            {specificSessionsDisabledHint}
-          </div>
-        )}
-
         {connectedSessions.map((session) => {
           const sId = session.id || session._id || session.session_id
           const displayPhone = session.phone_number || session.session_id
@@ -300,7 +289,7 @@ export function CampaignRetryAllDropdown({
             <DropdownMenuItem
               key={sId}
               onClick={() => onRetryAll(sId)}
-              disabled={isPending || disableSpecificSessions}
+              disabled={isPending}
               className="cursor-pointer py-1.5 gap-2"
             >
               <Smartphone className="h-3.5 w-3.5 text-slate-400 shrink-0" />

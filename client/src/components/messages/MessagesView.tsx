@@ -86,8 +86,6 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false)
   const [isRetryAllConfirmOpen, setIsRetryAllConfirmOpen] = useState(false)
-  // Session choice from the Retry All dropdown, applied once the user confirms.
-  const [pendingRetryAllSessionId, setPendingRetryAllSessionId] = useState<string | undefined>(undefined)
   const [isTestSendOpen, setIsTestSendOpen] = useState(false)
 
   // Fetch users for admin merchant filter & display
@@ -148,7 +146,6 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       setIsRetryAllConfirmOpen(false)
-      setPendingRetryAllSessionId(undefined)
     },
     onError: async (err) => {
       toast.error(await getErrorMessage(err, 'Failed to retry messages.'))
@@ -302,11 +299,10 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const isFailed = st === 'failed'
           const isSent = st === 'delivered' || st === 'sent' || st === 'read'
           const campStatus = (msg.campaign && typeof msg.campaign === 'object' && msg.campaign.status ? msg.campaign.status : '').toLowerCase()
+          const isCampActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus)
           const isCampPaused = campStatus === 'paused'
-          const targetTime = msg.scheduled_at || msg.created_at
-          const isPastGrace = (st === 'pending' || st === 'queued') && targetTime && dayjs(targetTime).add(2, 'minute').isBefore(dayjs())
-          const isExpired = st === 'expired' || isPastGrace
-          const isPaused = !isExpired && (st === 'paused' || (isCampPaused && (st === 'pending' || st === 'queued')))
+          const isPaused = st === 'paused' || (isCampPaused && (st === 'pending' || st === 'queued'))
+          const isExpired = st === 'expired' || (!isCampActive && (st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
           const isPending = (st === 'pending' || st === 'queued') && !isExpired && !isPaused
 
           const failedReason =
@@ -382,13 +378,13 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
           const isSent = st === 'sent' || st === 'delivered' || st === 'read'
           const isFailed = st === 'failed'
           const campStatus = (msg.campaign && typeof msg.campaign === 'object' && msg.campaign.status ? msg.campaign.status : '').toLowerCase()
+          const isCampActive = ['running', 'paused', 'scheduled', 'draft'].includes(campStatus)
           const isCampPaused = campStatus === 'paused'
+          const isPaused = st === 'paused' || (isCampPaused && (st === 'pending' || st === 'queued'))
+          const isExpired = st === 'expired' || (!isCampActive && (st === 'pending' || st === 'queued') && msg.scheduled_at && dayjs(msg.scheduled_at).isBefore(dayjs()))
           const targetTime = isSent
             ? (msg.sent_at || msg.wa_timestamp || msg.updatedAt)
             : (msg.scheduled_at || msg.created_at)
-          const isPastGrace = (st === 'pending' || st === 'queued') && (msg.scheduled_at || msg.created_at) && dayjs(msg.scheduled_at || msg.created_at).add(2, 'minute').isBefore(dayjs())
-          const isExpired = st === 'expired' || isPastGrace
-          const isPaused = !isExpired && (st === 'paused' || (isCampPaused && (st === 'pending' || st === 'queued')))
 
           if (!targetTime) return <span className="text-slate-400">-</span>
 
@@ -475,9 +471,9 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         cell: (info) => {
           const row = info.row.original
           const rowSt = (row.status || '').toLowerCase()
-          const rowTargetTime = row.scheduled_at || row.created_at
-          const isRowPastGrace = (rowSt === 'pending' || rowSt === 'queued') && rowTargetTime && dayjs(rowTargetTime).add(2, 'minute').isBefore(dayjs())
-          const isRowExpired = rowSt === 'expired' || isRowPastGrace
+          const rowCampStatus = (row.campaign && typeof row.campaign === 'object' && row.campaign.status ? row.campaign.status : '').toLowerCase()
+          const isRowCampActive = ['running', 'paused', 'scheduled', 'draft'].includes(rowCampStatus)
+          const isRowExpired = rowSt === 'expired' || (!isRowCampActive && (rowSt === 'pending' || rowSt === 'queued') && row.scheduled_at && dayjs(row.scheduled_at).isBefore(dayjs()))
           const isFailed = rowSt === 'failed'
           const canRetry = isFailed || isRowExpired
           const isRetryingThis = retrySingleMessageMutation.isPending && retrySingleMessageMutation.variables?.msgId === row.id
@@ -559,14 +555,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
         <CampaignRetryAllDropdown
           variant="outline"
           isPending={retryAllFailedMutation.isPending}
-          onRetryAll={(sessionId) => {
-            setPendingRetryAllSessionId(sessionId)
-            setIsRetryAllConfirmOpen(true)
-          }}
-          // Admins viewing ALL merchants can't route every merchant's messages
-          // through one specific phone; they must pick a merchant first.
-          disableSpecificSessions={isAdmin && selectedMerchant === 'ALL'}
-          specificSessionsDisabledHint="Select a merchant in the filter first to send via a specific phone."
+          onRetryAll={(sessionId) => retryAllFailedMutation.mutate(sessionId)}
         />
 
         <Button
@@ -929,13 +918,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
       )}
 
       {/* Retry All Failed Confirm Modal */}
-      <Dialog
-        open={isRetryAllConfirmOpen}
-        onOpenChange={(open) => {
-          setIsRetryAllConfirmOpen(open)
-          if (!open) setPendingRetryAllSessionId(undefined)
-        }}
-      >
+      <Dialog open={isRetryAllConfirmOpen} onOpenChange={setIsRetryAllConfirmOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <div className="flex items-center gap-2.5">
@@ -978,10 +961,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                setIsRetryAllConfirmOpen(false)
-                setPendingRetryAllSessionId(undefined)
-              }}
+              onClick={() => setIsRetryAllConfirmOpen(false)}
               disabled={retryAllFailedMutation.isPending}
             >
               Cancel
@@ -990,7 +970,7 @@ export function MessagesView({ isAdmin = false }: MessagesViewProps) {
               size="sm"
               className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5"
               disabled={retryAllFailedMutation.isPending}
-              onClick={() => retryAllFailedMutation.mutate(pendingRetryAllSessionId)}
+              onClick={() => retryAllFailedMutation.mutate()}
             >
               {retryAllFailedMutation.isPending ? (
                 <>

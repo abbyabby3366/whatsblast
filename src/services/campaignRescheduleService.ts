@@ -42,15 +42,10 @@ export async function executeCampaignReschedule(
   }
 
   // 1. Find all remaining pending, queued, or expired messages for this campaign
-  // (never SENDING: a worker has claimed those and is sending them right now)
-  const reschedulableStatuses = [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.EXPIRED, 'expired', 'EXPIRED'];
   const pendingMessages = await Message.find({
     campaign: campaign._id,
-    status: { $in: reschedulableStatuses },
-  })
-    .select('_id')
-    .sort({ scheduled_at: 1, createdAt: 1 })
-    .lean();
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.EXPIRED, 'expired', 'EXPIRED'] },
+  }).sort({ scheduled_at: 1, createdAt: 1 });
 
   if (pendingMessages.length === 0) {
     return {
@@ -135,22 +130,16 @@ export async function executeCampaignReschedule(
       excludeMessageIds: pendingMessageIds,
     });
 
-    const ops = items.map((msg, i) => ({
-      updateOne: {
-        // Status guard: if a (still winding-down) worker claimed it meanwhile, leave it alone.
-        filter: { _id: msg._id, status: { $in: reschedulableStatuses } },
-        update: {
-          $set: {
-            session: sessionDoc._id,
-            sender_phone: sessionDoc.phone_number,
-            scheduled_at: scheduledSlots[i] || new Date(),
-            status: MessageStatus.PENDING,
-          },
-          $unset: { error: 1 },
-        },
-      },
-    }));
-    await Message.bulkWrite(ops, { ordered: false });
+    for (let i = 0; i < items.length; i++) {
+      const msg = items[i];
+      const slot = scheduledSlots[i] || new Date();
+      msg.session = sessionDoc._id;
+      msg.sender_phone = sessionDoc.phone_number;
+      msg.scheduled_at = slot;
+      msg.status = MessageStatus.PENDING;
+      delete (msg as any).error;
+      await msg.save();
+    }
   }
 
   // 7. Update Campaign configuration and clear previous error state

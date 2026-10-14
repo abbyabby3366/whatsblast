@@ -2,12 +2,7 @@ import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { Message, MessageStatus } from '../models/Message.js';
 import { User } from '../models/User.js';
-import {
-  runSessionQueueForCampaign,
-  syncCampaignStatusAndStats,
-  getInFlightMessageIds,
-  SessionWorkerResult,
-} from './sessionBlastWorker.js';
+import { runSessionQueueForCampaign, syncCampaignStatusAndStats } from './sessionBlastWorker.js';
 
 // Re-export shared utilities from blastUtils so existing importers don't break
 export { sendBaileysTemplateMessage, getFileUrl, isSessionQualified, resolveCampaignInterval, isSessionAllowed } from './blastUtils.js';
@@ -15,42 +10,6 @@ import { isSessionAllowed } from './blastUtils.js';
 
 let runnerInterval: NodeJS.Timeout | null = null;
 let isProcessing = false;
-
-/** A claimed (SENDING) message older than this, with no message_id, is considered stuck. */
-const STALE_SENDING_MS = 10 * 60 * 1000;
-const STALE_SENDING_HEAL_EVERY_MS = 5 * 60 * 1000;
-let lastStaleSendingHealAt = 0;
-
-/** Backoff after a run that made no progress (sessions busy / not ready / nothing sendable). */
-const NO_PROGRESS_BACKOFF_MS = 30 * 1000;
-const DEFERRED_BACKOFF_MS = 60 * 1000;
-
-/**
- * Messages stuck in SENDING (process crashed / unexpected error mid-send) are
- * marked FAILED — never PENDING — so they can't be double-sent automatically.
- * The user can still retry them explicitly. In-flight sends of this process are skipped.
- */
-async function healStaleSendingMessages(): Promise<void> {
-  lastStaleSendingHealAt = Date.now();
-  const inFlight = Array.from(getInFlightMessageIds());
-  const res = await Message.updateMany(
-    {
-      status: MessageStatus.SENDING,
-      updatedAt: { $lt: new Date(Date.now() - STALE_SENDING_MS) },
-      $or: [{ message_id: { $exists: false } }, { message_id: null }, { message_id: '' }],
-      ...(inFlight.length > 0 ? { _id: { $nin: inFlight } } : {}),
-    },
-    {
-      $set: {
-        status: MessageStatus.FAILED,
-        error: 'Send interrupted (stuck in sending state); not retried automatically to avoid a duplicate send',
-      },
-    }
-  );
-  if (res.modifiedCount > 0) {
-    console.log(`🩹 Marked ${res.modifiedCount} stuck SENDING campaign message(s) as FAILED.`);
-  }
-}
 
 export function startBlastRunner(intervalMs = 3000): void {
   if (runnerInterval) return;
@@ -103,11 +62,6 @@ export function startBlastRunner(intervalMs = 3000): void {
       console.error('Error auto-healing sent campaign messages:', err);
     });
 
-  // Fail (never re-queue) messages left mid-send by a previous process
-  healStaleSendingMessages().catch((err) => {
-    console.error('Error healing stuck SENDING campaign messages:', err);
-  });
-
   runnerInterval = setInterval(processCampaigns, intervalMs);
 }
 
@@ -120,22 +74,12 @@ export function stopBlastRunner(): void {
 
 const activeCampaigns = new Set<string>();
 const campaignAbortControllers = new Map<string, AbortController>();
-/** Campaigns that were (re)triggered while a previous run was still winding down. */
-const pendingRetriggers = new Set<string>();
-/** Earliest time the scheduler may start another run of a campaign (no-progress backoff). */
-const nextAllowedRun = new Map<string, number>();
 
 export function getActiveCampaigns(): Set<string> {
   return activeCampaigns;
 }
 
-/**
- * Asks a running campaign to stop and waits up to `timeoutMs` for it. If the run
- * is still winding down after the timeout it stays registered as active, so no
- * parallel run can start; it cleans itself up (and honours a re-trigger) when done.
- */
 export async function stopCampaignExecution(campaignId: string, timeoutMs = 3000): Promise<void> {
-  pendingRetriggers.delete(campaignId);
   const controller = campaignAbortControllers.get(campaignId);
   if (controller) {
     controller.abort();
@@ -144,27 +88,15 @@ export async function stopCampaignExecution(campaignId: string, timeoutMs = 3000
   while (activeCampaigns.has(campaignId) && Date.now() - start < timeoutMs) {
     await new Promise((res) => setTimeout(res, 100));
   }
-  if (activeCampaigns.has(campaignId)) {
-    console.warn(`⏳ Campaign ${campaignId} is still winding down after ${timeoutMs}ms; it will finish on its own.`);
-  }
+  activeCampaigns.delete(campaignId);
+  campaignAbortControllers.delete(campaignId);
 }
 
 export function triggerCampaignExecution(campaignId: string): void {
-  // An explicit trigger bypasses the no-progress backoff.
-  nextAllowedRun.delete(campaignId);
-  if (activeCampaigns.has(campaignId)) {
-    // A previous run is still active (possibly winding down after a stop):
-    // start a fresh run as soon as it finishes instead of running in parallel.
-    pendingRetriggers.add(campaignId);
-    return;
-  }
-  startCampaignRun(campaignId);
-}
-
-function startCampaignRun(campaignId: string): void {
+  if (activeCampaigns.has(campaignId)) return;
   activeCampaigns.add(campaignId);
   runSingleCampaign(campaignId).catch((err) =>
-    console.error(`Unhandled error in runSingleCampaign (${campaignId}):`, err)
+    console.error(`Unhandled error in triggered runSingleCampaign (${campaignId}):`, err)
   );
 }
 
@@ -173,23 +105,19 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
   campaignAbortControllers.set(campaignId, abortController);
 
   try {
-    const campaign = await BlastCampaign.findById(campaignId)
-      .select('_id name user status session_mode selected_sessions')
-      .lean();
+    const campaign = await BlastCampaign.findById(campaignId);
     if (!campaign || campaign.status !== CampaignStatus.RUNNING) {
       return;
     }
 
-    const userDoc = campaign.user ? await User.findById(campaign.user).select('timezone').lean() : null;
+    const userDoc = campaign.user ? await User.findById(campaign.user) : null;
     const userTimezone = userDoc?.timezone || 'Asia/Kuala_Lumpur';
 
-    // Find all pending or queued messages for this campaign (ids + session only)
-    let pendingMessages: { _id: any; session?: any }[] | null = await Message.find({
+    // Find all pending or queued messages for this campaign
+    let pendingMessages: any[] | null = await Message.find({
       campaign: campaignId,
       status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-    })
-      .select('_id session')
-      .lean();
+    });
 
     if (pendingMessages.length === 0) {
       await syncCampaignStatusAndStats(campaignId);
@@ -197,49 +125,44 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
     }
 
     // Resolve candidate sessions based on campaign mode
-    const sessionFields = '_id session_id phone_number alias status';
     let candidateSessions = await WhatsAppSession.find({
       user: campaign.user,
       status: SessionStatus.CONNECTED,
-    })
-      .select(sessionFields)
-      .sort({ createdAt: 1 })
-      .lean();
+    }).sort({ createdAt: 1 });
 
-    const selectedSessions = campaign.selected_sessions || [];
-    if (campaign.session_mode === 'SPECIFIC' && selectedSessions.length > 0) {
-      candidateSessions = candidateSessions.filter((s) => isSessionAllowed(s, selectedSessions));
+    if (campaign.session_mode === 'SPECIFIC' && campaign.selected_sessions && campaign.selected_sessions.length > 0) {
+      candidateSessions = candidateSessions.filter((s) =>
+        isSessionAllowed(s, campaign.selected_sessions)
+      );
       if (candidateSessions.length === 0) {
-        const fallback = await WhatsAppSession.find({ user: campaign.user })
-          .select(sessionFields)
-          .sort({ createdAt: 1 })
-          .lean();
-        candidateSessions = fallback.filter((s) => isSessionAllowed(s, selectedSessions));
+        const fallback = await WhatsAppSession.find({ user: campaign.user }).sort({ createdAt: 1 });
+        candidateSessions = fallback.filter((s) =>
+          isSessionAllowed(s, campaign.selected_sessions)
+        );
       }
     }
 
     // Reassign unassigned messages or messages assigned to disallowed or disconnected sessions
     const connectedSessionIdSet = new Set(candidateSessions.map((s) => s._id.toString()));
-    const messagesToReassign = pendingMessages.filter((m) => {
+    const messagesToReassign = pendingMessages.filter((m: any) => {
       if (!m.session) return true;
-      return candidateSessions.length > 0 && !connectedSessionIdSet.has(m.session.toString());
+      if (candidateSessions.length > 0 && !connectedSessionIdSet.has(m.session.toString())) return true;
+      if (campaign.session_mode === 'SPECIFIC' && candidateSessions.length > 0) {
+        return !candidateSessions.some((s) => s._id.toString() === m.session?.toString());
+      }
+      return false;
     });
 
     if (messagesToReassign.length > 0 && candidateSessions.length > 0) {
-      const ops = messagesToReassign.map((m, i) => {
+      for (let i = 0; i < messagesToReassign.length; i++) {
         const sDoc = candidateSessions[i % candidateSessions.length];
-        return {
-          updateOne: {
-            // Status guard: never move a message a worker has already claimed (SENDING).
-            filter: { _id: m._id, status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] } },
-            update: { $set: { session: sDoc._id, sender_phone: sDoc.phone_number } },
-          },
-        };
-      });
-      await Message.bulkWrite(ops, { ordered: false });
+        messagesToReassign[i].session = sDoc._id;
+        messagesToReassign[i].sender_phone = sDoc.phone_number;
+        await messagesToReassign[i].save();
+      }
     }
 
-    // Explicitly release the array so it is NOT retained in closure during long Promise.allSettled
+    // Explicitly release large document array so it is NOT retained in closure during long Promise.allSettled
     pendingMessages = null;
 
     if (abortController.signal.aborted) {
@@ -262,45 +185,23 @@ async function runSingleCampaign(campaignId: string): Promise<void> {
     if (validSessionIds.length === 0) {
       console.warn(`⚠️ No sessions assigned for campaign "${campaign.name}" (${campaignId})`);
       await syncCampaignStatusAndStats(campaignId);
-      nextAllowedRun.set(campaignId, Date.now() + DEFERRED_BACKOFF_MS);
       return;
     }
 
     console.log(`🚀 Campaign "${campaign.name}" (${campaignId}): Running ${validSessionIds.length} concurrent session queues in parallel...`);
 
     // Run all assigned session workers concurrently
-    const settled = await Promise.allSettled(
+    await Promise.allSettled(
       validSessionIds.map((sId) => runSessionQueueForCampaign(campaignId, sId, userTimezone, abortController.signal))
     );
 
     // Synchronize overall campaign completion and stats
     await syncCampaignStatusAndStats(campaignId);
-
-    // Back off if this run made no progress (sessions busy with another campaign,
-    // not connected, outside their active window, ...) instead of reloading every tick.
-    const results = settled
-      .filter((r): r is PromiseFulfilledResult<SessionWorkerResult> => r.status === 'fulfilled')
-      .map((r) => r.value);
-    const processed = results.reduce((sum, r) => sum + r.processed, 0);
-    const halted = results.some((r) => r.outcome === 'halted');
-    if (processed === 0 && !halted) {
-      const allDeferred = results.length > 0 && results.every((r) => r.outcome === 'deferred');
-      nextAllowedRun.set(campaignId, Date.now() + (allDeferred ? DEFERRED_BACKOFF_MS : NO_PROGRESS_BACKOFF_MS));
-    }
   } catch (err) {
     console.error(`Error in runSingleCampaign (${campaignId}):`, err);
-    nextAllowedRun.set(campaignId, Date.now() + NO_PROGRESS_BACKOFF_MS);
   } finally {
-    // Only clean up entries that still belong to this run.
-    if (campaignAbortControllers.get(campaignId) === abortController) {
-      campaignAbortControllers.delete(campaignId);
-      activeCampaigns.delete(campaignId);
-    }
-    // Honour a trigger that arrived while this run was winding down.
-    if (pendingRetriggers.delete(campaignId) && !activeCampaigns.has(campaignId)) {
-      nextAllowedRun.delete(campaignId);
-      startCampaignRun(campaignId);
-    }
+    campaignAbortControllers.delete(campaignId);
+    activeCampaigns.delete(campaignId);
   }
 }
 
@@ -309,12 +210,6 @@ async function processCampaigns(): Promise<void> {
   isProcessing = true;
 
   try {
-    if (Date.now() - lastStaleSendingHealAt >= STALE_SENDING_HEAL_EVERY_MS) {
-      await healStaleSendingMessages().catch((err) =>
-        console.error('Error healing stuck SENDING campaign messages:', err)
-      );
-    }
-
     const now = new Date();
     const runningCampaigns = await BlastCampaign.find({
       status: CampaignStatus.RUNNING,
@@ -323,20 +218,16 @@ async function processCampaigns(): Promise<void> {
         { scheduled_at: null },
         { scheduled_at: { $lte: now } },
       ],
-    })
-      .select('_id')
-      .lean();
+    });
 
-    const nowMs = now.getTime();
     for (const campaign of runningCampaigns) {
       const campaignId = campaign._id.toString();
-      if (activeCampaigns.has(campaignId)) continue;
-      const notBefore = nextAllowedRun.get(campaignId);
-      if (notBefore !== undefined) {
-        if (nowMs < notBefore) continue;
-        nextAllowedRun.delete(campaignId);
+      if (!activeCampaigns.has(campaignId)) {
+        activeCampaigns.add(campaignId);
+        runSingleCampaign(campaignId).catch((err) =>
+          console.error(`Unhandled error in runSingleCampaign (${campaignId}):`, err)
+        );
       }
-      startCampaignRun(campaignId);
     }
   } catch (err) {
     console.error('Error in Blast Runner scheduler loop:', err);

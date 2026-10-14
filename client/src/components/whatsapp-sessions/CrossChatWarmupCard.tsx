@@ -58,8 +58,8 @@ export function CrossChatWarmupCard({ connectedSessionsCount }: CrossChatWarmupC
       queryClient.setQueryData(['cross-chat-settings'], data)
       toast.success(data.cross_chat_enabled ? 'Auto Cross-Chat Warmup Enabled' : 'Cross-Chat Warmup Disabled')
     },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err))
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
     },
   })
 
@@ -75,8 +75,8 @@ export function CrossChatWarmupCard({ connectedSessionsCount }: CrossChatWarmupC
       queryClient.invalidateQueries({ queryKey: ['cross-chat-settings'] })
       queryClient.invalidateQueries({ queryKey: ['whatsapp-sessions'] })
     },
-    onError: async (err) => {
-      toast.error(await getErrorMessage(err))
+    onError: (err) => {
+      toast.error(getErrorMessage(err))
     },
   })
 

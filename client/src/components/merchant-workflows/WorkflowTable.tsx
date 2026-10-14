@@ -8,6 +8,8 @@ import {
   Trash2,
   ListOrdered,
   Play,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'

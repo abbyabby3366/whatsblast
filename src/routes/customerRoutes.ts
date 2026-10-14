@@ -1,7 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { Customer } from '../models/Customer.js';
-import { escapeRegex } from '../utils/messageFilterHelper.js';
 
 const router = Router();
 
@@ -14,6 +13,10 @@ function formatCustomer(c: any) {
     id: _id ? _id.toString() : obj.id,
     ...rest,
   };
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 const getCustomerLabels = async (req: AuthRequest, res: Response) => {

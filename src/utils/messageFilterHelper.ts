@@ -2,14 +2,6 @@ import mongoose from 'mongoose';
 import { BlastCampaign, CampaignStatus } from '../models/BlastCampaign.js';
 import { MessageStatus } from '../models/Message.js';
 
-/**
- * Escapes RegExp metacharacters so user input can be safely embedded in a
- * `new RegExp(...)` / Mongo `$regex` as a literal substring match.
- */
-export function escapeRegex(str: string): string {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export async function applyMessageStatusFilter(filter: any, status?: any): Promise<void> {
   if (!status || status === 'all' || status === 'ALL') {
     return;
@@ -72,22 +64,26 @@ export async function applyMessageStatusFilter(filter: any, status?: any): Promi
       filter.campaign = { $nin: pausedCampaignIds };
     }
 
-    const EXPIRED_GRACE_MS = 2 * 60 * 1000;
-    const cutoff = new Date(Date.now() - EXPIRED_GRACE_MS);
-
-    filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.SENDING, 'pending', 'queued', 'PENDING', 'QUEUED'] };
-    // Only pending messages that have not passed the 2-minute grace window
-    filter.$and = filter.$and || [];
-    filter.$and.push({
-      $or: [
-        { scheduled_at: { $gte: cutoff } },
-        { status: MessageStatus.SENDING },
-      ],
-    });
+    filter.status = { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] };
 
   } else if (s === 'expired') {
-    const EXPIRED_GRACE_MS = 2 * 60 * 1000;
-    const cutoff = new Date(Date.now() - EXPIRED_GRACE_MS);
+    const activeCampaignIds = await BlastCampaign.find({
+      status: {
+        $in: [
+          CampaignStatus.RUNNING,
+          CampaignStatus.PAUSED,
+          CampaignStatus.DRAFT,
+          'running',
+          'paused',
+          'scheduled',
+          'draft',
+          'RUNNING',
+          'PAUSED',
+          'SCHEDULED',
+          'DRAFT',
+        ],
+      },
+    }).distinct('_id');
 
     filter.$and = filter.$and || [];
     filter.$and.push({
@@ -95,10 +91,11 @@ export async function applyMessageStatusFilter(filter: any, status?: any): Promi
         { status: { $in: [MessageStatus.EXPIRED, 'expired', 'EXPIRED'] } },
         {
           status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+          campaign: { $nin: activeCampaignIds },
           $or: [
-            { scheduled_at: { $lt: cutoff } },
-            { scheduled_at: null, createdAt: { $lt: cutoff } },
-            { scheduled_at: { $exists: false }, createdAt: { $lt: cutoff } },
+            { scheduled_at: { $lt: new Date() } },
+            { scheduled_at: null, createdAt: { $lt: new Date() } },
+            { scheduled_at: { $exists: false }, createdAt: { $lt: new Date() } },
           ],
         },
       ],

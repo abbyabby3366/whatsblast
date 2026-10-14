@@ -120,12 +120,6 @@ function CreateCampaignPage() {
   const draftKey = accountId ? `${DRAFT_STORAGE_KEY}_${accountId}` : null
   const [hasAttemptedRestore, setHasAttemptedRestore] = useState(false)
 
-  // Id of a campaign created by "Save Draft" in this session, so a follow-up
-  // save/launch PATCHes it instead of POSTing a second campaign.
-  const createdCampaignIdRef = useRef<string | null>(null)
-  // Campaign id whose server data has already been loaded into the form.
-  const hydratedCampaignIdRef = useRef<string | null>(null)
-
   // Save Draft Mutation
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
@@ -142,19 +136,13 @@ function CreateCampaignPage() {
         templates: templateDrafts.map(buildTemplatePayload),
       }
 
-      // If a draft was already created in this session but the URL hasn't
-      // caught up yet, update that record instead of creating a duplicate.
-      const targetId = editingCampaignId || createdCampaignIdRef.current
-      if (targetId) {
-        return api.patch(`blast-campaigns/${targetId}/`, { json: payload }).json<any>()
+      if (editingCampaignId) {
+        return api.patch(`blast-campaigns/${editingCampaignId}/`, { json: payload }).json<any>()
       } else {
         return api.post('blast-campaigns/full-create/', { json: payload }).json<any>()
       }
     },
     onSuccess: (savedCampaign: any) => {
-      if (savedCampaign?.id && !editingCampaignId) {
-        createdCampaignIdRef.current = String(savedCampaign.id)
-      }
       if (draftKey) localStorage.removeItem(draftKey)
       localStorage.removeItem(DRAFT_STORAGE_KEY)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
@@ -166,10 +154,6 @@ function CreateCampaignPage() {
 
       if (savedCampaign?.id && !editingCampaignId) {
         setIsDraftRestored(false)
-        // The form already holds exactly what was saved; don't re-hydrate it
-        // from the server when the URL switches to ?edit=<id>.
-        hydratedCampaignIdRef.current = String(savedCampaign.id)
-        if (savedCampaign.status) setExistingStatus(savedCampaign.status)
         navigate({
           to: '/merchant/campaigns/create',
           search: { edit: savedCampaign.id, step: String(step) },
@@ -192,38 +176,8 @@ function CreateCampaignPage() {
   })
 
   const handleSaveDraft = () => {
-    if (saveDraftMutation.isPending || launchCampaignMutation.isPending) return
     saveDraftMutation.mutate()
   }
-
-  // If the logged-in account changes while this page is mounted, wipe the form
-  // so the previous user's draft can never be carried into the new account.
-  // Declared before the restore effect so the new account's own draft (if any)
-  // is applied on top of the reset.
-  const hasInitializedIntervalFromProfileRef = useRef(false)
-  const formAccountIdRef = useRef<string | null>(null)
-  const skipNextAutosaveRef = useRef(false)
-  useEffect(() => {
-    const prev = formAccountIdRef.current
-    formAccountIdRef.current = accountId
-    if (prev === null || prev === accountId) return
-    skipNextAutosaveRef.current = true
-    createdCampaignIdRef.current = null
-    hasInitializedIntervalFromProfileRef.current = false
-    setName('')
-    setMinInterval(10)
-    setMaxInterval(15)
-    setEnableWarmup(true)
-    setRetryOnFailure(true)
-    setSessionMode('ALL')
-    setSelectedSessions([])
-    setTemplateDrafts([createEmptyTemplateDraft()])
-    setActiveTemplateIndex(0)
-    setRecipients([])
-    setExistingStatus(null)
-    setCsvPhones(new Set())
-    setIsDraftRestored(false)
-  }, [accountId])
 
   // Restore draft on mount if not editing and account matches
   useEffect(() => {
@@ -279,11 +233,6 @@ function CreateCampaignPage() {
 
   // Auto-save changes to localStorage (scoped to account)
   useEffect(() => {
-    if (skipNextAutosaveRef.current) {
-      // State in this pass still belongs to the previous account.
-      skipNextAutosaveRef.current = false
-      return
-    }
     if (editingCampaignId || !accountId || !draftKey || !hasAttemptedRestore) return
     const hasContent = Boolean(
       name.trim() ||
@@ -314,6 +263,8 @@ function CreateCampaignPage() {
     localStorage.setItem(draftKey, JSON.stringify(draftData))
     setIsDraftRestored(true)
   }, [name, minInterval, maxInterval, enableWarmup, sessionMode, selectedSessions, templateDrafts, recipients, editingCampaignId, accountId, draftKey, hasAttemptedRestore])
+
+  const hasInitializedIntervalFromProfileRef = useRef(false)
 
   // Initialize min/max interval from user's profile defaults if creating a new campaign
   useEffect(() => {
@@ -355,120 +306,106 @@ function CreateCampaignPage() {
     toast.success('Draft cleared!')
   }
 
-  // Fetch campaign if editing. Uses its own key (not ['campaign', id], which
-  // the progress page polls) and a pure queryFn; form state is hydrated once
-  // per campaign id in the effect below so background refetches can never
-  // overwrite unsaved edits.
-  const { data: editingCampaign } = useQuery({
-    queryKey: ['campaign-edit', editingCampaignId],
-    queryFn: () => api.get(`blast-campaigns/${editingCampaignId}/`).json<any>(),
+  // Fetch campaign if editing
+  useQuery({
+    queryKey: ['campaign', editingCampaignId],
+    queryFn: async () => {
+      if (!editingCampaignId) return null
+      const campaign = await api.get(`blast-campaigns/${editingCampaignId}/`).json<any>()
+      if (campaign.status) {
+        setExistingStatus(campaign.status)
+      }
+      setName(campaign.name || '')
+      setMinInterval(campaign.min_interval_seconds || 10)
+      setMaxInterval(campaign.max_interval_seconds || 15)
+      setEnableWarmup(Boolean(campaign.enable_warmup))
+      setRetryOnFailure(campaign.retry_on_failure !== undefined ? Boolean(campaign.retry_on_failure) : true)
+      setSessionMode(campaign.session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL')
+      setSelectedSessions(campaign.selected_sessions || [])
+      setRecipients(campaign.recipient_phones?.length ? campaign.recipient_phones : (campaign.contacts || []))
+
+      const rawTemplates = (Array.isArray(campaign.templates) && campaign.templates.length > 0)
+        ? campaign.templates
+        : (campaign.template ? [campaign.template] : [])
+
+      if (rawTemplates.length > 0) {
+        setTemplateDrafts(
+          rawTemplates.map((t: any) => {
+            const rawFileIds: string[] = Array.isArray(t.file_ids) && t.file_ids.length > 0
+              ? t.file_ids
+              : t.file_id || t.file?.id
+              ? [t.file_id || t.file?.id]
+              : []
+            const initialAttached: AttachedFile[] = Array.isArray(t.files) && t.files.length > 0
+              ? t.files.map((f: any) => ({
+                  id: f.id || f._id,
+                  url: f.file_url || f.file_path || f.url || null,
+                  name: f.file_name || 'Attached File',
+                  type: f.file_type || t.button_media_type || t.buttonMediaType || t.type || 'image',
+                  size: f.file_size || f.size || undefined,
+                }))
+              : rawFileIds.map((id: string) => ({
+                  id,
+                  url: id === (t.file_id || t.file?.id) ? filePreviewUrl(t.file, t.button_image) : null,
+                  type: t.button_media_type || t.buttonMediaType || t.type || 'image',
+                  size: t.file?.file_size || t.file?.size || undefined,
+                }))
+
+            const hasButtons = Boolean(t.buttons && Array.isArray(t.buttons) && t.buttons.length > 0)
+            const inferredType = t.message_type || t.messageType || t.type || (hasButtons ? 'buttons' : rawFileIds.length > 0 ? (initialAttached[0]?.type || 'image') : 'text')
+            const detectedMediaType = t.button_media_type || t.buttonMediaType || initialAttached[0]?.type || (rawFileIds.length > 0 ? 'image' : 'none')
+
+            const templateText = t.template !== undefined && t.template !== null && String(t.template).trim() !== ''
+              ? String(t.template)
+              : (t.text !== undefined && t.text !== null
+                ? String(t.text)
+                : (t.caption !== undefined && t.caption !== null
+                  ? String(t.caption)
+                  : (typeof t.content === 'object' && t.content?.text ? String(t.content.text) : '')))
+
+            const footerText = t.footer !== undefined && t.footer !== null && String(t.footer).trim() !== ''
+              ? String(t.footer)
+              : (t.footer_text !== undefined && t.footer_text !== null
+                ? String(t.footer_text)
+                : (t.footerText !== undefined && t.footerText !== null
+                  ? String(t.footerText)
+                  : (typeof t.content === 'object' && t.content?.footer ? String(t.content.footer) : '')))
+
+            const rawButtonsList = t.buttons || (typeof t.content === 'object' && Array.isArray(t.content?.buttons) ? t.content.buttons : [])
+
+            return {
+              id: t.id || t._id,
+              messageType: inferredType,
+              template: templateText,
+              footer: footerText,
+              fileId: rawFileIds[0] || '',
+              attachedFiles: initialAttached,
+              buttons: (Array.isArray(rawButtonsList) ? rawButtonsList : []).map((b: any) => {
+                let parsedParams: any = {}
+                if (typeof b === 'object' && b !== null && typeof b.buttonParamsJson === 'string') {
+                  try {
+                    parsedParams = JSON.parse(b.buttonParamsJson)
+                  } catch (_) {}
+                }
+                const btnDisplayText = b.display_text ?? b.displayText ?? b.text ?? b.title ?? b.label ?? parsedParams?.display_text ?? ''
+                const btnValue = b.value ?? b.url ?? b.merchant_url ?? b.phone_number ?? b.phoneNumber ?? b.phone ?? b.copy_code ?? b.copyCode ?? parsedParams?.url ?? parsedParams?.phone_number ?? parsedParams?.copy_code ?? ''
+                return {
+                  id: b.id || b._id || Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                  type: normalizeButtonType(b.type || b.name),
+                  display_text: btnDisplayText,
+                  value: btnValue,
+                }
+              }),
+              buttonMediaType: inferredType === 'buttons' ? detectedMediaType : 'none',
+              previewUrl: filePreviewUrl(t.file, t.button_image),
+            }
+          })
+        )
+      }
+      return campaign
+    },
     enabled: Boolean(editingCampaignId),
-    staleTime: Infinity,
-    gcTime: 0,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   })
-
-  useEffect(() => {
-    if (!editingCampaignId) {
-      hydratedCampaignIdRef.current = null
-      return
-    }
-    if (!editingCampaign || hydratedCampaignIdRef.current === editingCampaignId) return
-    hydratedCampaignIdRef.current = editingCampaignId
-
-    const campaign = editingCampaign
-    if (campaign.status) {
-      setExistingStatus(campaign.status)
-    }
-    setName(campaign.name || '')
-    setMinInterval(campaign.min_interval_seconds || 10)
-    setMaxInterval(campaign.max_interval_seconds || 15)
-    setEnableWarmup(Boolean(campaign.enable_warmup))
-    setRetryOnFailure(campaign.retry_on_failure !== undefined ? Boolean(campaign.retry_on_failure) : true)
-    setSessionMode(campaign.session_mode === 'SPECIFIC' ? 'SPECIFIC' : 'ALL')
-    setSelectedSessions(campaign.selected_sessions || [])
-    setRecipients(campaign.recipient_phones?.length ? campaign.recipient_phones : (campaign.contacts || []))
-
-    const rawTemplates = (Array.isArray(campaign.templates) && campaign.templates.length > 0)
-      ? campaign.templates
-      : (campaign.template ? [campaign.template] : [])
-
-    if (rawTemplates.length > 0) {
-      setTemplateDrafts(
-        rawTemplates.map((t: any) => {
-          const rawFileIds: string[] = Array.isArray(t.file_ids) && t.file_ids.length > 0
-            ? t.file_ids
-            : t.file_id || t.file?.id
-            ? [t.file_id || t.file?.id]
-            : []
-          const initialAttached: AttachedFile[] = Array.isArray(t.files) && t.files.length > 0
-            ? t.files.map((f: any) => ({
-                id: f.id || f._id,
-                url: f.file_url || f.file_path || f.url || null,
-                name: f.file_name || 'Attached File',
-                type: f.file_type || t.button_media_type || t.buttonMediaType || t.type || 'image',
-                size: f.file_size || f.size || undefined,
-              }))
-            : rawFileIds.map((id: string) => ({
-                id,
-                url: id === (t.file_id || t.file?.id) ? filePreviewUrl(t.file, t.button_image) : null,
-                type: t.button_media_type || t.buttonMediaType || t.type || 'image',
-                size: t.file?.file_size || t.file?.size || undefined,
-              }))
-
-          const hasButtons = Boolean(t.buttons && Array.isArray(t.buttons) && t.buttons.length > 0)
-          const inferredType = t.message_type || t.messageType || t.type || (hasButtons ? 'buttons' : rawFileIds.length > 0 ? (initialAttached[0]?.type || 'image') : 'text')
-          const detectedMediaType = t.button_media_type || t.buttonMediaType || initialAttached[0]?.type || (rawFileIds.length > 0 ? 'image' : 'none')
-
-          const templateText = t.template !== undefined && t.template !== null && String(t.template).trim() !== ''
-            ? String(t.template)
-            : (t.text !== undefined && t.text !== null
-              ? String(t.text)
-              : (t.caption !== undefined && t.caption !== null
-                ? String(t.caption)
-                : (typeof t.content === 'object' && t.content?.text ? String(t.content.text) : '')))
-
-          const footerText = t.footer !== undefined && t.footer !== null && String(t.footer).trim() !== ''
-            ? String(t.footer)
-            : (t.footer_text !== undefined && t.footer_text !== null
-              ? String(t.footer_text)
-              : (t.footerText !== undefined && t.footerText !== null
-                ? String(t.footerText)
-                : (typeof t.content === 'object' && t.content?.footer ? String(t.content.footer) : '')))
-
-          const rawButtonsList = t.buttons || (typeof t.content === 'object' && Array.isArray(t.content?.buttons) ? t.content.buttons : [])
-
-          return {
-            id: t.id || t._id,
-            messageType: inferredType,
-            template: templateText,
-            footer: footerText,
-            fileId: rawFileIds[0] || '',
-            attachedFiles: initialAttached,
-            buttons: (Array.isArray(rawButtonsList) ? rawButtonsList : []).map((b: any) => {
-              let parsedParams: any = {}
-              if (typeof b === 'object' && b !== null && typeof b.buttonParamsJson === 'string') {
-                try {
-                  parsedParams = JSON.parse(b.buttonParamsJson)
-                } catch (_) {}
-              }
-              const btnDisplayText = b.display_text ?? b.displayText ?? b.text ?? b.title ?? b.label ?? parsedParams?.display_text ?? ''
-              const btnValue = b.value ?? b.url ?? b.merchant_url ?? b.phone_number ?? b.phoneNumber ?? b.phone ?? b.copy_code ?? b.copyCode ?? parsedParams?.url ?? parsedParams?.phone_number ?? parsedParams?.copy_code ?? ''
-              return {
-                id: b.id || b._id || Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                type: normalizeButtonType(b.type || b.name),
-                display_text: btnDisplayText,
-                value: btnValue,
-              }
-            }),
-            buttonMediaType: inferredType === 'buttons' ? detectedMediaType : 'none',
-            previewUrl: filePreviewUrl(t.file, t.button_image),
-          }
-        })
-      )
-    }
-  }, [editingCampaignId, editingCampaign])
 
   // File mutations
   const uploadFileMutation = useMutation({
@@ -543,9 +480,9 @@ function CreateCampaignPage() {
   // Launch Campaign mutation
   const launchCampaignMutation = useMutation({
     mutationFn: async (payload: any) => {
-      let campaignId = editingCampaignId || createdCampaignIdRef.current
-      if (campaignId) {
-        await api.patch(`blast-campaigns/${campaignId}/`, { json: { ...payload, status: 'RUNNING' } }).json()
+      let campaignId = editingCampaignId
+      if (editingCampaignId) {
+        await api.patch(`blast-campaigns/${editingCampaignId}/`, { json: { ...payload, status: 'RUNNING' } }).json()
       } else {
         const created = await api.post('blast-campaigns/full-create/', { json: { ...payload, status: 'RUNNING' } }).json<any>()
         campaignId = created.id
@@ -642,7 +579,6 @@ function CreateCampaignPage() {
   }, [searchTerm, selectedLabel])
 
   const handleFinalSubmit = () => {
-    if (saveDraftMutation.isPending || launchCampaignMutation.isPending) return
     if (!name.trim()) {
       setStep(1)
       toast.error('Please enter a campaign name.')

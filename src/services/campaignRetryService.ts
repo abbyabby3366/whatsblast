@@ -3,8 +3,6 @@ import { Message, MessageDirection, MessageStatus } from '../models/Message.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { resolveCampaignInterval } from './blastUtils.js';
 import { findNextAvailableSlotsForSession } from './scheduleSlotFinder.js';
-import { getProcessedPhoneSet, normalizePhoneNumber } from './campaignRecipientSyncService.js';
-import { triggerCampaignExecution } from './blastRunner.js';
 
 export const COMPLETED_STATUSES = [
   MessageStatus.SENT,
@@ -31,9 +29,6 @@ export const EXPIRED_STATUSES = [
   'expired',
   'EXPIRED',
 ];
-
-/** Statuses a retry must never flip back to PENDING. */
-const NOT_RETRYABLE_STATUSES: string[] = [...COMPLETED_STATUSES, MessageStatus.SENDING];
 
 interface RetryItem {
   msg: any;
@@ -89,7 +84,7 @@ export async function recomputeCampaignStats(campaign: any): Promise<any> {
   });
   const pendingCount = await Message.countDocuments({
     campaign: campaign._id,
-    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.SENDING, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+    status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
   });
 
   const total = sentCount + failedCount + pendingCount;
@@ -144,21 +139,18 @@ export const executeCampaignRetryFailed = async (
       {
         $or: [
           { status: { $in: [...FAILED_STATUSES, ...EXPIRED_STATUSES] } },
-          {
-            status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
-            $or: [
-              { scheduled_at: { $lt: cutoff } },
-              { scheduled_at: null, createdAt: { $lt: cutoff } },
-              { scheduled_at: { $exists: false }, createdAt: { $lt: cutoff } },
-            ],
-          },
+          ...(![CampaignStatus.PAUSED, CampaignStatus.RUNNING, 'running', 'paused', 'scheduled', 'SCHEDULED'].includes(campaign.status as any)
+            ? [
+                {
+                  status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED, 'pending', 'queued', 'PENDING', 'QUEUED'] },
+                  scheduled_at: { $lt: cutoff },
+                },
+              ]
+            : []),
         ],
       },
     ],
-  })
-    .select('_id session recipient_phone to_jid sender_phone')
-    .sort({ scheduled_at: 1, createdAt: 1 })
-    .lean();
+  }).sort({ scheduled_at: 1, createdAt: 1 });
 
   if (retryMessages.length === 0) {
     await recomputeCampaignStats(campaign);
@@ -273,10 +265,8 @@ export const executeCampaignRetryFailed = async (
       const item = items[i];
       const scheduledTime = scheduledSlots[i] || new Date();
 
-      // Update strictly by document _id to guarantee no other message is affected.
-      // Status guard: never touch a message that got sent or claimed (SENDING) meanwhile.
-      // templates_sent is kept so a partially sent multi-template message resumes.
-      await Message.updateOne({ _id: item.msg._id, status: { $nin: NOT_RETRYABLE_STATUSES } }, {
+      // Update strictly by document _id to guarantee no other message is affected
+      await Message.findByIdAndUpdate(item.msg._id, {
         status: MessageStatus.PENDING,
         session: sessionDoc ? sessionDoc._id : item.msg.session,
         sender_phone: item.senderPhone,
@@ -300,10 +290,6 @@ export const executeCampaignRetryFailed = async (
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
   await campaign.save();
-
-  if (campaign.status === CampaignStatus.RUNNING) {
-    triggerCampaignExecution(campaign._id.toString());
-  }
 
   const statusNotice = campaign.status === CampaignStatus.PAUSED
     ? ' (Campaign is paused. Messages will send when resumed.)'
@@ -355,21 +341,6 @@ export const executeCampaignRetryRecipient = async (
   }).sort({ scheduled_at: -1, createdAt: -1 });
 
   // STRICT GUARD: If message is already successfully sent, do not overwrite it
-  if (existingMsg?.status === MessageStatus.SENDING) {
-    return {
-      success: false,
-      message: `Message to ${cleanPhone} is being sent right now.`,
-      error: `Message to ${cleanPhone} is being sent right now.`,
-    };
-  }
-  // Recipient durably recorded as sent, even if its Message row was pruned by retention
-  if (!existingMsg && possiblePhones.some((p) => getProcessedPhoneSet(campaign).has(normalizePhoneNumber(p)))) {
-    return {
-      success: false,
-      message: `Message to ${cleanPhone} has already been sent successfully.`,
-      error: `Message to ${cleanPhone} has already been sent successfully.`,
-    };
-  }
   if (existingMsg) {
     const isAlreadySent =
       COMPLETED_STATUSES.includes(existingMsg.status) ||
@@ -445,7 +416,7 @@ export const executeCampaignRetryRecipient = async (
   const senderPhone = sessionDoc?.phone_number || existingMsg?.sender_phone;
 
   if (existingMsg) {
-    await Message.updateOne({ _id: existingMsg._id, status: { $nin: NOT_RETRYABLE_STATUSES } }, {
+    await Message.findByIdAndUpdate(existingMsg._id, {
       status: MessageStatus.PENDING,
       session: sessionDoc ? sessionDoc._id : existingMsg.session,
       sender_phone: senderPhone,
@@ -477,10 +448,6 @@ export const executeCampaignRetryRecipient = async (
   campaign.completed_at = undefined;
   campaign.error_message = undefined;
   await campaign.save();
-
-  if (campaign.status === CampaignStatus.RUNNING) {
-    triggerCampaignExecution(campaign._id.toString());
-  }
 
   const phoneNotice = sessionDoc?.phone_number ? ` via phone ${sessionDoc.phone_number}` : '';
   const isPaused = campaign.status === CampaignStatus.PAUSED;

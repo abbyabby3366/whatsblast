@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/authMiddleware.js';
+import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { WhatsAppSession, SessionStatus } from '../models/WhatsAppSession.js';
 import { MasterPhone, IMasterPhone } from '../models/MasterPhone.js';
 import { User } from '../models/User.js';
@@ -7,27 +7,12 @@ import { initWhatsAppSession, getActiveSession, removeActiveSession } from '../s
 import { getCrossChatStatus, forceSendNextTurn, getUserNextScheduledTime, getPairScheduledTimes, getPairLastSentTimes, rescheduleAllPairsForUser } from '../services/crossChatRunner.js';
 import { useRedisAuthState } from '../services/redisAuthState.js';
 import { Message } from '../models/Message.js';
-import { isValidSessionId, getSessionFolder } from '../utils/sessionPath.js';
 import dayjs from 'dayjs';
 import fs from 'fs';
+import path from 'path';
 
 const router = Router();
-const SORTABLE_SESSION_FIELDS = new Set([
-  'createdAt', 'updatedAt', 'session_id', 'phone_number', 'alias', 'status', 'last_phone_activity_at',
-]);
-
-function removeSessionFolder(sessionId: string) {
-  const folder = getSessionFolder(sessionId);
-  if (folder && fs.existsSync(folder)) {
-    try {
-      fs.rmSync(folder, { recursive: true, force: true });
-    } catch (_) {}
-  }
-}
-
-function canAccessSession(req: AuthRequest, session: any): boolean {
-  return req.user?.role === 'admin' || session.user?.toString() === req.user?._id.toString();
-}
+const SESSIONS_DIR = process.env.SESSIONS_DIR || './sessions';
 
 router.use(authenticateToken);
 
@@ -59,19 +44,18 @@ const getSessions = async (req: AuthRequest, res: Response) => {
     ];
   }
   if (status && status !== 'all') {
-    filter.status = String(status);
+    filter.status = status;
   }
-  if (userId && userId !== 'all' && req.user?.role === 'admin') {
-    filter.user = String(userId);
+  if (userId && userId !== 'all') {
+    filter.user = userId;
   }
   if (label && label !== 'all') {
-    filter.labels = String(label);
+    filter.labels = label;
   }
 
   let query = WhatsAppSession.find(filter).populate('user', 'phone_number role');
-  // Client sends snake_case created_at/updated_at
-  const orderStr = (ordering ? String(ordering) : '').replace(/created_at$/, 'createdAt').replace(/updated_at$/, 'updatedAt');
-  if (orderStr && SORTABLE_SESSION_FIELDS.has(orderStr.replace(/^-/, ''))) {
+  if (ordering) {
+    const orderStr = String(ordering);
     if (orderStr.startsWith('-')) {
       query = query.sort({ [orderStr.substring(1)]: -1 });
     } else {
@@ -89,15 +73,12 @@ router.get('/whatsapp-sessions', getSessions);
 
 // Create WhatsApp Session
 const createSession = async (req: AuthRequest, res: Response) => {
-  const sessionId = req.body.session_id ? req.body.session_id : `session_${Date.now()}`;
-  if (!isValidSessionId(sessionId)) {
-    return res.status(400).json({ error: 'session_id may only contain letters, numbers, "-" and "_" (max 64 chars)' });
-  }
+  const sessionId = req.body.session_id || `session_${Date.now()}`;
   const activeStart = req.body.active_start_time || '00:00';
   const activeEnd = req.body.active_end_time || '23:59';
   const alias = req.body.alias ? String(req.body.alias).trim() : undefined;
   const targetUserId = (req.body.user || req.body.user_id) && req.user?.role === 'admin'
-    ? String(req.body.user || req.body.user_id)
+    ? (req.body.user || req.body.user_id)
     : req.user?._id;
 
   const ownerUser = await User.findById(targetUserId);
@@ -107,7 +88,7 @@ const createSession = async (req: AuthRequest, res: Response) => {
 
   if (minInterval === undefined || maxInterval === undefined) {
     if (ownerUser?.min_interval_minutes) {
-      const parts = String(ownerUser.min_interval_minutes).split('-');
+      const parts = ownerUser.min_interval_minutes.split('-');
       if (minInterval === undefined && parts[0] && !isNaN(Number(parts[0]))) {
         minInterval = Number(parts[0]);
       }
@@ -126,9 +107,6 @@ const createSession = async (req: AuthRequest, res: Response) => {
   }
 
   let session = await WhatsAppSession.findOne({ session_id: sessionId });
-  if (session && session.user?.toString() !== String(targetUserId)) {
-    return res.status(409).json({ error: 'A session with this session_id already exists' });
-  }
   if (!session) {
     session = await WhatsAppSession.create({
       user: targetUserId,
@@ -159,10 +137,6 @@ const getSessionQr = async (req: AuthRequest, res: Response) => {
 
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
-  }
-
-  if (!canAccessSession(req, session)) {
-    return res.status(403).json({ error: 'Unauthorized to view this session' });
   }
 
   if (session.status === SessionStatus.CONNECTED) {
@@ -207,11 +181,7 @@ const patchSession = async (req: AuthRequest, res: Response) => {
     user: userId,
   } = req.body;
   if (status) {
-    const validStatuses = [...Object.values(SessionStatus), 'disconnecting'] as string[];
-    if (!validStatuses.includes(String(status))) {
-      return res.status(400).json({ error: `Invalid status '${status}'` });
-    }
-    if (status !== 'disconnecting') session.status = status;
+    session.status = status;
     if (status === SessionStatus.DISCONNECTED || status === 'disconnecting') {
       session.status = SessionStatus.DISCONNECTED;
       session.qr_code = '';
@@ -237,7 +207,7 @@ const patchSession = async (req: AuthRequest, res: Response) => {
   if (active_start_time !== undefined) session.active_start_time = String(active_start_time);
   if (active_end_time !== undefined) session.active_end_time = String(active_end_time);
   if (cross_chat_enabled !== undefined) session.cross_chat_enabled = Boolean(cross_chat_enabled);
-  if (userId && req.user?.role === 'admin') session.user = String(userId) as any;
+  if (userId && req.user?.role === 'admin') session.user = userId;
 
   await session.save();
 
@@ -263,10 +233,9 @@ const batchToggleCrossChat = async (req: AuthRequest, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const scopeUser = req.user?.role === 'admin' && req.body.user_id ? String(req.body.user_id) : userId;
-  const query: any = { user: scopeUser };
+  const query: any = req.user?.role === 'admin' && req.body.user_id ? { user: req.body.user_id } : { user: userId };
   if (Array.isArray(session_ids) && session_ids.length > 0) {
-    query.session_id = { $in: session_ids.map((id: any) => String(id)) };
+    query.session_id = { $in: session_ids };
   }
   if (only_connected) {
     query.status = SessionStatus.CONNECTED;
@@ -283,7 +252,7 @@ const batchToggleCrossChat = async (req: AuthRequest, res: Response) => {
     console.warn('[CrossChat] Reschedule on batch toggle error:', e);
   }
 
-  const updatedSessions = await WhatsAppSession.find({ user: scopeUser }).populate('user', 'phone_number role');
+  const updatedSessions = await WhatsAppSession.find(req.user?.role === 'admin' && req.body.user_id ? { user: req.body.user_id } : { user: userId }).populate('user', 'phone_number role');
   return res.json({
     success: true,
     sessions: updatedSessions.map(formatSession),
@@ -338,22 +307,28 @@ const logoutSession = async (req: AuthRequest, res: Response) => {
   session.qr_code = '';
   await session.save();
 
-  // 2. Unlink the device, then destroy the socket BEFORE clearing creds so a live
-  //    socket cannot write keys back after they are deleted
+  // 2. Clear credentials & active session
   const active = getActiveSession(session.session_id);
   if (active) {
     try {
+      await active.clearCreds?.();
       await active.socket.logout();
     } catch (_) {}
+    removeActiveSession(session.session_id);
+  } else {
+    try {
+      const redisAuth = await useRedisAuthState(session.session_id);
+      await redisAuth.clearCreds();
+    } catch (_) {}
   }
-  removeActiveSession(session.session_id);
-  try {
-    const redisAuth = await useRedisAuthState(session.session_id);
-    await redisAuth.clearCreds();
-  } catch (_) {}
 
   // 3. Delete session directory on disk if any
-  removeSessionFolder(session.session_id);
+  const folder = path.join(SESSIONS_DIR, session.session_id);
+  if (fs.existsSync(folder)) {
+    try {
+      fs.rmSync(folder, { recursive: true, force: true });
+    } catch (_) {}
+  }
 
   return res.json({ success: true, message: 'Logged out successfully' });
 };
@@ -379,17 +354,22 @@ const deleteSession = async (req: AuthRequest, res: Response) => {
     await WhatsAppSession.deleteOne({ _id: session._id });
     await MasterPhone.deleteMany({ session: session._id });
 
-    // 2. Close socket & purge active session map before touching creds
-    removeActiveSession(targetSessionId);
-
-    // 3. Clear Redis auth keys
+    // 2. Clear Redis auth keys
     try {
       const redisAuth = await useRedisAuthState(targetSessionId);
       await redisAuth.clearCreds();
     } catch (_) {}
 
-    // 4. Clear file system folder if any
-    removeSessionFolder(targetSessionId);
+    // 3. Clear file system folder if any
+    const folder = path.join(SESSIONS_DIR, targetSessionId);
+    if (fs.existsSync(folder)) {
+      try {
+        fs.rmSync(folder, { recursive: true, force: true });
+      } catch (_) {}
+    }
+
+    // 4. Close socket & purge active session map
+    removeActiveSession(targetSessionId);
   }
   return res.json({ success: true });
 };
@@ -414,11 +394,10 @@ const getMasterPhones = async (_req: AuthRequest, res: Response) => {
   );
 };
 
-router.get('/master-phone-numbers', requireAdmin, getMasterPhones);
+router.get('/master-phone-numbers', getMasterPhones);
 
 const createMasterPhone = async (req: AuthRequest, res: Response) => {
-  const { is_active } = req.body;
-  const session = req.body.session ? String(req.body.session) : '';
+  const { session, is_active } = req.body;
   if (!session) {
     return res.status(400).json({ error: 'Session ID or ObjectId is required' });
   }
@@ -449,7 +428,7 @@ const createMasterPhone = async (req: AuthRequest, res: Response) => {
   });
 };
 
-router.post('/master-phone-numbers', requireAdmin, createMasterPhone);
+router.post('/master-phone-numbers', createMasterPhone);
 
 const patchMasterPhone = async (req: AuthRequest, res: Response) => {
   const paramId = String(req.params.id);
@@ -473,7 +452,7 @@ const patchMasterPhone = async (req: AuthRequest, res: Response) => {
   });
 };
 
-router.patch('/master-phone-numbers/:id', requireAdmin, patchMasterPhone);
+router.patch('/master-phone-numbers/:id', patchMasterPhone);
 
 const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
   const paramId = String(req.params.id);
@@ -481,7 +460,7 @@ const deleteMasterPhone = async (req: AuthRequest, res: Response) => {
   return res.json({ success: true });
 };
 
-router.delete('/master-phone-numbers/:id', requireAdmin, deleteMasterPhone);
+router.delete('/master-phone-numbers/:id', deleteMasterPhone);
 
 // Cross-Chat Warmup Settings & Control Endpoints
 async function getCrossChatSettingsPayload(userId: string) {
@@ -627,11 +606,7 @@ router.post('/cross-chat/send-now', async (req: AuthRequest, res: Response) => {
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
   const { session_a_id, session_b_id } = req.body || {};
-  const result = await forceSendNextTurn(
-    userId.toString(),
-    session_a_id ? String(session_a_id) : session_a_id,
-    session_b_id ? String(session_b_id) : session_b_id
-  );
+  const result = await forceSendNextTurn(userId.toString(), session_a_id, session_b_id);
   const payload = await getCrossChatSettingsPayload(userId.toString());
 
   return res.json({

@@ -1,6 +1,5 @@
 import { Outlet, createFileRoute, Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   Sidebar,
   SidebarContent,
@@ -35,9 +34,6 @@ function AdminLayout() {
   const location = useLocation()
   const [isLogoutOpen, setIsLogoutOpen] = useState(false)
   const [isCheckingRole, setIsCheckingRole] = useState(true)
-  const [authCheckError, setAuthCheckError] = useState(false)
-  const [authCheckAttempt, setAuthCheckAttempt] = useState(0)
-  const queryClient = useQueryClient()
   const [userMe, setUserMe] = useState<{ role?: string; phone_number?: string } | null>(null)
 
   useEffect(() => {
@@ -62,46 +58,17 @@ function AdminLayout() {
         setUserMe(me)
         setIsCheckingRole(false)
       })
-      .catch((err: any) => {
+      .catch(() => {
         if (!isMounted) return
 
-        // Only treat genuine auth failures as "logged out". A 401 here means
-        // the API client's token refresh already failed. Network blips / 5xx
-        // must not wipe the session.
-        const status = err?.response?.status
-        if (status === 401 || status === 403) {
-          logout()
-          queryClient.clear()
-          navigate({ to: '/login', replace: true })
-          return
-        }
-
-        setAuthCheckError(true)
+        logout()
+        navigate({ to: '/login', replace: true })
       })
 
     return () => {
       isMounted = false
     }
-  }, [token, logout, navigate, queryClient, authCheckAttempt])
-
-  if (token && authCheckError) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-4 text-center">
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          Could not verify your session. Please check your connection and try again.
-        </p>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setAuthCheckError(false)
-            setAuthCheckAttempt((n) => n + 1)
-          }}
-        >
-          Retry
-        </Button>
-      </div>
-    )
-  }
+  }, [token, logout, navigate])
 
   if (!token || isCheckingRole) {
     return null
@@ -249,7 +216,6 @@ function AdminLayout() {
               onClick={() => {
                 setIsLogoutOpen(false)
                 logout()
-                queryClient.clear()
                 navigate({ to: '/login' })
               }}
             >

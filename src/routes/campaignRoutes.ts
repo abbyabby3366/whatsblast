@@ -18,29 +18,6 @@ const router = Router();
 
 router.use(authenticateToken);
 
-// Every /blast-campaigns/:id route: reject malformed ids up front instead of a CastError 500.
-router.param('id', (req, res, next, id) => {
-  if (!mongoose.isValidObjectId(id)) {
-    return res.status(400).json({ error: 'Invalid campaign id' });
-  }
-  next();
-});
-
-const VALID_CAMPAIGN_STATUSES = Object.values(CampaignStatus) as string[];
-
-/** Fields the campaign list may be sorted by (`ordering` query param, optional leading '-'). */
-const SORTABLE_CAMPAIGN_FIELDS: Record<string, string> = {
-  name: 'name',
-  status: 'status',
-  createdAt: 'createdAt',
-  created_at: 'createdAt',
-  updatedAt: 'updatedAt',
-  updated_at: 'updatedAt',
-  scheduled_at: 'scheduled_at',
-  started_at: 'started_at',
-  completed_at: 'completed_at',
-};
-
 export async function computeCampaignsStats(campaignIds: any[]): Promise<Map<string, { total?: number; sent: number; failed: number; pending: number }>> {
   if (!campaignIds || campaignIds.length === 0) return new Map();
   const objectIds = campaignIds.map((id) => (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id));
@@ -62,7 +39,7 @@ export async function computeCampaignsStats(campaignIds: any[]): Promise<Map<str
       entry.sent += s.count;
     } else if (st === 'failed' || st === 'error') {
       entry.failed += s.count;
-    } else if (st === 'pending' || st === 'queued' || st === 'sending' || st === 'expired') {
+    } else if (st === 'pending' || st === 'queued' || st === 'expired') {
       entry.pending += s.count;
     }
   }
@@ -184,20 +161,21 @@ const getCampaigns = async (req: AuthRequest, res: Response) => {
     filter.name = { $regex: String(search), $options: 'i' };
   }
   if (status && status !== 'all') {
-    filter.status = String(status);
+    filter.status = status;
   }
-  // Only admins may pick another tenant; String() blocks operator injection (e.g. user[$exists]=true).
-  if (req.user?.role === 'admin' && userId && userId !== 'all') {
-    filter.user = String(userId);
+  if (userId && userId !== 'all') {
+    filter.user = userId;
   }
 
   let query = BlastCampaign.find(filter).populate('user', 'phone_number role').populate('template');
 
-  const orderStr = ordering ? String(ordering) : '';
-  const descending = orderStr.startsWith('-');
-  const sortField = SORTABLE_CAMPAIGN_FIELDS[descending ? orderStr.substring(1) : orderStr];
-  if (sortField) {
-    query = query.sort({ [sortField]: descending ? -1 : 1 });
+  if (ordering) {
+    const orderStr = String(ordering);
+    if (orderStr.startsWith('-')) {
+      query = query.sort({ [orderStr.substring(1)]: -1 });
+    } else {
+      query = query.sort({ [orderStr]: 1 });
+    }
   } else {
     query = query.sort({ createdAt: -1 });
   }
@@ -215,11 +193,7 @@ router.get('/blast-campaigns', getCampaigns);
 
 const createCampaign = async (req: AuthRequest, res: Response) => {
   const { name, template, contacts, recipient_phones, templates, user: targetUserId, min_interval_seconds, max_interval_seconds, enable_warmup, retry_on_failure, session_mode, selected_sessions, scheduled_at } = req.body;
-  const targetUser = (req.user?.role === 'admin' && targetUserId) ? String(targetUserId) : req.user?._id;
-
-  if (req.body.status !== undefined && !VALID_CAMPAIGN_STATUSES.includes(req.body.status)) {
-    return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_CAMPAIGN_STATUSES.join(', ')}` });
-  }
+  const targetUser = (req.user?.role === 'admin' && targetUserId) ? targetUserId : req.user?._id;
 
   const phoneList = Array.isArray(contacts) ? contacts : Array.isArray(recipient_phones) ? recipient_phones : [];
 
@@ -334,10 +308,6 @@ const patchCampaign = async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Campaign not found' });
   }
 
-  if (req.body?.status !== undefined && !VALID_CAMPAIGN_STATUSES.includes(req.body.status)) {
-    return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_CAMPAIGN_STATUSES.join(', ')}` });
-  }
-
   const wasRunning = campaign.status === CampaignStatus.RUNNING;
   if (wasRunning) {
     await stopCampaignExecution(campaign._id.toString(), 2000);
@@ -402,9 +372,6 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
       selectedSessions: campaign.selected_sessions,
       minIntervalSeconds: campaign.min_interval_seconds,
       maxIntervalSeconds: campaign.max_interval_seconds,
-      // Starting a COMPLETED campaign must pick up recipients added since it finished;
-      // processed_phones still prevents re-sending to anyone already sent.
-      allowCreateWhenCompleted: true,
     });
   }
 
@@ -418,10 +385,7 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
   const pendingMsgs = await Message.find({
     campaign: campaign._id,
     status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] },
-  })
-    .select('_id session scheduled_at')
-    .sort({ scheduled_at: 1, createdAt: 1 })
-    .lean();
+  }).sort({ scheduled_at: 1, createdAt: 1 });
 
   const hasPastScheduled = pendingMsgs.some(
     (m) => !m.scheduled_at || new Date(m.scheduled_at).getTime() <= now
@@ -469,11 +433,8 @@ const startCampaign = async (req: AuthRequest, res: Response) => {
         }
       }
       sessionLastTimeMap.set(sessKey, scheduledTimeMs);
-      // Status guard: skip a message a still-winding-down worker has claimed (SENDING).
-      await Message.updateOne(
-        { _id: msg._id, status: { $in: [MessageStatus.PENDING, MessageStatus.QUEUED] } },
-        { $set: { scheduled_at: new Date(scheduledTimeMs) } }
-      );
+      msg.scheduled_at = new Date(scheduledTimeMs);
+      await msg.save();
     }
   }
 

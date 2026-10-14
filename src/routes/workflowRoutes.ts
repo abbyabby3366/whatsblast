@@ -4,7 +4,7 @@ import { Workflow, IWorkflow } from '../models/Workflow.js';
 import { WorkflowLog } from '../models/WorkflowLog.js';
 import { WhatsAppSession } from '../models/WhatsAppSession.js';
 import { scheduleWorkflowJob, unscheduleWorkflowJob } from '../services/workflowScheduler.js';
-import { executeManualWorkflow, isWorkflowRunning } from '../services/workflowRunner.js';
+import { executeManualWorkflow } from '../services/workflowRunner.js';
 
 const router = Router();
 
@@ -206,12 +206,7 @@ router.post('/:id/run-now', async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Workflow not found' });
     }
 
-    if (isWorkflowRunning(String(workflow._id))) {
-      return res.status(409).json({ error: 'Workflow is already running. Please wait for the current run to finish.' });
-    }
-
-    // Execute asynchronously in background to not block response.
-    // executeManualWorkflow marks the workflow as running synchronously on call (no await before this point).
+    // Execute asynchronously in background to not block response
     executeManualWorkflow(String(workflow._id), String(req.user?._id)).catch((err) => {
       console.error(`[Workflow Run-Now] Error executing workflow ${workflow._id}:`, err);
     });
